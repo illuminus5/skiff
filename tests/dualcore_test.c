@@ -62,6 +62,8 @@ static uint64_t render(const scen_t *sc, int dual, const char *mask)
     uint32_t f, k, i;
     int32_t o[2 * CTL];
     host_tracks_init();
+    const char *routes = getenv("USB_ROUTES");
+    if (routes) usb_routes = usb_routes_valid((uint32_t)strtoul(routes, NULL, 0));
     c1h_off = !dual;
     if (mask)
         setenv("C1_MASK", mask, 1);
@@ -83,6 +85,18 @@ static uint64_t render(const scen_t *sc, int dual, const char *mask)
         if (sc->morph && ms == 600u)                /* PHYS: MODEL changed under a sounding note (phys_render) */
             trk[0].p[P_E0] = (int16_t)((trk[0].p[P_E0] + 1) % PM_COUNT);
         mix_block(o, CTL);
+#if FELUCCA_USB_12CH || FELUCCA_USB_6CH
+        for (uint32_t t=0;t<NPART;t++)
+            for (i=0;i<2u*CTL;i++) { h^=(uint32_t)usb_12_capture[t][i];h*=0x100000001B3ull; }
+#if FELUCCA_USB_6CH
+        for(uint32_t f=0;f<3;f++)for(i=0;i<CTL;i++){h^=(uint32_t)usb_fx_return[f][i];h*=0x100000001B3ull;}
+#endif
+#else
+        if (routes) {
+            const int32_t *u = usb_route_finish(o, CTL);
+            for (i = 0; i < 2u * CTL; ++i) { h ^= (uint32_t)u[i]; h *= 0x100000001B3ull; }
+        }
+        #endif
         for (k = 0; k < NPART; k++)
             if (trk[k].peak > peak[k])
                 peak[k] = trk[k].peak;
@@ -153,7 +167,7 @@ int main(void)
     static scen_t sc[256];
     static char names[256][40];
     static const char *const MASKS[] = {"rot", "auto", "21", "42", "7", "56", "1", "62"};
-    uint32_t n = 0, e, i, k, g, fail = 0;
+    uint32_t n = 0, e, i, k, g, fail = 0, tested = 0;
     for (e = 0; e < NENGINES; e++) {                    /* every preset: six tracks at a time */
         if (!eng_ok(e))                                 /* (a retired number: DIGITAL without FELUCCA_FM4) */
             continue;
@@ -180,6 +194,7 @@ int main(void)
         uint32_t m, bad = 0, quiet = 0, taken = 0, took = 0;
         if (getenv("SCENE") && !strstr(sc[i].name, getenv("SCENE")))
             continue;
+        tested++;
         ref = render_fork(&sc[i], 0, 0, &taken);
         for (k = 0; k < NPART; k++)
             quiet += peak[k] < 200;
@@ -206,6 +221,6 @@ int main(void)
             printf("dualcore: %-40s the same on two cores, every split   ok\n", sc[i].name);
         fail += bad != 0;
     }
-    printf("dualcore: %u of %u scenes differ\n", fail, n);
+    printf("dualcore: %u of %u tested scenes differ\n", fail, tested);
     return fail != 0;
 }

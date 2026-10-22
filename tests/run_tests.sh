@@ -124,6 +124,10 @@ CC="${CC:-cc} -O1 -Wall -Wno-unused-function"
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
 
+$CC -o "$OUT/usb_trace_test" tests/usb_trace_test.c
+run "USB control trace: bounded history, stalls and counter rollover" "$OUT/usb_trace_test"
+run "USB control trace: host decoder" python3 tests/usb_trace_decode_test.py
+
 $CC -o "$OUT/storage_test" tests/storage_test.c
 run "flash storage (A/B, torn writes)" "$OUT/storage_test"
 
@@ -135,6 +139,30 @@ run "keys and buttons: fast press, long release, bouncy contacts (one note each)
 
 $CC -o "$OUT/midi_uart_test" tests/midi_uart_test.c
 run "TRS MIDI parser" "$OUT/midi_uart_test"
+
+$CC -O1 -w -DFELUCCA_USB_6CH=1 -Ibuild/gen -Ifirmware/src tests/fx_returns_test.c -lm -o "$OUT/fx_returns_test"
+run "shared FX: golden sound and isolated returns" "$OUT/fx_returns_test"
+
+$CC -O1 -w tests/usb_6ch_test.c -lm -o "$OUT/usb_6ch_test"
+run "USB six-channel custom mapping and transport" "$OUT/usb_6ch_test"
+for channels in 6 8 10; do
+    if [ "$channels" != 6 ]; then
+        $CC -O1 -w -DFELUCCA_USB_CHANNELS=$channels tests/usb_multichannel_test.c -lm -o "$OUT/usb_multichannel_$channels"
+        run "USB $channels-channel mapping and transport" "$OUT/usb_multichannel_$channels"
+    fi
+    for test in settings editor backup; do
+        $CC -O1 -w -DFELUCCA_USB_6CH=1 -DFELUCCA_USB_CHANNELS=$channels -Ibuild/gen -Ifirmware/src "tests/${test}_test.c" -lm -o "$OUT/${test}_usb$channels"
+        run "USB $channels-channel: $test migration and control path" "$OUT/${test}_usb$channels"
+    done
+done
+
+$CC -O1 -w tests/usb_12ch_test.c -lm -o "$OUT/usb_12ch_test"
+run "USB 12-channel experiment: filtering, channel order, packets, ring guards" "$OUT/usb_12ch_test"
+
+for cdc in 0 1; do
+    $CC -O2 -w -DT_CDC=$cdc tests/usb_mac_compat_test.c -lm -o "$OUT/usb_mac_compat_$cdc"
+    run "USB macOS compatibility profile (CDC=$cdc)" "$OUT/usb_mac_compat_$cdc"
+done
 
 HALF=$(sed -n 's/^#define HALF_FRAMES \([0-9]*\).*/\1/p' firmware/src/core.h)
 $CC -O2 -DT_CDC=1 -DHALF_FRAMES=$HALF -o "$OUT/uac_test" tests/uac_test.c -lm
@@ -261,8 +289,10 @@ if [ -f build/gen/felucca_tables.h ]; then
         run "text spacing: glyph gaps against the font's own (16x supersampled), S M <= 0.25 px, L <= 0.5 px" \
             python3 tests/text_spacing_test.py build/gen/ui_fonts.h
     fi
+    $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/usb_routing_unit_test" tests/usb_routing_unit_test.c
+    run "USB routing: independent slots, mono, silence, block snapshots" "$OUT/usb_routing_unit_test"
     $CC -O1 -w -Ibuild/gen -o "$OUT/settings_test" tests/settings_test.c
-    run "settings: PER1..PER4 migration, palette ids and preference preservation" "$OUT/settings_test"
+    run "settings: PER1..PER5 migration, palette ids and preference preservation" "$OUT/settings_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test" tests/ui_test.c -lm
     run "UI: sounds keep steps, undo, recording, MIDI overflow, pending saves, panel recovery, drum grid, song chain, GREY gray, MONO neutral" "$OUT/ui_test"
     FV=$(sed -n 's/^#define FELUCCA_VERSION "\([^"]*\)".*/\1/p' firmware/src/felucca.c)   # (the splash, ABOUT: the real version)
@@ -296,6 +326,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/editor_test" tests/editor_test.c -lm
     run "editor: real C protocol, malformed transfers, queue recovery, MENU settings (writes build/host/menu.json)" \
         env MENU_JSON="$OUT/menu.json" "$OUT/editor_test"
+    $CC -w -DFELUCCA_USB_TRACE=1 -Ibuild/gen -Ifirmware/src -o "$OUT/editor_trace_test" tests/editor_test.c -lm
+    run "editor diagnostic: USB trace query framing, wrap and argument validation" "$OUT/editor_trace_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/robust_test" tests/robust_test.c -lm
     run "robustness: crafted sample slots, engine numbers, retained old projects, preset patterns, malformed requests" \
         "$OUT/robust_test"

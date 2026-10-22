@@ -200,7 +200,7 @@ static int preferences(void)
         host_wire[n - 9 - 23] == 0 &&                        /* (no bank since 1.0.3) */
         host_wire[n - 9 - 22] == 0x53 && host_wire[n - 9 - 21] == 1 && host_wire[n - 9 - 20] == 3 &&
         host_wire[n - 9 - 19] == 0x50 && host_wire[n - 9 - 18] == 1 && host_wire[n - 9 - 17] == 3 &&   /* FM6 v2: no bank, preset patches */
-        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == 17 &&   /* MENU settings: 17 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD) */
+        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == ED_MENU_N &&   /* MENU settings: 17 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD) */
         host_wire[n - 9 - 13] == 0x52 && host_wire[n - 9 - 12] == 1 && host_wire[n - 9 - 11] == 4 &&   /* RATCH */
         host_wire[n - 9 - 10] == 0x4C && host_wire[n - 9 - 9] == 1 && host_wire[n - 9 - 8] == 1 &&   /* 1.1 parameter locks */
         host_wire[n - 9 - 7] == 0x54 && host_wire[n - 9 - 6] == 1 && host_wire[n - 9 - 5] == 0x30 &&  /* (Skiff phase 6) T5, T6 */
@@ -863,7 +863,7 @@ static int usb_burst(void)
 }
 
 /* ---- MENU_DESC / MENU_SET (72, 73): the menu's settings over the editor ---- */
-typedef struct { uint32_t index, id, kind, nnames, tab, rest; int32_t value, min, max; char name[16], names[12][12], tabname[16]; } menu_item_t;
+typedef struct { uint32_t index, id, kind, nnames, tab, rest; int32_t value, min, max; char name[16], names[32][12], tabname[16]; } menu_item_t;
 static uint32_t menu_desc(uint32_t index, menu_item_t *it)   /* the reply's payload length; it parsed */
 {
     uint8_t a[1] = {(uint8_t)index};
@@ -876,7 +876,8 @@ static uint32_t menu_desc(uint32_t index, menu_item_t *it)   /* the reply's payl
     it->value = ed_rv(host_wire + 8); it->min = ed_rv(host_wire + 10); it->max = ed_rv(host_wire + 12);
     for (k = 0; p < n - 1u && host_wire[p] && k < 15u; ) it->name[k++] = (char)host_wire[p++];
     p++;
-    while (p < n - 1u && it->nnames < 12u && (int32_t)it->nnames < it->max - it->min + 1) {   /* (kind 0: max - min + 1) */
+    if(it->kind==EDM_INT) {while(p<n-1u && host_wire[p])p++;p++;}
+    else while (p < n - 1u && it->nnames < 32u && (int32_t)it->nnames < it->max - it->min + 1) {   /* (kind 0: max - min + 1) */
         for (k = 0; p < n - 1u && host_wire[p] && k < 11u; ) it->names[it->nnames][k++] = (char)host_wire[p++];
         p++; it->nnames++;
     }
@@ -950,8 +951,35 @@ static int menu_protocol(void)
         menu_desc(i, &it);
         ok &= strcmp(it.name, "CALIBRATION") && strcmp(it.name, "ABOUT");
     }
-    n = menu_desc(17, &it);
-    ok &= n == 2u && it.index == 17 && it.id == 127;
+#if FELUCCA_USB_ROUTING
+    n = menu_desc(17u, &it);
+    ok &= n > 2u && it.id == 20u && it.nnames == USB_SOURCE_N && !strcmp(it.name, FELUCCA_USB_6CH ? "USB CH 1" : "USB LEFT");
+    n = menu_desc(18u, &it);
+    ok &= n > 2u && it.id == 21u && it.nnames == USB_SOURCE_N && !strcmp(it.name, FELUCCA_USB_6CH ? "USB CH 2" : "USB RIGHT");
+    usb_routes = USB_ROUTES_DEFAULT;
+#if FELUCCA_USB_6CH
+    usb_six_routes=USB_SIX_DEFAULT;
+    menu_put(MI_USB_LEFT,3u); menu_put(MI_USB_6,0u);
+    ok &= usb_six_get(0)==3u && usb_six_get(1)==9u && usb_six_get(5)==0u;
+    usb_six_routes=USB_SIX_DEFAULT;
+    for(unsigned slot=6;slot<UAC_CHANNELS;slot++) {
+        char label[12];snprintf(label,sizeof label,"USB CH %u",slot+1);
+        n=menu_desc(17u+slot,&it);
+        ok &= n>2u && it.id==33u+slot-6u && it.nnames==USB_SOURCE_N && !strcmp(it.name,label);
+        menu_put(MI_USB_LEFT+slot,24u);
+        ok &= usb_six_get(slot)==24u && menu_get(MI_USB_LEFT+slot)==24u;
+    }
+    usb_extra_routes=USB_EXTRA_DEFAULT;
+#else
+    menu_put(MI_USB_LEFT, 6u);
+    ok &= usb_route_get(0) == 6u && usb_route_get(1) == 2u;
+    menu_put(MI_USB_RIGHT, 9u);
+    ok &= usb_route_get(0) == 6u && usb_route_get(1) == 9u;
+    usb_routes = USB_ROUTES_DEFAULT;
+#endif
+#endif
+    n = menu_desc(ED_MENU_N, &it);
+    ok &= n == 2u && it.index == ED_MENU_N && it.id == 127;
     n = menu_desc(127, &it);
     bad += check("MENU_DESC: no CALIBRATION / ABOUT; an index past the list answers index, 127 (no item)",
                  ok && n == 2u && it.index == 127 && it.id == 127);
@@ -1509,11 +1537,43 @@ static int custom_colors(void)
     return bad;
 }
 
+#if FELUCCA_USB_TRACE
+static int usb_trace_protocol(void)
+{
+    uint8_t setup[8] = {0xa2, 0x84, 0, 1, 0x84, 0, 3, 0}, arg = 1;
+    uint8_t decoded[294];
+    uint32_t i, n;
+    int bad = 0, ok;
+    reset();
+    memset(&usb_trace, 0, sizeof usb_trace);
+    n = request(ED_USB_TRACE, NULL, 0);
+    bad += check("USB trace: empty history is a versioned MIDI reply", n == 343u && host_wire[5] == 2 &&
+        ed_unpack7(host_wire + 6, n - 7u, decoded, sizeof decoded) == sizeof decoded && decoded[293] == 0);
+    for (i = 0; i < 35u; ++i) {
+        setup[2] = (uint8_t)i;
+        usb_trace_record(&usb_trace, setup);
+        if (i & 1u) usb_trace_stall(&usb_trace);
+    }
+    n = request(ED_USB_TRACE, NULL, 0);
+    ok = n == 343u && host_wire[5] == 2 &&
+        ed_unpack7(host_wire + 6, n - 7u, decoded, sizeof decoded) == sizeof decoded &&
+        !memcmp(decoded, &usb_trace, sizeof decoded);
+    bad += check("USB trace: wrapped history survives real SysEx reply framing", ok);
+    n = request(ED_USB_TRACE, NULL, 0);
+    bad += check("USB trace: queries do not clear or modify the history", n == 343u && usb_trace.total == 35 && usb_trace.count == 32);
+    bad += check("USB trace: arguments rejected without a response", request(ED_USB_TRACE, &arg, 1) == 0);
+    return bad;
+}
+#endif
+
 int main(void)
 {
     int bad = preferences() + motion_locks() + wide_ids() + framing() + uart_recovery() + steps() + samples() + smp_mix() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + usb_burst() + menu_protocol() + drum_kit_retired() +
               light_tracks() + preset_more() + transport_names() + song_cmds() + custom_colors();
+#if FELUCCA_USB_TRACE
+    bad += usb_trace_protocol();
+#endif
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
     return bad != 0;
 }

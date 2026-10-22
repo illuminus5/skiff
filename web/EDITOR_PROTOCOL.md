@@ -1051,3 +1051,56 @@ device gone at ~0.3 s, the MIDI port gone at ~0.57 s and back at ~1.15 s; ON -> 
 at ~0.6 s while the MIDI port was not seen to disappear at all (so do not wait for a disconnect event: after
 a real change, wait ~1.5 s and open again). What the editor sends in that window is lost, `WATCH` ends with the
 bus reset (send `INFO` and `WATCH` again after reconnecting), and a backup in progress answers rc 5 (stale).
+
+### Optional USB control diagnostic (command 82)
+
+Available only in builds with `FELUCCA_USB_TRACE=1`; normal builds ignore it.
+Request: `F0 7D 46 4C 52 F7` (no arguments). Read-only: does not clear history,
+write settings, reset USB or alter streaming. Reply uses the same header/command,
+then `version=2`, then 294 raw bytes in the existing pack7 format, then F7.
+The decoded bytes are 32 physical ring entries (eight SETUP bytes followed by
+one `stalled` byte 0/1, nine bytes per entry), `total` as uint32 little-endian,
+`next` (0..31), and `count` (0..32). No C alignment padding is transmitted.
+The first retained slot is `(next - count) mod 32`; read count entries with wrap.
+The reply is always 343 bytes including F0/F7; unused entries are zero at boot.
+Total wraps at 2^32; history
+overwrites oldest entries, survives USB bus resets and is lost on power/restart.
+Unmarked means observed, not proven successfully completed. STALL can be a valid
+response to an unsupported optional request. `tools/fm1_usb_trace.py` retrieves
+and decodes this extension through MIDI with USB SERIAL OFF.
+
+
+### Reduced USB routing
+
+MENU adds stable IDs 20 (USB LEFT) and 21 (USB RIGHT), SYSTEM tab. Each value is
+0 OFF, 1 MASTER L, 2 MASTER R, 3 MASTER MONO, then three values L/R/MONO for each
+track T1..T6 (4..21). Defaults are 1 and 2. Existing IDs remain unchanged; discover
+the item count through INFO. These settings select the two existing capture
+channels; they do not add USB channels or host audio return. Settings backups now
+use PER5; this firmware accepts PER4 and migrates its routes to master stereo.
+
+### Six-channel experiment
+
+The FELUCCA_USB_6CH profile exposes six source slots: IDs 20/21 for USB CH 1/2,
+and IDs 22..25 for USB CH 3..6. Each accepts the same source values 0..21 above.
+Defaults are 6,9,12,15,18,21 (T1..T6 MONO). Discover the count/names dynamically;
+the USB audio format is six channels at 44100 Hz/16-bit. This profile uses PER6
+settings with an appended packed six-source word and accepts PER4/PER5 backups.
+Earlier firmware cannot read PER6; retain an older settings backup for downgrade.
+
+### Simple FX extension (six-channel experiment)
+
+Source IDs 22/23/24 select shared mono reverb/delay/chorus returns. Source IDs
+25..31 and MENU IDs 26..32 (the retired click/compact experiment) are no longer
+offered. Old saved click/CMP routes normalize to OFF, while existing source IDs
+0..24 retain their meanings. MENU IDs 20..25 remain the six mapping slots.
+PER7 layout is retained for compatibility; legacy compact mode is disabled.
+There are still six USB channels at 44100 Hz/16-bit.
+
+### Eight/ten-channel experimental profiles
+
+Mapped USB profiles can expose 6, 8 or 10 mono output slots at 44.1 kHz/16-bit.
+Existing channel IDs 20..25 remain unchanged; IDs 33..36 expose channels 7..10
+when built. IDs 26..32 remain retired. Discover MENU count dynamically. Source
+IDs stay unchanged, including 22 REV, 23 DELAY, 24 CHOR. PER8 retains all four
+extra assignments when switching between eight and ten channels.

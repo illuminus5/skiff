@@ -107,7 +107,7 @@ static int32_t menu_text(const char *s, int32_t y, uint16_t col, int draw)
             uint32_t c = (uint8_t)s[n];
             line[n] = s[n];
             line[n + 1u] = 0;
-            pen += (prev ? kern(&AF_S, prev, c) : 0) + AF_S.g[glyph(&AF_S, c)].adv;
+            pen += (prev ? kern(&AF_S, prev, c) : 0) + AF_S.adv[glyph(&AF_S, c) >> AF_S.psh];
             prev = c;
             if ((pen + 8) >> 4 > 226)
                 break;

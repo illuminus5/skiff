@@ -32,7 +32,13 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
     uint32_t i;
     mix_block(out, n);
 #if FELUCCA_UAC
-    uac_tap(out, n);                                    /* the USB audio input: the same master output */
+#if FELUCCA_USB_12CH
+    uac_tap12(&usb_12_capture[0][0], CTL, n);
+#elif FELUCCA_USB_ROUTING
+    uac_tap(usb_route_finish(out, n), n);
+#else
+    uac_tap(out, n);
+#endif
 #endif
     if (fx_usb_fixed)                                   /* USB LEVEL FIXED: USB took the full level, the DAC */
         usb_fixed_dac(out, n);                          /* (speaker, headphones) gets MASTER's (fx.c) */

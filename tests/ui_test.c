@@ -1515,7 +1515,7 @@ static int test_menu_tabs(void)
                  "tab gaps constant (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
                  mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 5u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27) */
-                 mtab_rows(MTAB_SYSTEM) == 7u && mtab_rows(MTAB_MIDI) == 10u);   /* ((Skiff) SYSTEM: CPU CLOCK) */
+                 mtab_rows(MTAB_SYSTEM) == 7u + (FELUCCA_USB_6CH ? UAC_CHANNELS : 2u) * FELUCCA_USB_ROUTING && mtab_rows(MTAB_MIDI) == 10u);   /* ((Skiff) SYSTEM: CPU CLOCK) */
 
     ui_power_on();
     hold(B_HOME);
@@ -1551,14 +1551,15 @@ static int test_menu_tabs(void)
     ok = drawn = 1;
     favorites.factory[15][24] = 0xA5u;                  /* ((1.3) STEP PREVIEW's bit: a byte bank.c freed, as on a unit) */
     for (i = 0; i < MI_VALUES; i++) {
-        uint32_t n = menu_n(i), v, j, seen, want, s0;
+        uint32_t n = menu_n(i), v, j, want, s0;
+        uint8_t seen[256]={0};
         if (i == MI_TUNE || i == MI_CPU || menu_act(i))   /* ((U3) TUNE's 101 values: below; CPU: below; (1.3) MIDI
                                                         * LEARN, LEARN CLEAR: actions, test_midi_learn) */
             continue;
         ui.menu_sel = (uint8_t)i;
         for (j = 0; j <= n; j++)                       /* down to the first value (COLOR: round) */
             press(B_OCTDN);
-        seen = 1u << menu_get(i);
+        seen[menu_get(i)] = 1;
         for (j = 0; j <= n; j++) {                     /* up through every value */
             want = menu_step(i, 1);
             v = menu_get(i);
@@ -1566,9 +1567,9 @@ static int test_menu_tabs(void)
             press(B_OCTUP);
             ok &= menu_get(i) == want && ui.menu == 1;
             drawn &= menu_get(i) == v || ui.menu_sig != s0;
-            seen |= 1u << menu_get(i);
+            seen[menu_get(i)] = 1;
         }
-        ok &= seen == (1u << n) - 1u;
+        for(v=0;v<n;v++)ok &= seen[v];
         for (j = 0; j <= n; j++) {                     /* and down again */
             want = menu_step(i, -1);
             v = menu_get(i);
@@ -6574,7 +6575,7 @@ static int test_knob_accel(void)
         ok = settings_import(&p, (int)sizeof p) == 1 && ui_prefs == PREF_ACCEL;
         memset(&p.favorites, 0, sizeof p.favorites);
         p.magic = 0x50455233u;
-        ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !ui_prefs;
+        ok &= settings_import(&p, (int)(PERSIST_V4_SIZE - sizeof p.favorites)) == 2 && !ui_prefs;
         bad += check("#52 KNOB ACCEL saved with the settings; settings from before it: OFF", ok);
     }
     ui_prefs = 0;
@@ -6643,7 +6644,7 @@ static int test_usb_level(void)
         ok &= settings_import(&p, (int)sizeof p) == 1 && ui_prefs == PREF_USB_FIXED;
         memset(&p.favorites, 0, sizeof p.favorites);
         p.magic = 0x50455233u;
-        ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !ui_prefs;
+        ok &= settings_import(&p, (int)(PERSIST_V4_SIZE - sizeof p.favorites)) == 2 && !ui_prefs;
         frame();
         ok &= !fx_usb_fixed;
     }
@@ -6709,7 +6710,7 @@ static int test_click_menu(void)
         ok &= click_mode == CLICK_OFF && click_lvl == 1u && cin_bars == 1u;
         memset(&p.favorites, 0, sizeof p.favorites);   /* settings from before the favorites (PER3): the defaults */
         p.magic = 0x50455233u;
-        ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !ui_rec_prefs;
+        ok &= settings_import(&p, (int)(PERSIST_V4_SIZE - sizeof p.favorites)) == 2 && !ui_rec_prefs;
         frame();
         ok &= click_mode == CLICK_OFF && click_lvl == 1u && !cin_bars;
     }
@@ -6819,7 +6820,7 @@ static int test_usb_serial(void)
         ok &= !usb_cdc_on && !usb.up && plain_desc();
         memset(&p.favorites, 0, sizeof p.favorites);   /* settings from before it (PER3): ON */
         p.magic = 0x50455233u;
-        ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !(ui_prefs & PREF_SERIAL_OFF);
+        ok &= settings_import(&p, (int)(PERSIST_V4_SIZE - sizeof p.favorites)) == 2 && !(ui_prefs & PREF_SERIAL_OFF);
         usb_serial_apply();
         ok &= usb_cdc_on && dev_is(DEV_DESC);
     }
@@ -6933,7 +6934,7 @@ static int test_bpm_lock(void)
         ok &= settings_import(&q, (int)sizeof q) == 1 && ui_prefs == PREF_BPM_LOCK && !memcmp(&p, &q, sizeof p);
         memset(&p.favorites, 0, sizeof p.favorites);
         p.magic = 0x50455233u;                                        /* (PER3: before the favorites record) */
-        ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !ui_prefs;
+        ok &= settings_import(&p, (int)(PERSIST_V4_SIZE - sizeof p.favorites)) == 2 && !ui_prefs;
         q = p;
         ok &= settings_import(&q, (int)sizeof q) == 1 && !ui_prefs;
         frame();
@@ -7647,7 +7648,7 @@ static int test_large(void)
         ok &= settings_import(&q, (int)sizeof q) == 1 && ui_prefs == PREF_LARGE && !memcmp(&p, &q, sizeof p);
         memset(&p.favorites, 0, sizeof p.favorites);
         p.magic = 0x50455233u;                                    /* (PER3: before the favorites record) */
-        ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !ui_prefs;
+        ok &= settings_import(&p, (int)(PERSIST_V4_SIZE - sizeof p.favorites)) == 2 && !ui_prefs;
         q = p;
         ok &= settings_import(&q, (int)sizeof q) == 1 && !ui_prefs;
         ui.force = 1; frame();
@@ -7664,7 +7665,9 @@ static int test_large(void)
 static int test_menu_prefs(void)
 {
     int bad = 0, ok = 1;
-    uint32_t k, j, seen = 0;
+    uint32_t k, j;
+    uint64_t seen = 0;
+    _Static_assert(MI_COUNT < 64, "menu test coverage mask holds every row");
     static uint16_t shot[MTAB_COUNT][240 * 240];
     ui_power_on();
     ui_prefs = 0;
@@ -7673,7 +7676,7 @@ static int test_menu_prefs(void)
     for (k = 0; k < MTAB_COUNT; k++) {              /* ALGORITHM right through the tabs, PRESETS through each one's rows */
         ok &= menu_tab() == k && ui.menu_sel == mtab_first(k);
         for (j = 0; j < mtab_rows(k); j++) {
-            seen |= 1u << ui.menu_sel;
+            seen |= UINT64_C(1) << ui.menu_sel;
             turn(EN_PRESET, 1);
         }
         ok &= ui.menu_sel == mtab_first(k);         /* (round the tab, back at its first row) */
@@ -7682,7 +7685,7 @@ static int test_menu_prefs(void)
         for (j = 0; j < k; j++) ok &= memcmp(shot[j], shot[k], sizeof shot[k]) != 0;
         turn(EN_ALGO, 1);
     }
-    ok &= seen == (1u << MI_COUNT) - 1u && ui.menu_sel == 0u;
+    ok &= seen == (UINT64_C(1) << MI_COUNT) - 1u && ui.menu_sel == 0u;
     bad += check("MENU: ALGORITHM and PRESETS reach every row, each tab a page of its own", ok);
     /* ANIM */
     ui.menu_sel = MI_ANIM;
@@ -7729,7 +7732,7 @@ static int test_menu_prefs(void)
         ok = settings_import(&p, (int)sizeof p) == 1 && (ui_prefs & PREF_ANIM_OFF);
         memset(&p.favorites, 0, sizeof p.favorites);
         p.magic = 0x50455233u;
-        ok &= settings_import(&p, (int)(sizeof p - sizeof p.favorites)) == 2 && !ui_prefs;
+        ok &= settings_import(&p, (int)(PERSIST_V4_SIZE - sizeof p.favorites)) == 2 && !ui_prefs;
         bad += check("#46 ANIM saved with the settings; settings from before it: ON", ok);
     }
     ui_prefs = 0;

@@ -22,7 +22,7 @@ void isr_alnk0(void) {}
 #define FELUCCA_UAC 1                                  /* audio.c taps USB audio: here into host_tap */
 static int32_t host_tap[2 * 64];
 static uint32_t host_tap_n;
-static void uac_tap(const int32_t *out, uint32_t n) { memcpy(host_tap, out, 8u * n); host_tap_n = n; }
+static void uac_tap(const int32_t *out, uint32_t n) { for(uint32_t i=0;i<n;i++) { host_tap[2u*i]=out[UAC_CHANNELS*i];host_tap[2u*i+1u]=out[UAC_CHANNELS*i+1u]; } host_tap_n = n; }
 static void uac_render_start(void) {}
 #include "../firmware/src/audio.c"
 enum { FM1_ADC_BATT = 3, FM1_ADC_MASTER = 4 };
@@ -38,6 +38,10 @@ static void check(const char *what, int ok)
 }
 static void fresh(void)
 {
+#if FELUCCA_USB_6CH
+    /* USB/DAC equivalence cases explicitly map the first two slots to master. */
+    usb_six_routes=1u | 2u<<5;
+#endif
     uint32_t p;
     memset(trk, 0, sizeof trk);
     memset(&song, 0, sizeof song);

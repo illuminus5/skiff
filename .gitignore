@@ -1,4 +1,5 @@
 build/
+.build-deps/
 .DS_Store
 __pycache__/
 *.fwsc
