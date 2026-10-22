@@ -28,7 +28,7 @@ static const uint8_t ED_MENU[][2] = {
     {MI_KVEL, 18},                                     /* (SMK-37) KEY VELOCITY, a row of CONTROL */
 #endif
     {MI_PHEAD, 19},                                    /* (Skiff #27) PLAYHEAD, a row of DISPLAY */
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
     {MI_USB_LEFT,20},{MI_USB_RIGHT,21},
 #if FELUCCA_USB_6CH
     {MI_USB_3,22},{MI_USB_4,23},{MI_USB_5,24},{MI_USB_6,25},

@@ -85,9 +85,9 @@ static uint64_t render(const scen_t *sc, int dual, const char *mask)
         if (sc->morph && ms == 600u)                /* PHYS: MODEL changed under a sounding note (phys_render) */
             trk[0].p[P_E0] = (int16_t)((trk[0].p[P_E0] + 1) % PM_COUNT);
         mix_block(o, CTL);
-#if FELUCCA_USB_12CH || FELUCCA_USB_6CH
+#if FELUCCA_USB_6CH
         for (uint32_t t=0;t<NPART;t++)
-            for (i=0;i<2u*CTL;i++) { h^=(uint32_t)usb_12_capture[t][i];h*=0x100000001B3ull; }
+            for (i=0;i<2u*CTL;i++) { h^=(uint32_t)usb_track_capture[t][i];h*=0x100000001B3ull; }
 #if FELUCCA_USB_6CH
         for(uint32_t f=0;f<3;f++)for(i=0;i<CTL;i++){h^=(uint32_t)usb_fx_return[f][i];h*=0x100000001B3ull;}
 #endif

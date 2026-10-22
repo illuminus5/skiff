@@ -41,7 +41,7 @@ available. No firmware is flashed by building or testing.
 
 `FELUCCA_USB_6CH=1 FELUCCA_CDC_DEFAULT=0 ./build.sh --release 1.4-usb6`
 
-FELUCCA_USB_6CH and FELUCCA_USB_12CH cannot both be enabled. Default builds keep
+Default builds keep
 the existing stereo transport. The compile-time serial default does not override
 saved USB SERIAL settings.
 

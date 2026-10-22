@@ -1,118 +1,93 @@
-# Ten-channel USB trial and working eight-channel profile
+# USB routing: up to ten channels at 44.1 kHz
 
-**Hardware report, 2026-10-21:** The user reports that eight channels worked
-and ten channels did not when connected directly by USB to the TX-6. Use `build/skiff-1.4-usb8.fwsc` as the working profile.
-The failing ten-channel package remains an experiment; software tests and the
-920-byte packet calculation did not establish physical operation. The ten-channel failure symptom is not yet recorded.
-This result does not establish the exact controller limit or failure cause.
+Mapped profiles provide 6, 8 or 10 independently assignable mono capture channels
+at 44.1 kHz/16-bit without resampling. Ten is the maximum selectable profile.
+The normal stereo firmware remains the default build. This is device-to-host
+capture; no host-to-device audio return is implemented.
 
-Both profiles send independently mapped mono channels at 44.1 kHz / 16-bit,
-without resampling. They are capture outputs from Skiff, not USB audio returns.
-The ten-channel packet ceiling is 920 bytes; eight-channel is 736 bytes.
-Both fit the full-speed 1,023-byte isochronous packet limit. Descriptor and
-software tests do not establish physical controller or TX-6 compatibility.
+## Mapping
 
-## Install and roll back manually
+Hold HOME > SYSTEM, then select USB CH 1..N. Every slot offers OFF, MASTER
+L/R/MONO, T1..T6 L/R/MONO, REV, CHOR and DELAY. Assigning a track's L and R to
+two slots uses two output channels. Duplicate sources are allowed.
 
-Back up settings using the editor before installing. Keep USB SERIAL OFF.
-From the repository directory, install ten channels first:
-
-```sh
-.build-deps/python/bin/python tools/fm1_install.py build/skiff-1.4-usb10.fwsc
-```
-
-If recording causes distortion, channel faults, or unreliable operation, stop
-recording and install the eight-channel fallback:
-
-```sh
-.build-deps/python/bin/python tools/fm1_install.py build/skiff-1.4-usb8.fwsc
-```
-
-These commands write firmware when you run them. Building and testing have
-not flashed the device. The preserved six-channel packages are unchanged.
-
-## Defaults and custom routing
-
-Hold HOME, select SYSTEM, then USB CH 1..10 (or 1..8).
-
-| USB channel | Default source |
+| Channel | Default |
 |---|---|
-| 1..6 | Track 1..6 MONO, respectively |
+| 1..6 | Track 1..6 MONO |
 | 7 | REV |
 | 8 | CHOR |
-| 9 | DELAY (ten-channel only) |
-| 10 | OFF (ten-channel only) |
+| 9 | DELAY |
+| 10 | OFF |
 
-Every visible slot can select OFF, MASTER L/R/MONO, any track L/R/MONO,
-or REV, CHOR, DELAY. Select a track's L and R on two slots for stereo;
-this uses two of the available channels. There are still six synth tracks.
+Fewer-channel builds expose only their available slots. Track outputs include
+DIST, insert effects, slicer, ducking, level/pan and mute, but exclude shared
+returns. DIST is per-track processing; it is not a fourth shared return.
+REV/CHOR/DELAY are combined mono wet returns across tracks, before master EQ,
+limiting and MASTER attenuation. CHOR can run chorus, flanger or phaser.
+MASTER includes the final mix and shared FX. Summing MASTER together with its
+tracks/returns duplicates audio. The metronome stays local.
 
-Track taps include DIST, insert FX, slicer, ducking, level/pan/mute, but exclude
-shared effects returns. DIST is a per-track insert, not a fourth shared return.
-REV/CHOR/DELAY are mono combined wet returns across tracks, tapped before master
-EQ/limiting/MASTER attenuation. Shared CHOR can run chorus, flanger or phaser.
-MASTER includes the final mix and shared FX. Avoid summing MASTER plus the
-same tracks/returns together unless deliberately doubling those signals.
-The metronome stays local; CLICK/CMP sources and compact FX remain removed.
+## USB timing
 
-## Persistent settings and editor
+Ten-channel packets carry 880 or 900 bytes normally and at most 920 bytes with
+clock correction, within the single full-speed endpoint's 1023-byte limit.
+Their payload alone takes roughly 587–613 microseconds at 12 Mbit/s, leaving
+little time to refill the endpoint before the next host request. Ten-channel
+capture therefore services EP4 on each existing 100-us TIMER5 tick. USB control
+and MIDI polling stay at 2 kHz; stereo/six/eight audio servicing is unchanged.
+The no-consumption timeout stays at 20 ms by scaling its poll count.
 
-PER8 appends four five-bit source assignments to PER7. Six-, eight- and
-ten-channel source builds now share that layout; eight-channel retains the
-hidden assignments for channels 9 and 10. Imports from PER1..PER7 initialize
-new slots to the defaults above, while keeping existing valid assignments.
-Legacy compact metadata is retained but its processing stays disabled.
-Retired sources 25..31 normalize to OFF. Backup restore checks reserved bits
-before writing. Project formats are unchanged.
+The contributor reports clear audio with this faster-service build. Successful
+enumeration and software tests alone do not establish reliable hardware audio.
+Extended stability, host compatibility and timing measurements remain useful.
+More frequent SIE accesses may increase interrupt load under dense arrangements.
 
-Earlier packaged PER6/PER7 firmware cannot read PER8 settings. Preserve an
-older settings backup if returning to those six-channel packages.
+## Settings and editor
 
-Editor channel IDs 20..25 remain unchanged. IDs 33..36 add channels 7..10;
-26..32 stay retired. Source IDs are unchanged: 22 REV, 23 DELAY, 24 CHOR.
-Clients should discover the available menu count rather than assume six slots.
+PER8 stores all ten route assignments even in eight-channel builds, allowing
+switching between these profiles without losing the hidden two assignments.
+PER1..PER7 imports preserve existing valid routes and initialize new slots to
+the defaults above. Old compact metadata is retained for binary compatibility,
+but its processing is disabled. Retired click/CMP source IDs 25..31 become OFF.
+Projects retain their existing format. Back up settings before installing;
+older packaged PER6/PER7 firmware cannot read PER8 settings.
 
-## Physical acceptance
+Editor IDs 20..25 retain channels 1..6. IDs 33..36 add channels 7..10; IDs 26..32
+remain retired. Source IDs stay stable: 22 REV, 23 DELAY, 24 CHOR. Discover the
+available MENU count dynamically.
 
-1. On the Mac, run `system_profiler SPAudioDataType`. Expect Felucca with
-   10 input channels (8 on fallback), at 44100 Hz.
-2. In Audacity select Felucca and explicitly choose all 10 recording channels.
-   If it still shows the old count, close Audacity, reconnect Skiff and reopen it.
-3. Record one Skiff track at a time. Solo recorded channels to verify 1..6 order.
-   Enable each shared effect and check its assigned return separately.
-4. Listen to Skiff's own output while recording. It must stay clean. Repeat
-   recording start/stop and test a dense six-track arrangement for several minutes.
-5. Change a high-numbered slot to a track L/R or duplicate source; save settings,
-   power cycle, and verify the assignment. Check ten-to-eight rollback separately.
-6. Then test direct USB to the TX-6 in its USB host setup. Successful Mac capture
-   does not prove the TX-6 accepts this device's channel count and sample rate.
+## Build, install and test
 
-The user reports eight-channel hardware operation and failure of ten channels.
-The full acceptance sequence above remains to be documented. If eight becomes
-unreliable, use the previously verified six-channel package and its older settings
-backup. No automatic fallback or firmware flashing is implemented.
+For ten channels, use:
 
-## Build and validation
+```sh
+FELUCCA_USB_6CH=1 FELUCCA_USB_CHANNELS=10 FELUCCA_CDC_DEFAULT=0 ./build.sh --release 1.4-usb10final
+```
 
-Set `FELUCCA_USB_6CH=1 FELUCCA_USB_CHANNELS=10 FELUCCA_CDC_DEFAULT=0`
-and build release `1.4-usb10`; use `FELUCCA_USB_CHANNELS=8` and release
-`1.4-usb8` for the fallback. Omitting CHANNELS still selects six channels.
+Use CHANNELS=8 for an eight-channel fallback; omitting CHANNELS selects six.
+USB SERIAL must be OFF on the device; saved preferences take precedence over
+the build default. Builds do not flash firmware. Manual installation is:
 
-| Profile | Image bytes | Data/bss / 98304 | Pool / 356352 | RAM code / 24576 |
-|---|---:|---:|---:|---:|
-| 10 | 566340 | 95412 | 346316 | 24080 |
-| 8 | 566312 | 92932 | 346316 | 24080 |
+```sh
+python3 tools/fm1_install.py build/skiff-1.4-usb10final.fwsc
+```
 
-Focused host tests pass for settings, backup, editor, UI, native audio,
-metronome and shared FX in all three mapped profiles. Shared FX preserve their
-golden hash c5c723946bc887c4. Eight/ten transport tests pass with address and
-undefined-behavior sanitizers, including clipping, full-frame packing,
-maximum corrected packets, ring wrap, underrun hold, silence and routing
-snapshots. Five mixed-engine scenes match across CPU splits in the ten-channel
-build. These checks do not measure device ISR timing, USB scheduling or host
-compatibility.
+Keep a known-working fallback package and a settings backup. On macOS, check
+`system_profiler SPAudioDataType` for ten inputs at 44100 Hz. In Audacity select
+Felucca, all ten recording channels and 44100 Hz. First record one clean track
+with CH1=T1 MONO and other slots OFF; listen to its isolated recording. Then
+verify all tracks and shared returns, repeated start/stop, dense arrangements,
+local headphones, mapping persistence and reconnect behavior. Test direct USB
+mixers separately; clean computer capture does not prove every host accepts it.
 
-SHA-256:
+## Validation
 
-- Ten: `a1db7ad7da8027e6a6e79d185a6650ab9f14f489a5d873f88630071352224cf6`
-- Eight: `26b8303b075eb702ae4470b0bd9957cb03e8e35b7358b37638e4458e4084f35f`
+Tests cover actual TIMER5 scheduling with hardware mocks, nested rendering,
+control/MIDI cadence and the unchanged timeout; channel/packet order, clipping,
+ring wrap, underruns and snapshots; settings/backup/editor migration; audio,
+metronome and shared FX regressions. ASan/UBSan exercises eight/ten transport.
+The shared FX golden sound and per-core track output must stay unchanged.
+
+Twelve-channel capture and its low-rate prototype are outside this PR. At
+44.1 kHz/16-bit, twelve channels exceed the current single endpoint's packet
+limit; the discarded prototype is not a selectable firmware profile.

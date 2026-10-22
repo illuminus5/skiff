@@ -161,11 +161,6 @@ old descriptor identity. The default is `0`, retaining the normal dual-rate layo
 Use `FELUCCA_CDC_DEFAULT=0` for a new installation; existing saved USB SERIAL
 settings take precedence, so set USB SERIAL OFF on the device and close MENU.
 
-`FELUCCA_USB_12CH=1` selects experimental fixed six-track stereo capture at
-22.05 kHz/16-bit, enabling the macOS descriptor profile and replacing the two-slot
-routing controls. See [experiment limits and tests](docs/usb-12ch-experiment.md).
-The default is `0`; the hardware-tested stereo package is retained separately.
-
 `FELUCCA_USB_6CH=1` selects six independently mapped mono capture channels at
 44.1 kHz/16-bit, without resampling. SYSTEM exposes USB CH 1..6, default T1..T6
 mono. Current source uses PER8 settings (older six-channel packages use PER6/PER7); back up settings before
@@ -175,8 +170,13 @@ The simplified `1.4-fxonly` six-channel package adds just REV, CHOR and DELAY
 sources to the normal custom mapper. Click routing and compact FX are removed.
 See [simple FX routing](docs/usb-fx-routing.md) for controls and settings migration.
 
-For the ten-channel trial, additionally set `FELUCCA_USB_CHANNELS=10` and use
-release `1.4-usb10`. Set it to `8` for fallback release `1.4-usb8`. Both remain
+For ten-channel capture, additionally set `FELUCCA_USB_CHANNELS=10` and use
+release `1.4-usb10fast`. Set it to `8` for fallback release `1.4-usb8`. Both remain
 44.1 kHz/16-bit with custom routing and shared FX returns. See
-[ten-channel trial](docs/usb-ten-channel-routing.md) for installation, rollback,
+[ten-channel routing](docs/usb-ten-channel-routing.md) for installation, rollback,
 settings compatibility, and required physical acceptance checks.
+
+Ten-channel capture services EP4 on every existing 100-us TIMER5 tick. USB
+control/MIDI polling and the stereo/six/eight audio cadence remain at 2 kHz.
+The stream timeout remains 20 ms at either cadence. Twelve-channel capture
+is outside this implementation; mapped profiles support at most ten channels.

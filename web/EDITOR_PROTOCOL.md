@@ -1097,10 +1097,13 @@ offered. Old saved click/CMP routes normalize to OFF, while existing source IDs
 PER7 layout is retained for compatibility; legacy compact mode is disabled.
 There are still six USB channels at 44100 Hz/16-bit.
 
-### Eight/ten-channel experimental profiles
+### Eight/ten-channel profiles
 
 Mapped USB profiles can expose 6, 8 or 10 mono output slots at 44.1 kHz/16-bit.
 Existing channel IDs 20..25 remain unchanged; IDs 33..36 expose channels 7..10
 when built. IDs 26..32 remain retired. Discover MENU count dynamically. Source
 IDs stay unchanged, including 22 REV, 23 DELAY, 24 CHOR. PER8 retains all four
 extra assignments when switching between eight and ten channels.
+
+Ten-channel builds service audio at 10 kHz; MIDI/control service remains at
+2 kHz. The maximum selectable mapped channel count is ten.

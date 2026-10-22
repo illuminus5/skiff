@@ -143,6 +143,8 @@ run "TRS MIDI parser" "$OUT/midi_uart_test"
 $CC -O1 -w -DFELUCCA_USB_6CH=1 -Ibuild/gen -Ifirmware/src tests/fx_returns_test.c -lm -o "$OUT/fx_returns_test"
 run "shared FX: golden sound and isolated returns" "$OUT/fx_returns_test"
 
+run "USB service scheduling: TIMER5 normal/nested cadence and timeout" python3 tests/usb_service_schedule_test.py
+
 $CC -O1 -w tests/usb_6ch_test.c -lm -o "$OUT/usb_6ch_test"
 run "USB six-channel custom mapping and transport" "$OUT/usb_6ch_test"
 for channels in 6 8 10; do
@@ -155,9 +157,6 @@ for channels in 6 8 10; do
         run "USB $channels-channel: $test migration and control path" "$OUT/${test}_usb$channels"
     done
 done
-
-$CC -O1 -w tests/usb_12ch_test.c -lm -o "$OUT/usb_12ch_test"
-run "USB 12-channel experiment: filtering, channel order, packets, ring guards" "$OUT/usb_12ch_test"
 
 for cdc in 0 1; do
     $CC -O2 -w -DT_CDC=$cdc tests/usb_mac_compat_test.c -lm -o "$OUT/usb_mac_compat_$cdc"

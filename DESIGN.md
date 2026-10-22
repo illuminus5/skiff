@@ -491,9 +491,8 @@ asked first, as on the device. Nothing of these is pushed: the editor reads what
 ## Optional FM-1 multichannel USB capture
 
 Mapped USB builds retain normal local playback and six synth tracks, with 6, 8
-or 10 independently assignable mono capture slots at 44.1 kHz/16-bit. Eight
-channels have been reported working directly into a TX-6; ten failed in that
-setup. The upstream stereo build remains the default. Hold HOME > SYSTEM
+or 10 independently assignable mono capture slots at 44.1 kHz/16-bit. The upstream stereo build remains the default. Ten-channel audio
+services EP4 at 10 kHz; USB control/MIDI polling remains at 2 kHz. Hold HOME > SYSTEM
 exposes USB CH 1..N, following existing scrolling MENU behavior and editor
 discovery. Each offers OFF, master L/R/MONO, tracks 1..6 L/R/MONO, REV, CHOR
 and DELAY. Defaults are six tracks mono, then REV, CHOR, DELAY, OFF where

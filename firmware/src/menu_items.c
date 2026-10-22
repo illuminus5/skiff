@@ -12,7 +12,7 @@
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED, MI_PREVIEW,
        MI_KVEL, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_ROUTE,
        MI_LEARN, MI_LCLEAR, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_SERIAL, MI_RESTORE, MI_CPU, MI_CLK,
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
        MI_USB_LEFT, MI_USB_RIGHT,
 #if FELUCCA_USB_6CH
        MI_USB_3, MI_USB_4, MI_USB_5, MI_USB_6,
@@ -31,7 +31,7 @@ static const char *const KVEL_N[SMK_KV_N] = {"DYNAMIC", "SOFT", "HARD", "FIXED 6
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED,
        MI_PREVIEW, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_ROUTE,
        MI_LEARN, MI_LCLEAR, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_SERIAL, MI_RESTORE, MI_CPU, MI_CLK,
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
        MI_USB_LEFT, MI_USB_RIGHT,
 #if FELUCCA_USB_6CH
        MI_USB_3, MI_USB_4, MI_USB_5, MI_USB_6,
@@ -62,7 +62,7 @@ static const char *const MI_NAME[MI_COUNT] = {"THEME", "PLAYHEAD", "LARGE", "ANI
                                               "CLOCK", "MIDI IN", "MIDI LEARN", "LEARN CLEAR",
                                               "T1 CHANNEL", "T2 CHANNEL", "T3 CHANNEL", "T4 CHANNEL", "T5 CHANNEL", "T6 CHANNEL",
                                               "USB SERIAL", "RESTORE LAST", "CPU", "CPU CLOCK",
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
 #if FELUCCA_USB_6CH
                                               "USB CH 1", "USB CH 2", "USB CH 3", "USB CH 4", "USB CH 5", "USB CH 6",
 #if UAC_CHANNELS > 6
@@ -109,7 +109,7 @@ static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI,       /* (1.3) T1..T6 CHANNEL */
     MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM,                     /* USB SERIAL, RESTORE LAST, (Skiff U3) CPU,
                                                                              * (Skiff) CPU CLOCK (SYSTEM's seven scroll) */
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
     MTAB_SYSTEM, MTAB_SYSTEM,                                             /* USB capture source selection */
 #if FELUCCA_USB_6CH
     MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM,
@@ -200,7 +200,7 @@ static const menu_flag_t *menu_flag(uint32_t row)
 /* a row's value as 0..menu_n(row) - 1 in the order the menu steps it (LEDS: OFF DIM LO DIM HI INV, LEDS_MENU) */
 static uint32_t menu_n(uint32_t row)
 {
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
     if (row >= MI_USB_LEFT && row <= (FELUCCA_USB_6CH ? MI_USB_LEFT + UAC_CHANNELS - 1u : MI_USB_RIGHT)) return USB_SOURCE_N;
 #endif
     return row == MI_COLOR ? NPALETTES + (uint32_t)cpal_stored() :   /* ((Skiff #27) CUSTOM, while stored) */
@@ -223,7 +223,7 @@ static uint32_t menu_get(uint32_t row)
     if (f)
         return ((ui_prefs | (uint32_t)ui_rec_prefs << 8) & f->bit) != 0;
     switch (row) {
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
 #if !FELUCCA_USB_6CH
     case MI_USB_LEFT: case MI_USB_RIGHT: return usb_route_get(row - MI_USB_LEFT);
 #endif
@@ -256,7 +256,7 @@ static uint32_t menu_get(uint32_t row)
 }
 static const char *menu_vname(uint32_t row, uint32_t v)
 {
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
     if (row >= MI_USB_LEFT && row <= (FELUCCA_USB_6CH ? MI_USB_LEFT + UAC_CHANNELS - 1u : MI_USB_RIGHT)) {
         static const char *const names[USB_SOURCE_N] = {"OFF", "MASTER L", "MASTER R", "MASTER MONO",
             "T1 L", "T1 R", "T1 MONO", "T2 L", "T2 R", "T2 MONO", "T3 L", "T3 R", "T3 MONO",
@@ -341,7 +341,7 @@ static const char *menu_vname(uint32_t row, uint32_t v)
  * USB SERIAL when the menu has closed (usb_serial_apply). Saved by the caller (menu_close, the editor) */
 static void menu_put(uint32_t row, uint32_t v)
 {
-#if FELUCCA_USB_ROUTING && !FELUCCA_USB_12CH
+#if FELUCCA_USB_ROUTING
     if (row >= MI_USB_LEFT && row <= (FELUCCA_USB_6CH ? MI_USB_LEFT + UAC_CHANNELS - 1u : MI_USB_RIGHT)) {
 #if FELUCCA_USB_6CH
         usb_six_put(row-MI_USB_LEFT,v);
