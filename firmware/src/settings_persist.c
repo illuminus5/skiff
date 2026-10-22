@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Shared PER4 layout: each feature updates only its own fields, preserving
+#include "usb_routes.h"
+/* Shared PER5 layout: each feature updates only its own fields, preserving
  * the other feature's saved preferences when either is built independently.
- * PER1/PER2 are upstream; PER3 added bold; PER4 added favorites.
+ * PER1/PER2 are upstream; PER3 added bold; PER4 added favorites; PER5 adds routing.
  * palette: UI_PAL_TAG + index; an old id (below 20, earlier firmware) is migrated on import.
  * bold: no longer used (one font weight); kept as it was saved, unless it holds the HOLD setting (panel.c).
  * zoom: no longer used (the large readout); kept as it was saved, unless it holds the LEDS setting (panel.c).
@@ -18,17 +19,37 @@ typedef struct {
     panel_t panel;
     uint32_t bold;
     struct { uint8_t factory[16][32]; uint32_t user, filter; } favorites;
+    uint32_t usb_routes;
+#if FELUCCA_USB_6CH
+    uint32_t usb_six_routes, compact_config, compact_track[6];
+    uint32_t usb_extra_routes;
+#endif
 } persist_t;
-#define PERSIST_MAGIC 0x50455234u
+#if FELUCCA_USB_6CH
+#define PERSIST_MAGIC 0x50455238u
+#define PERSIST_V7_SIZE (sizeof(persist_t) - 4u)
+#define PERSIST_V6_SIZE (sizeof(persist_t) - 32u)
+#define PERSIST_V5_SIZE (sizeof(persist_t) - 36u)
+#else
+#define PERSIST_MAGIC 0x50455235u
+#define PERSIST_V5_SIZE sizeof(persist_t)
+#define PERSIST_V6_SIZE sizeof(persist_t)
+#define PERSIST_V7_SIZE sizeof(persist_t)
+#endif
+#define PERSIST_V4_SIZE (PERSIST_V5_SIZE - 4u)
 
 /* Normalize in place; 1 = current, 2 = migrated, 0 = invalid. */
 static int settings_import(persist_t *p, int n)
 {
     int current = n == (int)sizeof *p && p->magic == PERSIST_MAGIC;
-    int old3 = n == (int)(sizeof *p - sizeof p->favorites) && p->magic == 0x50455233u;
-    int old2 = n == (int)(sizeof *p - sizeof p->favorites - sizeof p->bold) && p->magic == 0x50455232u;
+    int old7 = FELUCCA_USB_6CH && n == (int)PERSIST_V7_SIZE && p->magic == 0x50455237u;
+    int old6 = FELUCCA_USB_6CH && n == (int)PERSIST_V6_SIZE && p->magic == 0x50455236u;
+    int old5 = FELUCCA_USB_6CH && n == (int)PERSIST_V5_SIZE && p->magic == 0x50455235u;
+    int old4 = n == (int)PERSIST_V4_SIZE && p->magic == 0x50455234u;
+    int old3 = n == (int)(PERSIST_V4_SIZE - sizeof p->favorites) && p->magic == 0x50455233u;
+    int old2 = n == (int)(PERSIST_V4_SIZE - sizeof p->favorites - sizeof p->bold) && p->magic == 0x50455232u;
     int old1 = n == (int)(8u + sizeof(panel_t)) && p->magic == 0x50455231u;
-    if (!(current || old3 || old2 || old1)) return 0;
+    if (!(current || old7 || old6 || old5 || old4 || old3 || old2 || old1)) return 0;
     if (old1) {
         panel_t old;
         memcpy(&old, (uint8_t *)p + 8, sizeof old);
@@ -36,7 +57,18 @@ static int settings_import(persist_t *p, int n)
         p->lowcut = p->zoom = 0;
     }
     if (old1 || old2) p->bold = 0;
-    if (!current) memset(&p->favorites, 0, sizeof p->favorites);
+    if (old1 || old2 || old3) memset(&p->favorites, 0, sizeof p->favorites);
+    p->usb_routes = (current || old7 || old5 || old6) ? usb_routes_valid(p->usb_routes) : USB_ROUTES_DEFAULT;
+    usb_routes = p->usb_routes;
+#if FELUCCA_USB_6CH
+    p->usb_six_routes = (current || old7 || old6) ? usb_six_valid(p->usb_six_routes) : USB_SIX_DEFAULT;
+    usb_six_routes = p->usb_six_routes;
+    p->usb_extra_routes = current ? usb_extra_valid(p->usb_extra_routes) : USB_EXTRA_DEFAULT;
+    usb_extra_routes = p->usb_extra_routes;
+    p->compact_config=USB_COMPACT_DEFAULT; /* retired compact mode stays disabled */
+    usb_compact_config=p->compact_config;
+    for(uint32_t t=0;t<6;t++) {p->compact_track[t]=(current || old7)?usb_cf_track_valid(p->compact_track[t]):USB_CF_TRACK_DEFAULT;usb_cf_track[t]=p->compact_track[t];}
+#endif
     {   /* CLICK, CLICK LEVEL, COUNT-IN (ui.c ui_rec_prefs): two bits each, 3 is no value: the default (0) */
         uint32_t b = p->favorites.factory[15][28], f;
         for (f = 0; f < 3u; f++)
@@ -88,6 +120,13 @@ static int settings_import(persist_t *p, int n)
 static void settings_export(persist_t *p)
 {
     p->magic = PERSIST_MAGIC;
+    p->usb_routes = usb_routes;
+#if FELUCCA_USB_6CH
+    p->usb_six_routes = usb_six_routes;
+    p->usb_extra_routes = usb_extra_routes;
+    p->compact_config=USB_COMPACT_DEFAULT;
+    for(uint32_t t=0;t<6;t++)p->compact_track[t]=usb_cf_track[t];
+#endif
     p->palette = palette_to_stored(settings.palette);
     p->lowcut = settings.lowcut;
     p->zoom = settings.zoom = leds_to_stored(settings.zoom, settings_leds);

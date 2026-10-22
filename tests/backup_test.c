@@ -254,6 +254,64 @@ int main(void)
     bad += check("a wrong CRC is refused before any write",
                  put_all(1, &ps, sizeof ps, st_crc32(&ps, sizeof ps) ^ 1u) == 2u && erases == before);
 
+    ps.magic = 0x50455234u;
+    ps.usb_routes = 0xffffu;
+    bad += check("PER4 settings backup migrates to master stereo",
+                 put_all(1, &ps, PERSIST_V4_SIZE, st_crc32(&ps, PERSIST_V4_SIZE)) == 0 &&
+                 usb_routes == USB_ROUTES_DEFAULT);
+    ps.magic = PERSIST_MAGIC;
+    ps.usb_routes = 6u | 9u << 8;
+    bad += check("PER5 backup restores independent USB routes",
+                 put_all(1, &ps, sizeof ps, st_crc32(&ps, sizeof ps)) == 0 && usb_routes == ps.usb_routes);
+    before = erases;
+    ps.usb_routes = 0xffffu;
+    bad += check("invalid USB routes refuse backup before flash write",
+                 put_all(1, &ps, sizeof ps, st_crc32(&ps, sizeof ps)) == 2u && erases == before);
+
+#if FELUCCA_USB_6CH
+    ps.magic=0x50455235u;ps.usb_routes=4u|5u<<8;
+    bad += check("PER5 migrates into six-channel settings without changing stereo routes",
+        put_all(1,&ps,PERSIST_V5_SIZE,st_crc32(&ps,PERSIST_V5_SIZE))==0 &&
+        usb_routes==ps.usb_routes && usb_six_routes==USB_SIX_DEFAULT);
+    ps.magic=PERSIST_MAGIC;ps.usb_six_routes=USB_SIX_DEFAULT & ~31u;
+    bad += check("six-channel mapping backup roundtrip",
+        put_all(1,&ps,sizeof ps,st_crc32(&ps,sizeof ps))==0 && usb_six_get(0)==0);
+    ps.magic=0x50455237u;
+    bad += check("PER7 backup adds default extra channel assignments",
+        put_all(1,&ps,PERSIST_V7_SIZE,st_crc32(&ps,PERSIST_V7_SIZE))==0 && usb_extra_routes==USB_EXTRA_DEFAULT);
+    ps.magic=PERSIST_MAGIC;ps.usb_extra_routes=4u|20u<<5|23u<<10|24u<<15;
+    bad += check("PER8 extra channel assignments roundtrip",
+        put_all(1,&ps,sizeof ps,st_crc32(&ps,sizeof ps))==0 && usb_extra_routes==ps.usb_extra_routes);
+    before=erases;ps.usb_extra_routes=1u<<20;
+    bad += check("extra route reserved bits rejected before write",
+        put_all(1,&ps,sizeof ps,st_crc32(&ps,sizeof ps))==2 && erases==before);
+    ps.usb_extra_routes=USB_EXTRA_DEFAULT;
+    before=erases;ps.usb_six_routes=0xffffffffu;
+    bad += check("invalid six-channel backup does not write",
+        put_all(1,&ps,sizeof ps,st_crc32(&ps,sizeof ps))==2 && erases==before);
+#endif
+#if FELUCCA_USB_6CH
+    ps.magic=0x50455236u;ps.usb_six_routes=USB_SIX_DEFAULT;
+    bad += check("PER6 migration preserves six routes, shared mode and default compact parameters",
+        put_all(1,&ps,PERSIST_V6_SIZE,st_crc32(&ps,PERSIST_V6_SIZE))==0 && usb_compact_config==USB_COMPACT_DEFAULT && usb_cf_track[0]==USB_CF_TRACK_DEFAULT);
+    ps.magic=PERSIST_MAGIC;ps.compact_config=1u;
+    for(uint32_t t=0;t<6;t++)ps.compact_track[t]=USB_CF_TRACK_DEFAULT;
+    ps.compact_track[4]=185u|5u<<8|99u<<16|10u<<24;
+    bad += check("legacy PER7 parameter fields retain backup compatibility",
+        put_all(1,&ps,sizeof ps,st_crc32(&ps,sizeof ps))==0 && usb_cf_track[4]==ps.compact_track[4]);
+    before=erases;ps.compact_track[0]=0xffffffffu;
+    bad += check("invalid compact parameter backup refuses flash write",
+        put_all(1,&ps,sizeof ps,st_crc32(&ps,sizeof ps))==2 && erases==before);
+#endif
+#if FELUCCA_USB_6CH
+    ps.magic=PERSIST_MAGIC;ps.compact_config=1u;
+    for(uint32_t t=0;t<6;t++)ps.compact_track[t]=USB_CF_TRACK_DEFAULT;
+    ps.usb_six_routes=25u|26u<<5|22u<<10|23u<<15|24u<<20|21u<<25;
+    bad += check("retired click/CMP sources restore as OFF, FX assignments stay intact",
+        put_all(1,&ps,sizeof ps,st_crc32(&ps,sizeof ps))==0 &&
+        usb_six_get(0)==0 && usb_six_get(1)==0 && usb_six_get(2)==22 && usb_six_get(3)==23 && usb_six_get(4)==24 && usb_six_get(5)==21 && usb_compact_config==0);
+#endif
+    before=erases;
     /* malformed requests */
     bad += check("an unknown object id is refused", put_begin(8, sizeof ps, 0) == 1u);
     bad += check("a project of the wrong length is refused", put_begin(2, sizeof(project_store_t) - 4u, 0) == 1u);

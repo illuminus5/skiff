@@ -118,9 +118,27 @@ static uint32_t ed_bk_commit(void)
         }
         obj = OBJ_PROJECT0 + ed_bk_id - 2u;
     } else if (ed_bk_id == 1u) {
-        const persist_t *p = (const persist_t *)raw;
-        if (ed_bk_len != sizeof *p || p->magic != PERSIST_MAGIC || !palette_stored_ok(p->palette) ||
+        persist_t *p = (persist_t *)raw;
+        int old7 = FELUCCA_USB_6CH && ed_bk_len == PERSIST_V7_SIZE && p->magic == 0x50455237u;
+        int old6 = FELUCCA_USB_6CH && ed_bk_len == PERSIST_V6_SIZE && p->magic == 0x50455236u;
+        int old5 = FELUCCA_USB_6CH && ed_bk_len == PERSIST_V5_SIZE && p->magic == 0x50455235u;
+        int old4 = ed_bk_len == PERSIST_V4_SIZE && p->magic == 0x50455234u;
+        if ((!old4 && !old5 && !old6 && !old7 && (ed_bk_len != sizeof *p || p->magic != PERSIST_MAGIC)) || !palette_stored_ok(p->palette) ||
             p->lowcut > 2u || !leds_stored_ok(p->zoom) || !hold_stored_ok(p->bold) || p->favorites.filter > 1u || !ed_bk_panel_valid(&p->panel)) return 2;
+        if (old4) { p->magic = PERSIST_MAGIC; p->usb_routes = USB_ROUTES_DEFAULT; ed_bk_len = sizeof *p; }
+#if FELUCCA_USB_6CH
+        if (old4 || old5) { p->magic=PERSIST_MAGIC; p->usb_six_routes=USB_SIX_DEFAULT; ed_bk_len=sizeof *p; }
+        if (old4 || old5 || old6) {p->magic=PERSIST_MAGIC;p->compact_config=USB_COMPACT_DEFAULT;for(uint32_t t=0;t<6;t++)p->compact_track[t]=USB_CF_TRACK_DEFAULT;ed_bk_len=sizeof *p;}
+        if (old4 || old5 || old6 || old7) {p->magic=PERSIST_MAGIC;p->usb_extra_routes=USB_EXTRA_DEFAULT;ed_bk_len=sizeof *p;}
+        if(p->usb_extra_routes & ~0xfffffu)return 2;
+        p->usb_extra_routes=usb_extra_valid(p->usb_extra_routes);
+        if(p->compact_config!=usb_compact_valid(p->compact_config))return 2;
+        p->compact_config=USB_COMPACT_DEFAULT;
+        for(uint32_t t=0;t<6;t++)if(p->compact_track[t]!=usb_cf_track_valid(p->compact_track[t]))return 2;
+        if(p->usb_six_routes & 0xc0000000u)return 2;
+        p->usb_six_routes=usb_six_valid(p->usb_six_routes);
+#endif
+        if (p->usb_routes != usb_routes_valid(p->usb_routes)) return 2;
         obj = OBJ_SETTINGS;
     } else if (ed_bk_id == 6u || ed_bk_id == 7u) {
         const up_bank_t *p = (const up_bank_t *)raw;
@@ -186,7 +204,7 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)
         if (n != 12u || a[6] > 15u || a[11] > 15u) return 1;
         uint32_t len = ed_bk_r32(a + 2);
         if (len > ED_BK_MAX || (a[1] == 0u && !proj_store_len(len)) ||
-            (a[1] == 1u && len != sizeof(persist_t)) ||
+            (a[1] == 1u && len != sizeof(persist_t) && len != PERSIST_V4_SIZE && !(FELUCCA_USB_6CH && (len == PERSIST_V5_SIZE || len == PERSIST_V6_SIZE || len == PERSIST_V7_SIZE))) ||
             (a[1] >= 2u && a[1] <= 5u && len && !proj_store_len(len)) ||
             ((a[1] == 6u || a[1] == 7u) && len && len != sizeof(up_bank_t)) ||
             (a[1] == 8u && len && len != sizeof(fm6_bank_t)) || (a[1] == 9u && len && len != sizeof(upf_t)) ||

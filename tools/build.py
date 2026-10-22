@@ -118,7 +118,8 @@ def generate():
     for old in ("felucca_font.h", "felucca_icons.h"):     # headers of the bitmap font and icon atlas
         (GEN / old).unlink(missing_ok=True)
     tools = SRC / "tools"
-    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "barlow-condensed"],
+    font_args = ["--huff", "S,M,L,V"] if os.environ.get("FELUCCA_USB_ROUTING", "1") != "0" else []
+    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "barlow-condensed", *font_args],
             [tools / "gen_aa_icons.py", GEN / "ui_icons.h"],
             [tools / "gen_aa_keycaps.py", GEN / "ui_keycaps.h"],
             [tools / "gen_ui_palettes.py", GEN / "ui_palettes.h"],
@@ -217,10 +218,14 @@ def build_app():
     flags = [*CFLAGS, *BOARD_DEFS[BOARD], "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
-                 "FELUCCA_CDC_DEFAULT", "FELUCCA_CPU2"):
+                 "FELUCCA_USB_6CH", "FELUCCA_UAC_MAC_COMPAT", "FELUCCA_CDC_DEFAULT", "FELUCCA_CPU2", "FELUCCA_USB_TRACE", "FELUCCA_USB_ROUTING"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
+    channels=os.environ.get("FELUCCA_USB_CHANNELS")
+    if channels is not None:
+        if channels not in ("6","8","10"): raise SystemExit("FELUCCA_USB_CHANNELS must be 6, 8 or 10")
+        flags.append(f"-DFELUCCA_USB_CHANNELS={channels}")
     v = os.environ.get("FELUCCA_USB_LAYOUT")   # firmware/src/usb.c: how the USB composite presents itself (#67), 0..3
     if v in ("0", "1", "2", "3"):
         flags.append(f"-DFELUCCA_USB_LAYOUT={v}")

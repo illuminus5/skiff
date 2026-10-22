@@ -39,9 +39,10 @@ static double contrast(uint16_t fg, uint16_t bg)
 
 int main(int argc, char **argv)
 {
-    static const aag_t pg[1] = {{0, 48, 0, 0, 3, 1}};   /* one glyph 'A': 3 px, alpha 0, 8, 15 */
+    static const aag_t pg[1] = {{0, 0, 0, 3, 1}};   /* one glyph 'A': 3 px, alpha 0, 8, 15 */
     static const uint8_t pd[] = {0x08, 0xf0};
-    const aafont_t probe = {1, 1, 'A', 'A', 0, 0, pg, pd, 0, 0, 0};
+    static const uint16_t advances[] = {48};
+    const aafont_t probe = {.h=1, .asc=1, .first='A', .last='A', .g=pg, .data=pd, .adv=advances};
     double worst = 100;
     /* (Skiff, R1) THEME: SKIFF the default, HI-CON and PAPER, CRYPT, NEON and QUARK (their own widgets too) */
     assert(NPALETTES == 6u && !strcmp(UI_PALETTES[5].name, "QUARK") && UI_QUARK_INDEX == 5u && !strcmp(UI_PALETTES[0].name, "SKIFF") && UI_SKIFF_INDEX == 0u &&

@@ -45,8 +45,11 @@ def parse(path):
         arr = lambda n: [int(v, 0) for v in re.search(r"AF_%s_%s\[\d+\] = \{([^}]*)\}" % (name, n), t)
                          .group(1).replace("\n", " ").split(",") if v.strip()]
         g = [tuple(int(v) for v in e.split(",")) for e in
-             re.findall(r"\{(-?\d+, -?\d+, -?\d+, -?\d+, -?\d+, -?\d+)\}",
+             re.findall(r"\{(-?\d+, -?\d+, -?\d+, -?\d+, -?\d+(?:, -?\d+)?)\}",
                         re.search(r"AF_%s_G\[\d+\] = \{(.*?)\n\};" % name, t, re.S).group(1))]
+        if len(f) > 13:
+            advances, psh = arr("ADV"), int(f[11])
+            g = [(e[0], advances[i >> psh], *e[1:]) for i, e in enumerate(g)]
         kern = {}
         if f[8] != "0":
             kern = dict(zip(arr("KERN"), arr("KD")))

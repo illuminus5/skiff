@@ -28,6 +28,31 @@ static void theme_apply(void) { palette_set(settings.palette); }   /* (ui.c's: T
 int main(void)
 {
     persist_t original = {0}, p;
+    {
+        persist_t old = {0};
+        old.magic = 0x50455234u; old.panel = PANEL_DEFAULT; old.favorites.user = 7;
+        assert(settings_import(&old, PERSIST_V4_SIZE) == 2);
+        assert(old.usb_routes == USB_ROUTES_DEFAULT && old.favorites.user == 7);
+        usb_routes = 6u | 9u << 8;
+        settings_export(&old);
+        usb_routes = 0;
+        assert(settings_import(&old, sizeof old) == 1 && usb_routes == (6u | 9u << 8));
+        old.usb_routes = 0xffffu;
+        assert(settings_import(&old, sizeof old) == 1 && usb_routes == USB_ROUTES_DEFAULT);
+    }
+#if FELUCCA_USB_6CH
+    {
+        persist_t q={0};q.magic=0x50455237u;q.usb_six_routes=USB_SIX_DEFAULT;
+        q.compact_track[0]=USB_CF_TRACK_DEFAULT;
+        assert(settings_import(&q,PERSIST_V7_SIZE)==2);
+        assert(usb_six_routes==USB_SIX_DEFAULT && usb_extra_routes==USB_EXTRA_DEFAULT);
+        usb_extra_routes=4u|20u<<5|23u<<10|24u<<15;
+        settings_export(&q);usb_extra_routes=0;
+        assert(settings_import(&q,sizeof q)==1 && usb_extra_routes==q.usb_extra_routes);
+        q.usb_extra_routes=0xffffffffu;
+        assert(settings_import(&q,sizeof q)==1 && usb_extra_routes==0);
+    }
+#endif
     original.magic = PERSIST_MAGIC;
     original.palette = 4; original.bold = original.lowcut = original.zoom = 1;   /* old id 4: MONO, gone: SKIFF */
     original.panel = PANEL_DEFAULT; original.panel.enc[0] = 3;
@@ -80,11 +105,11 @@ int main(void)
     assert(p.favorites.factory[8][0] == 1 && p.favorites.filter == 1);
     assert(p.panel.enc[0] == 3); /* saving one feature preserves the other */
     p = original; p.magic = 0x50455233u;
-    assert(settings_import(&p, sizeof p - sizeof p.favorites) == 2);
+    assert(settings_import(&p, PERSIST_V4_SIZE - sizeof p.favorites) == 2);
     assert(p.bold == 1 && !p.favorites.user && !p.favorites.filter);
     settings_export(&p); assert(p.bold == 1); /* favorites-only preserves PER3 font */
     p = original; p.magic = 0x50455232u;
-    assert(settings_import(&p, sizeof p - sizeof p.favorites - sizeof p.bold) == 2);
+    assert(settings_import(&p, PERSIST_V4_SIZE - sizeof p.favorites - sizeof p.bold) == 2);
     assert(!p.bold && !p.favorites.user && settings.zoom && panel.enc[0] == 3);
     p = original; p.magic = 0x50455231u;
     memcpy((uint8_t *)&p + 8, &PANEL_DEFAULT, sizeof(panel_t));
@@ -156,7 +181,7 @@ int main(void)
         persist_t q;
         uint32_t b;
         p = original; p.magic = 0x50455233u;            /* PER3 (no favorites): 0 */
-        assert(settings_import(&p, sizeof p - sizeof p.favorites) == 2 && favorites.factory[15][28] == 0u);
+        assert(settings_import(&p, PERSIST_V4_SIZE - sizeof p.favorites) == 2 && favorites.factory[15][28] == 0u);
         for (b = 0; b < 256u; b++) {
             uint32_t f, want = b;
             for (f = 0; f < 3u; f++)
@@ -172,11 +197,31 @@ int main(void)
          * older record = ON; set = OFF, kept as saved with the other flags */
         persist_t q;
         p = original; p.magic = 0x50455233u;
-        assert(settings_import(&p, sizeof p - sizeof p.favorites) == 2 && !(favorites.factory[15][30] & 128u));
+        assert(settings_import(&p, PERSIST_V4_SIZE - sizeof p.favorites) == 2 && !(favorites.factory[15][30] & 128u));
         p = original; p.favorites.factory[15][30] = 128u | 64u | 1u;
         assert(settings_import(&p, sizeof p) == 1 && favorites.factory[15][30] == (128u | 64u | 1u));
         q = p; settings_export(&q); assert(q.favorites.factory[15][30] == (128u | 64u | 1u));
         p = original; assert(settings_import(&p, sizeof p) == 1);
+    }
+#endif
+#if FELUCCA_USB_6CH
+    {
+        persist_t q=original;
+        q.magic=0x50455235u; q.usb_routes=4u | 5u<<8;
+        assert(settings_import(&q,PERSIST_V5_SIZE)==2);
+        assert(usb_routes==(4u|5u<<8) && usb_six_routes==USB_SIX_DEFAULT);
+        q.magic=0x50455236u;q.usb_six_routes=USB_SIX_DEFAULT;
+        assert(settings_import(&q,PERSIST_V6_SIZE)==2 && usb_compact_config==USB_COMPACT_DEFAULT);
+        usb_compact_config=1u;
+        usb_cf_track[3]=185u|5u<<8|99u<<16|10u<<24;
+        usb_six_put(0,3);usb_six_put(5,20);
+        settings_export(&q);
+        assert(q.usb_six_routes==usb_six_routes && q.compact_config==USB_COMPACT_DEFAULT && q.compact_track[3]==usb_cf_track[3]);
+        usb_six_routes=USB_SIX_DEFAULT;
+        assert(settings_import(&q,sizeof q)==1 && usb_six_get(0)==3 && usb_six_get(5)==20);
+        assert(usb_compact_config==USB_COMPACT_DEFAULT);
+        q.usb_six_routes=0xffffffffu;
+        assert(settings_import(&q,sizeof q)==1 && usb_six_routes==0);
     }
 #endif
     assert(settings_import(&p, 3) == 0 && settings_import(&p, -1) == 0);

@@ -129,7 +129,7 @@ static int32_t ref_text(int32_t x, int32_t y, const aafont_t *f, const char *s, 
                 int32_t px = x + (int32_t)floor(pos / 16.0) + g->bx + (int32_t)gx, py = y + g->by + (int32_t)gy;
                 if (v && (uint32_t)px < W && (uint32_t)py < H) ref[py * W + px] = v == 15u ? fg : rv[v];
             }
-        pen += g->adv;
+        pen += f->adv[ref_gi(f, c)];
         prev = c;
     }
     return x + ((pen + 8) >> 4);

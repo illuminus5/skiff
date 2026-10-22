@@ -487,3 +487,18 @@ asked first, as on the device. Nothing of these is pushed: the editor reads what
 
 **Still open:**
 - the 20 MHz LCD clock, `LCD_BAUD=2`, to try on hardware.
+
+## Optional FM-1 multichannel USB capture
+
+Mapped USB builds retain normal local playback and six synth tracks, with 6, 8
+or 10 independently assignable mono capture slots at 44.1 kHz/16-bit. The upstream stereo build remains the default. Ten-channel audio
+services EP4 at 10 kHz; USB control/MIDI polling remains at 2 kHz. Hold HOME > SYSTEM
+exposes USB CH 1..N, following existing scrolling MENU behavior and editor
+discovery. Each offers OFF, master L/R/MONO, tracks 1..6 L/R/MONO, REV, CHOR
+and DELAY. Defaults are six tracks mono, then REV, CHOR, DELAY, OFF where
+slots exist. Assigning L and R uses two slots. Track sources include inserts
+(including DIST), not shared returns; FX sources are shared wet mono returns.
+No separate DIST, click or compressor return is introduced. Metronome remains
+local. Settings reset restores this profile's defaults; PER8 retains all four
+extra assignments when switching between eight and ten channels. This is
+device-to-host capture only; there is no USB audio return.
