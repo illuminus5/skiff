@@ -8,7 +8,8 @@
  * each glyph is rasterised at 1 << psh horizontal phases (S M 4, L 2: drawn at a pen of +0, +1/4 .. px);
  * cv_text takes the phase that puts it within a phase step of its true place. Blending uses a 16-entry
  * ramp per (ink, background) pair, cached, so a pixel costs a nibble read and a store. Colours come from the theme tokens. */
-typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
+/* Generated bounds: bx -4..3, by 0..31. Compact, lossless glyph metadata. */
+typedef struct __attribute__((packed)) { uint16_t off; signed char bx:3; unsigned char by:5; uint8_t bw, bh; } aag_t;
 typedef struct {
     uint8_t h, asc, first, last, nex;   /* line height, baseline; ASCII range; extras */
     uint16_t nk;                        /* kerning pairs */
@@ -19,6 +20,7 @@ typedef struct {
     const uint8_t *ex;                  /* codes of the extra glyphs */
     uint8_t psh;                        /* log2 of the phases per glyph: g[i << psh] .. g[(i << psh) + phases - 1] */
     const uint8_t *hc;                  /* data's Huffman code (cv_alpha_hc), 0 = 2 px per byte (cv_alpha) */
+    const uint16_t *adv;                /* one advance per glyph, shared across its horizontal phases */
 } aafont_t;
 typedef struct { const char *name; uint16_t bg, surf, text, theme, accent; } ui_pal_t;
 typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
@@ -604,7 +606,7 @@ static int32_t text_w(const aafont_t *f, const char *s)
         uint32_t c = fold(f, (uint8_t)*s);
         if (prev)
             pen += kern(f, prev, c);
-        pen += f->g[glyph(f, c)].adv;
+        pen += f->adv[glyph(f, c) >> f->psh];
         prev = c;
     }
     return (pen + 8) >> 4;
@@ -616,12 +618,12 @@ static int32_t text_run(int32_t x, int32_t y, const aafont_t *f, const char *s, 
     const int32_t step = 16 >> f->psh;
     uint32_t prev = 0;
     for (; *s; s++) {
-        uint32_t c = fold(f, (uint8_t)*s);
+        uint32_t c = fold(f, (uint8_t)*s), gi = glyph(f, c);
         const aag_t *g;
         int32_t pos, d0, d1;
         if (prev)
             pen += kern(f, prev, c);
-        g = &f->g[glyph(f, c)];
+        g = &f->g[gi];
         if (f->psh && g[1].off != g->off) {
             pos = pen - (pen & (step - 1));          /* the phase position at or left of the pen */
             d0 = pos - pen - err;                    /* .. and the one right of it: which keeps the gap truer */
@@ -646,7 +648,7 @@ static int32_t text_run(int32_t x, int32_t y, const aafont_t *f, const char *s, 
             if (GFX_HOOKS && gy < y0) y0 = gy;       /* (the rows: for the host's lint only) */
             if (GFX_HOOKS && gy + g->bh > y1) y1 = gy + g->bh;
         }
-        pen += g->adv;
+        pen += f->adv[gi >> f->psh];
         prev = c;
     }
     bb[0] = x0;
