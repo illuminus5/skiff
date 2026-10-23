@@ -203,17 +203,24 @@ async def main(args):
         producer.cancel()
         await asyncio.gather(producer, return_exceptions=True)
 
-if __name__ == '__main__':
+def parse_args(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument('--mock', action='store_true', help='Calibration pixels; no hardware connection')
     ap.add_argument('--port', default='Felucca', help='Unique MIDI port name substring')
-    ap.add_argument('--bulk', action='store_true', help='Experimental dedicated CDC pixel stream')
+    transport = ap.add_mutually_exclusive_group()
+    transport.add_argument('--bulk', dest='bulk', action='store_true', help='Use CDC pixel streaming (default)')
+    transport.add_argument('--midi', dest='bulk', action='store_false', help='Use the slower MIDI-only firmware fallback')
+    ap.set_defaults(bulk=True)
     ap.add_argument('--diagnose', action='store_true', help='Print bulk throughput and decode timing once per second')
     ap.add_argument('--serial', default='auto', help='CDC device path; auto selects a unique FM-1 VID/PID')
     ap.add_argument('--listen-port', type=int, default=8787)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     if not 1024 <= args.listen_port <= 65535:
         ap.error('listen port must be 1024..65535')
+    return args
+
+if __name__ == '__main__':
+    args = parse_args()
     try:
         asyncio.run(main(args))
     except KeyboardInterrupt:

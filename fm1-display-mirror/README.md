@@ -35,7 +35,7 @@ Python 3.10+ is required. From the repository root:
 ```sh
 python3 -m venv fm1-display-mirror/.venv
 fm1-display-mirror/.venv/bin/python -m pip install -r fm1-display-mirror/requirements.txt
-fm1-display-mirror/.venv/bin/python fm1-display-mirror/bridge/server.py --bulk --diagnose
+fm1-display-mirror/.venv/bin/python fm1-display-mirror/bridge/server.py
 ```
 
 Open the private URL printed by the bridge. The server binds only to
@@ -62,7 +62,7 @@ changed screens. An unchanged screen sends no frames, so 0 FPS alone does not
 indicate a disconnect.
 
 A slower diagnostic MIDI-only fallback builds without `--bulk`, producing
-`build/skiff-1.4-mirror.fwsc`. Run the viewer without `--bulk` for that profile.
+`build/skiff-1.4-mirror.fwsc`. Run the viewer with `--midi` for that profile.
 It omits CDC by default and uses bounded SysEx replies. Bulk is recommended for
 animation. Hardware access uses pyserial; MIDI fallback and optional stage timing
 use python-rtmidi. Mock mode uses only the Python standard library.
@@ -145,3 +145,7 @@ a clean full-suite pass.
 The broad ASan/UBSan UI run also stopped making progress and was terminated
 after more than twelve minutes at full CPU. Dedicated mirror sanitizer tests
 passed; the broad UI sanitizer result remains incomplete.
+
+Bulk USB is the default bridge transport. `--bulk` remains accepted for existing
+commands; use `--midi` explicitly for the slower MIDI-only firmware. Add
+`--diagnose` when troubleshooting to print performance and device-stage timings.

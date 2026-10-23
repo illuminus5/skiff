@@ -8,8 +8,21 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'bridge'))
 from protocol import *
-from server import Hub, Server, full_transaction
+from server import Hub, Server, full_transaction, parse_args
 from adapters.skiff import identify, hardware
+
+class CliTests(unittest.TestCase):
+    def test_default_bulk_without_diagnostics(self):
+        args = parse_args([])
+        self.assertTrue(args.bulk)
+        self.assertFalse(args.diagnose)
+
+    def test_explicit_transport_and_diagnostics(self):
+        self.assertTrue(parse_args(['--bulk']).bulk)
+        self.assertFalse(parse_args(['--midi']).bulk)
+        self.assertTrue(parse_args(['--diagnose']).diagnose)
+        args = parse_args(['--mock'])
+        self.assertTrue(args.mock)
 
 class ProtocolTests(unittest.TestCase):
     def decoder(self):
