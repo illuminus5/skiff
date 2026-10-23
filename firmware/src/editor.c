@@ -59,6 +59,9 @@ static void ed_send(void)
     ed_out[ed_n++] = 0xF7;
     ota_wire_send(ed_out, ed_n);
 }
+#if FELUCCA_DISPLAY_MIRROR
+#include "../../fm1-display-mirror/firmware/skiff/midi_adapter.h"
+#endif
 static int32_t ed_rv(const uint8_t *p) { return (int32_t)(p[0] | p[1] << 7) - 8192; }
 
 /* ---- user sample slots (eng_sample.c): flash SMP_USER_BASE + k * SMP_USER_SIZE ----
@@ -498,6 +501,9 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     uint32_t cmd = f[3], i;
     const uint8_t *a = f + 4;
     uint32_t na = n - 4u;
+#if FELUCCA_DISPLAY_MIRROR
+    if (cmd == 83u) { dm_request(a, na); return; }
+#endif
     int16_t *vp;
     const param_desc_t *d;
     if (!ed_args_ok(cmd, a, na))

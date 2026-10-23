@@ -7,6 +7,7 @@
  * to its source buffer (lcd_sync), waits for it, so the main loop works
  * while the last strip of a frame goes out. */
 /* pins and SPI1: hal/fm1_lcd_hw.h */
+#include "display_mirror.h"
 #ifndef LCD_BAUD
 #define LCD_BAUD 4u                /* lsb/(BAUD+1): 4 = 12 MHz */
 #endif
@@ -75,6 +76,7 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
         w = 240u - x;
     if (y + h > 240u)
         h = 240u - y;
+    DISPLAY_MIRROR_FILL(x, y, w, h, c);
     lcd_sync();
     k = 240u / w * w;                       /* whole rows per transfer (narrow fills: one DMA) */
     for (i = 0; i < k; i++)
@@ -91,6 +93,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 {
     if (!w || !h)
         return;
+    DISPLAY_MIRROR_BLIT(x, y, w, h, px);
     lcd_window(x, y, x + w - 1u, y + h - 1u);
     lcd_data(px, w * h * 2u);
 }
@@ -136,6 +139,10 @@ static void lcd_init(void)
  * asleep, but the UI redraws everything before it shows (ui.force) */
 static void lcd_power(uint32_t s)
 {
+#if FELUCCA_DISPLAY_MIRROR
+    if (s == 0u && dm.enabled)
+        dm_fail();                  /* hide stale pixels until the panel redraws */
+#endif
     if (s == 1u) {
         lcd_cmd(0x11);                             /* SLPOUT */
         return;

@@ -55,14 +55,22 @@ static uint8_t ep2tx[8] __attribute__((aligned(4)));
 static uint8_t ep3tx[64] __attribute__((aligned(4)));
 static uint8_t ep3rx[64 + 4] __attribute__((aligned(4)));
 /* serial rings: in = host -> console (ISR writes), out = console -> host (ISR reads) */
+#if FELUCCA_DISPLAY_BULK
+#define CI_N 64u
+#define CO_N 512u
+#else
 #define CI_N 256u
 #define CO_N 2048u
+#endif
 static uint8_t cdc_in[CI_N], cdc_out[CO_N];
 static volatile uint32_t ci_w, ci_r, co_w, co_r;
 static struct {
     uint8_t line[7];             /* line coding: just stored and echoed back */
     volatile uint8_t dtr;        /* host has the port open */
     uint8_t e0_rx;               /* SET_LINE_CODING data stage pending */
+#if FELUCCA_DISPLAY_BULK
+    uint8_t tx_full;             /* flush a final full packet with one ZLP */
+#endif
     uint8_t rx_pend;             /* EP3 OUT packet seen, not yet taken (the ring was full) */
     uint32_t rx_pkts, tx_pkts;
 } cdc = {{0x00, 0xC2, 0x01, 0x00, 0, 0, 8}};   /* 115200 8N1 */
@@ -709,6 +717,9 @@ static void ep0_service(void)
         if (!usb_cdc_on)
             goto stall;
         cdc.dtr = s[2] & 1u;
+#if FELUCCA_DISPLAY_BULK
+        if(!cdc.dtr)cdc.tx_full=0;
+#endif
         goto ack;
     case 0x2123:                                        /* SEND_BREAK */
         if (!usb_cdc_on)
@@ -881,6 +892,26 @@ static void ep1_rx(void)                                /* leaves the packet (NA
 static uint32_t ota_now_ms(void);
 static void ota_idle(void);
 
+#if FELUCCA_DISPLAY_MIRROR
+/* Complete small diagnostic reply, only while existing MIDI/SysEx is idle.
+ * Never waits, and publishes the complete message in one index store. */
+static int display_wire_try(const uint8_t *p, uint32_t n)
+{
+    uint32_t i = 0, w = so_w;
+    if (!usb.config || sx_busy || so_r != w || mo_w != mo_r || n > 192u)
+        return 0;
+    while (i < n) {
+        uint32_t k = n - i >= 3u ? 3u : n - i;
+        uint32_t cin = k == 3u && i + 3u < n ? 4u : k == 3u ? 7u : 4u + k;
+        sx_out_q[w++ % SXQ] = cin | (uint32_t)p[i] << 8 |
+            (k > 1u ? (uint32_t)p[i + 1] << 16 : 0u) | (k > 2u ? (uint32_t)p[i + 2] << 24 : 0u);
+        i += k;
+    }
+    RING_PUBLISH();
+    so_w = w;
+    return 1;
+}
+#endif
 static int ota_wire_send(const uint8_t *p, uint32_t n)   /* F0..F7 -> USB-MIDI SysEx packets */
 {
     uint32_t i = 0, t0 = ota_now_ms();
@@ -996,6 +1027,50 @@ static void ep3_rx(void)                                /* leaves the packet (NA
     sie_wr(S_RXCSR2, csr >> 8);
 }
 
+#if FELUCCA_DISPLAY_BULK
+static uint32_t dm_bulk_isr_take(uint8_t *dst,uint32_t limit);
+static uint32_t dm_bulk_isr_pending(void);
+/* Returns queued packet length, zero for a required flush, or ~0u when idle. */
+static uint32_t cdc_tx_take(void)
+{
+    uint32_t n = 0;
+    if (co_w == co_r) {
+        n = dm_bulk_isr_take(ep3tx, 64u);
+        if (n) {
+            cdc.tx_full = n == 64u;
+            return n;
+        }
+        if (cdc.tx_full) {
+            cdc.tx_full = 0;
+            return 0;
+        }
+        return ~0u;
+    }
+    while (co_r != co_w && n < 64u)
+        ep3tx[n++] = cdc_out[co_r++ % CO_N];
+    cdc.tx_full = n == 64u;
+    return n;
+}
+static void ep3_tx(void)
+{
+    uint32_t csr, n;
+    if (co_w == co_r && !cdc.tx_full && !dm_bulk_isr_pending())
+        return;
+    sie_wr(S_INDEX, 3);
+    csr = sie_rd(S_TXCSR1);
+    if (csr & 0x01u)
+        return;
+    if (csr & 0x80u)
+        sie_wr(S_TXCSR1, csr & ~0x80u);
+    n = cdc_tx_take();
+    if (n == ~0u)
+        return;
+    fm1_usb_ep_send(3, ep3tx, n);
+    sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
+    cdc.tx_pkts++;
+}
+
+#else
 static void ep3_tx(void)                                /* <= 63 bytes per packet: never needs a ZLP */
 {
     uint32_t csr, n = 0;
@@ -1013,6 +1088,7 @@ static void ep3_tx(void)                                /* <= 63 bytes per packe
     sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
     cdc.tx_pkts++;
 }
+#endif
 #endif
 
 #if FELUCCA_UAC
@@ -1294,6 +1370,9 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
 #if FELUCCA_CDC
         cdc.dtr = 0;
         cdc.e0_rx = 0;
+#if FELUCCA_DISPLAY_BULK
+        cdc.tx_full = 0;
+#endif
         cdc.rx_pend = 0;
 #endif
 #if FELUCCA_UAC
