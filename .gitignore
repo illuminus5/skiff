@@ -7,3 +7,6 @@ design/out/
 
 # Learn Skiff: review copies of the chapter videos (?local=1), never published
 web/learn/local/
+
+# Local display mirror Python environment
+fm1-display-mirror/.venv/

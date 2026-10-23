@@ -1,3 +1,6 @@
+#if FELUCCA_DISPLAY_BULK
+#include "../../fm1-display-mirror/firmware/skiff/bulk_adapter.h"
+#else
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Serial console on the CDC-ACM function (FELUCCA_CDC=1): read-only
@@ -517,3 +520,5 @@ static void cdc_task(void)                              /* main loop */
         }
     }
 }
+
+#endif

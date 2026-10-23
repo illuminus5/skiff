@@ -145,3 +145,11 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 
 Installing firmware is at your own risk. If an install fails and the FM-1 no longer
 starts, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
+## Optional FM-1 display mirror
+
+The video-only USB profile and localhost browser viewer are documented in
+[fm1-display-mirror/README.md](fm1-display-mirror/README.md). Build it with
+`sh fm1-display-mirror/build.sh --bulk`. It retains local sound and MIDI but
+omits USB audio and replaces the CDC text console with pixels. Ordinary builds
+are unchanged; installation is always manual.

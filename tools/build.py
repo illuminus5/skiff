@@ -217,10 +217,15 @@ def build_app():
     flags = [*CFLAGS, *BOARD_DEFS[BOARD], "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
-                 "FELUCCA_CDC_DEFAULT", "FELUCCA_CPU2"):
+                 "FELUCCA_CDC_DEFAULT", "FELUCCA_CPU2", "FELUCCA_DISPLAY_MIRROR", "FELUCCA_DISPLAY_BULK"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
+    lcd_baud = os.environ.get("FELUCCA_MIRROR_LCD_BAUD")
+    if lcd_baud is not None:
+        if os.environ.get("FELUCCA_DISPLAY_BULK") != "1" or lcd_baud not in ("3", "4"):
+            raise SystemExit("FELUCCA_MIRROR_LCD_BAUD requires bulk mirror and must be 3 or 4")
+        flags.append(f"-DLCD_BAUD={lcd_baud}u")
     v = os.environ.get("FELUCCA_USB_LAYOUT")   # firmware/src/usb.c: how the USB composite presents itself (#67), 0..3
     if v in ("0", "1", "2", "3"):
         flags.append(f"-DFELUCCA_USB_LAYOUT={v}")

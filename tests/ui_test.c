@@ -43,6 +43,9 @@ static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty
 #undef main
 
 /* ------------------------------------------------------------ HAL stubs --- */
+#ifdef UI_DISPLAY_CAPTURE
+#include "../fm1-display-mirror/firmware/skiff/capture.h"
+#endif
 #define FM1_NCOL 11u
 static const int8_t FM1_KEYMAP[6][FM1_NCOL];
 static uint8_t fm1_led[FM1_NCOL], fm1_led_dim[FM1_NCOL], fm1_led_breath[FM1_NCOL], fm1_led_mid[FM1_NCOL];
@@ -74,6 +77,9 @@ static void count_wide_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h);   /
 #define UI_FILL_HOOK count_wide_fill
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
+#ifdef UI_DISPLAY_CAPTURE
+    dm_fill(x, y, w, h, c);
+#endif
     uint32_t i, j;
 #ifdef UI_FILL_HOOK
     UI_FILL_HOOK(x, y, w, h);                     /* (tests/ui_render.c: what a fill covers is gone) */
@@ -101,6 +107,9 @@ static uint32_t scope_w;
 static uint32_t host_blit_rows;                    /* rows blitted (what a frame draws) */
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *p)
 {
+#ifdef UI_DISPLAY_CAPTURE
+    dm_blit(x, y, w, h, p);
+#endif
     uint32_t i, j;
     host_blit_rows += h;
     for (j = 0; j < h && y + j < 240u; j++)
