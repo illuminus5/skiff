@@ -5,6 +5,9 @@
 extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end[];
 extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[], _ramx_start[], _ramx_end[];
 
+#ifndef FELUCCA_DISPLAY_BULK
+#define FELUCCA_DISPLAY_BULK 0
+#endif
 
 /* TIMER5 outranks ALNK0, so the scan keeps its 100 us pace while a half buffer renders: before,
  * the ticks stopped for the whole render (0.7 ms idle, several ms loaded), the column lit when it
