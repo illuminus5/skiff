@@ -8,7 +8,7 @@ def select_port(ports, requested):
         return requested
     matches = [p.device for p in ports if p.vid == 0x1209 and p.pid == 1]
     if len(matches) != 1:
-        raise RuntimeError('Expected one FM-1 serial port; use --serial /dev/cu.…')
+        raise RuntimeError('No FM-1 found. Connect Skiff and enable USB SERIAL.' if not matches else 'Multiple FM-1 devices found. Select one with --serial.')
     return matches[0]
 
 

@@ -1,7 +1,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const elements={};let draws=0,presents=0,now=0,raf=[];
 const ctx={imageSmoothingEnabled:true,createImageData:()=>({data:new Uint8ClampedArray(240*240*4)}),putImageData:()=>draws++,drawImage:()=>presents++};
-for(const name of ['canvas','#screen','#status','#placeholder','#scale','#playback','#fullscreen','main'])elements[name]={style:{},hidden:false,clientWidth:1000,clientHeight:800,value:'fit',addEventListener(){}};
+for(const name of ['canvas','#screen','#status','#placeholder','#scale','#playback','#presentation','#fullscreen','main'])elements[name]={style:{},hidden:false,clientWidth:1000,clientHeight:800,value:'fit',addEventListener(){}};
 elements['#playback'].value='smooth';elements.canvas.getContext=()=>ctx;
 const sandbox={console,Uint8Array,ArrayBuffer,DataView,URL,Math,Number,JSON,Error,encodeURIComponent,
  document:{createElement:()=>({getContext:()=>ctx}),querySelector:n=>elements[n],addEventListener(){},fullscreenElement:null},
@@ -38,3 +38,12 @@ assert.equal(vm.runInContext('previous[0]',sandbox),42);
 // Disconnect removes queued old screens, including if the tab resumes later.
 vm.runInContext('decode(fixture);hide("Disconnected")',sandbox);tick(1000);assert.equal(vm.runInContext('pending.length',sandbox),0);assert.equal(elements.canvas.style.visibility,'hidden');
 console.log('viewer: exact pixels, bounded jitter buffer, 30/60-fps cadence, latest-frame selection, lowest-delay mode, disconnect clearing and Retina scaling passed');
+
+vm.runInContext("streamStatus={state:'connected',detail:'Rendered pixels',diagnostics:false};updateStatus(100)",sandbox);
+assert.equal(elements['#status'].textContent,'Connected · Skiff');
+assert.equal(elements['#presentation'].hidden,true);
+vm.runInContext("streamStatus.diagnostics=true;updateStatus(100)",sandbox);
+assert.equal(elements['#presentation'].hidden,false);
+assert(elements['#status'].textContent.includes('source'));
+vm.runInContext("streamStatus={state:'disconnected',detail:'No FM-1 found',diagnostics:false};updateStatus(100)",sandbox);
+assert(elements['#status'].textContent.includes('No FM-1 found'));

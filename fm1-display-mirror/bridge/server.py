@@ -27,10 +27,10 @@ def full_transaction(seq, pixels):
     return record(BEGIN, seq, flags=1) + record(RECT, seq, pixels, w=240, h=240) + record(COMMIT, seq)
 
 class Hub:
-    def __init__(self):
+    def __init__(self, diagnose=False):
         self.clients = set()
         self.latest = None
-        self.status = {'state': 'disconnected', 'firmware': None, 'fps': 0, 'detail': 'Waiting for device'}
+        self.status = {'state': 'disconnected', 'firmware': None, 'fps': 0, 'detail': 'Waiting for device', 'diagnostics': diagnose}
         self.transport_detail = None
         self.last_frame = 0
         self.frame_times = deque(maxlen=120)
@@ -188,7 +188,7 @@ async def mock(hub):
         await asyncio.sleep(.1)
 
 async def main(args):
-    hub = Hub()
+    hub = Hub(diagnose=args.diagnose)
     token = secrets.token_urlsafe(32)
     service = Server(hub, args.listen_port, token)
     server = await asyncio.start_server(service.handle, '127.0.0.1', args.listen_port, limit=8192)

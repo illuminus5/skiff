@@ -3,7 +3,7 @@
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d',{alpha:false});
 const screen=document.querySelector('#screen'),status=document.querySelector('#status');
 const placeholder=document.querySelector('#placeholder'),scale=document.querySelector('#scale');
-const playback=document.querySelector('#playback');
+const playback=document.querySelector('#playback'),presentation=document.querySelector('#presentation');
 const source=document.createElement('canvas');source.width=source.height=240;
 const sourceCtx=source.getContext('2d',{alpha:false});
 ctx.imageSmoothingEnabled=false;
@@ -15,6 +15,11 @@ function updateStatus(now){
  while(shown.length&&now-shown[0]>2000)shown.shift();
  if(!streamStatus)return;
  const s=streamStatus;
+ presentation.hidden=!s.diagnostics;
+ if(!s.diagnostics){
+  status.textContent=s.state==='connected'?'Connected · Skiff':s.state==='synchronizing'?'Connecting to Skiff…':`Disconnected · ${s.detail}`;
+  return;
+ }
  const fps=shown.length>1?(shown.length-1)*1000/(shown[shown.length-1]-shown[0]):0;
  status.textContent=`${s.state} · ${s.firmware||'No firmware'} · source ${now-lastReceived>2000?0:Number(s.fps)||0} fps · shown ${fps.toFixed(1)} fps · max gap ${Number(s.gap_ms)||0} ms · ${targetRate()?`${targetRate()} Hz / ${Math.round(1000/targetRate())} ms buffer`:'lowest delay'} · ${s.detail}`;
 }

@@ -149,3 +149,7 @@ passed; the broad UI sanitizer result remains incomplete.
 Bulk USB is the default bridge transport. `--bulk` remains accepted for existing
 commands; use `--midi` explicitly for the slower MIDI-only firmware. Add
 `--diagnose` when troubleshooting to print performance and device-stage timings.
+
+Normal viewing shows a compact connection status. `--diagnose` also reveals FPS,
+stage timings and the display-buffering selector; buffering never changes audio
+playback speed or Skiff tempo. Connection errors remain visible in normal mode.

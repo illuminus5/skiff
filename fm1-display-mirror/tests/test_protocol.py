@@ -16,6 +16,8 @@ class CliTests(unittest.TestCase):
         args = parse_args([])
         self.assertTrue(args.bulk)
         self.assertFalse(args.diagnose)
+        self.assertFalse(Hub().status["diagnostics"])
+        self.assertTrue(Hub(diagnose=True).status["diagnostics"])
 
     def test_explicit_transport_and_diagnostics(self):
         self.assertTrue(parse_args(['--bulk']).bulk)
