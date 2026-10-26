@@ -287,7 +287,7 @@ static struct {
     uint8_t hot_col, hot_t;      /* column whose knob was just turned (drawn white) */
     uint8_t menu;                /* 0 off, 1 list, 2 about + credits (HOME held) */
     uint8_t menu_sel;            /* MENU: the row (menu_items.c MI_*; its tab MI_TAB), kept while the device runs */
-    uint8_t menu_row[5];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
+    uint8_t menu_row[5 + FELUCCA_TAPE];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
     volatile uint8_t mpc[NTRK];  /* ((1.3) MIDI Program Change per track, 0x80 | program, 0 none: midi_control.c mpc_io
                                   * notes it, midi_pc_poll loads it) */
     uint16_t menu_scroll;        /* continuous ABOUT + CREDITS position, pixels */
@@ -532,7 +532,7 @@ static uint32_t large_kind(void)
     uint32_t g;
     if (!(ui_prefs & PREF_LARGE))
         return LK_OFF;
-    if (ui.layer)
+    if (ui.layer || (FELUCCA_TAPE && ui.menu == 3))
         return LK_LABEL;
     if (ui.home)
         return LK_TALL;

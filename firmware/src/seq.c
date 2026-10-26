@@ -980,6 +980,9 @@ static void keyboard_block(void)
     }
     lay = (fm1_in.buttons & kb_mask) || kb_lock;  /* (#83: kb_lock, a layer locked open with no button held) */
     fx = (fm1_in.buttons & perf_mask) || (kb_lock & 2u);
+#if FELUCCA_TAPE
+    if(tape_page_on){lay=1;fx=0;} /* reuse layer key suppression outside the per-key loop */
+#endif
     for (k = 0; k < 27u; k++) {
         if (!((ch >> k) & 1u))
             continue;
@@ -1078,6 +1081,9 @@ static void seq_start(void)
     clk_pos = CLK_START;                           /* the metronome's first beat with step 0 */
     song.playing = 1;
     slicer_start();                                /* slicer.c: its step 0 with the sequencer's */
+#if FELUCCA_TAPE
+    skiff_tape_restart();
+#endif
     perf_start();                                  /* perform.c: its 1/16 grid too */
 }
 

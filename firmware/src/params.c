@@ -556,6 +556,9 @@ static const page_t PAGES[] = {
     {"PATTERN", FAM_SEQ, SC_TRACK, GR_STEPS, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},   /* (2.0) PRESETS: the track's DIR */
     {"AUTOMATION", FAM_SEQ, SC_TRACK, GR_EVENTS, {0xFF, 0xFF, 0xFF, 0xFF}},   /* 1.1.5's AUTO LIST: the locks and events */
     {"SONG", FAM_SEQ, SC_TRACK, GR_SONG, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (Skiff phase 5) the lists (ui_input.c song_knob) */
+#if FELUCCA_TAPE
+    {"TAPE SEND", FAM_FX, SC_TRACK, GR_NONE, {0xFF,0xFF,0xFF,0xFF}},
+#endif
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
 /* (2.0, D 1A) the MOD page: the route KNOB 1 picks (0..10): the seven fixed routings (LFO DEST's and ENV DEST's of

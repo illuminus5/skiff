@@ -316,6 +316,15 @@ static uint32_t div_samples(uint32_t div)
     return div < 6u ? quarter / DIV_DEN[div] : div < 10u ? quarter << (div - 5u) : quarter / DIV_DEN[div % 6u];
 }
 
+#if FELUCCA_TAPE
+#include "tape_inputs.h"
+#include "tape_fx.h"
+#define TAPE_NO_SYSTEM_HEADERS 1
+#include "tape_core.h"
+#undef TAPE_NO_SYSTEM_HEADERS
+static tape_t tape_state;
+static volatile uint8_t tape_wanted; /* audio-side commands only in this prototype */
+#endif
 #include "perform.c"                                 /* the FX hold layer's effects (the master) */
 #include "click.c"                                   /* the metronome's click (after the master: audio.c) */
 #include "duck.c"                                    /* (Skiff) ducking: a track under another's hits (mix_part) */
@@ -691,6 +700,28 @@ static int32_t part_buf[CTL];                            /* a part's block (mix_
 #define SM1_b part_buf
 #endif
 
+#if FELUCCA_TAPE
+/* Prefader stereo send: unity at 100%, with source pan/spread preserved.
+ * Core sums are separate; CPU0 reads them only after C1_WAIT. */
+static __attribute__((noinline)) void tape_track_send(track_t *t,const int32_t *b,const int32_t *d,
+    uint32_t n,int32_t gl,int32_t gr,int32_t dl,int32_t dr SM_DECL)
+{
+    uint32_t k=(uint32_t)(t-trk),c=0;
+    if((!tape_wanted&&!tape_state.enabled) || k>=6 || !tape_send_block[k] || t->p[P_MUTE])return;
+#if FELUCCA_CPU2
+    c=sm==&mx[1];
+#endif
+    int32_t gain=(int32_t)tape_send_block[k];
+    for(uint32_t i=0;i<n;i++){
+        int32_t x=b[i],y=d?d[i]:0;
+        int32_t l=(int32_t)(((int64_t)x*gl+(int64_t)y*dl)/4096);
+        int32_t r=(int32_t)(((int64_t)x*gr+(int64_t)y*dr)/4096);
+        tape_input[c].l[i]+=(int32_t)((int64_t)l*gain/100);
+        tape_input[c].r[i]+=(int32_t)((int64_t)r*gain/100);
+    }
+}
+#endif
+
 /* the model changed (to rt): the old one's block fades out (HALL's stereo difference with it), its buffers are
  * cleared, the new one starts from silence */
 static __attribute__((noinline)) void rev_switch(const int32_t *rev_in, int32_t *wet, uint32_t n, int32_t rt)
@@ -1052,9 +1083,17 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             duck_apply(k, e, n);
     }
     if (e) {
+#if FELUCCA_TAPE
+        int32_t tl=4096-(pan>0?pan*64:0),tr=4096+(pan<0?pan*64:0);
+        tape_track_send(t,b,d,n,tl,0,-tl,0 SM_ARG(sm));
+        tape_track_send(t,b,e,n,0,tr,0,-tr SM_ARG(sm));
+#endif
         lpan_mix(t, b, d, e, n SM_ARG(sm));
         return;
     }
+#if FELUCCA_TAPE
+    tape_track_send(t,b,d,n,glm,grm,gld,grd SM_ARG(sm));
+#endif
     for (i = 0; i < n; i++) {
         int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x, y = ((d[i] >> 2) * lvl) >> 10;
         int32_t xs = clamp(x, -xmax, xmax);
@@ -1177,6 +1216,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
             AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */
         if ((duck_on >> (t - trk)) & 1u)
             duck_apply((uint32_t)(t - trk), b, n);      /* (Skiff) duck.c: under its source's hits */
+#if FELUCCA_TAPE
+        tape_track_send(t,b,0,n,gl,gr,0,0 SM_ARG(sm));
+#endif
         for (i = 0; i < n; i++) {
             int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
             int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
@@ -1223,6 +1265,9 @@ static void c1_parts(uint32_t arg)                      /* arg: the tracks (bit 
 {
     uint32_t i, n = arg >> 8;
     mixsum_t *sm = &mx[1];
+#if FELUCCA_TAPE
+    for(i=0;i<n;i++)tape_input[1].l[i]=tape_input[1].r[i]=0;
+#endif
     for (i = 0; i < n; i++)
         sm->l[i] = sm->r[i] = sm->c[i] = sm->d[i] = sm->v[i] = 0;
     for (i = 0; i < NPART; i++)
@@ -1274,11 +1319,20 @@ static __attribute__((noinline)) AUDIO_RAM void perf_master(int32_t *out, uint32
 }
 
 
+
+#if FELUCCA_TAPE
+#include "tape_sequence.h"
+#include "tape_bridge.h"
+#endif
+
 static __attribute__((noinline)) void mix_finish(int32_t *out,uint32_t n,int perf,int32_t mg)
 {
     uint32_t i;
     if (perf) {
         AUDIO_FAR(perf_master)(out, n);
+#if FELUCCA_TAPE
+        skiff_tape_output(out,n);
+#endif
         return;
     }
     for (i = 0; i < n; i++) {
@@ -1288,12 +1342,19 @@ static __attribute__((noinline)) void mix_finish(int32_t *out,uint32_t n,int per
         out[2u * i] = l;
         out[2u * i + 1u] = r;
     }
+    /* tape final output */
+#if FELUCCA_TAPE
+    skiff_tape_output(out,n);
+#endif
 }
 
 static void mix_block(int32_t *out, uint32_t n)
 {
     uint32_t i;
     int perf;
+#if FELUCCA_TAPE
+    if(tape_wanted||tape_state.enabled)tape_input_begin(n);
+#endif
 #if FELUCCA_USB_ROUTING
     usb_route_begin(n);
 #endif

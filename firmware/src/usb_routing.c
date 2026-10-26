@@ -4,12 +4,27 @@
 #if FELUCCA_USB_6CH
 static uint32_t usb_six_block,usb_extra_block;
 static int32_t usb_fx_return[3][CTL];
+#if FELUCCA_TAPE
+static int32_t usb_tape_return[2u*CTL];
+static uint32_t usb_tape_write;
+static void usb_tape_capture(int32_t l,int32_t r)
+{
+    if(usb_tape_write<CTL){usb_tape_return[2u*usb_tape_write]=l;
+        usb_tape_return[2u*usb_tape_write+1u]=r;++usb_tape_write;}
+}
+/* The codec publishes samples in order even when a step splits the block. */
+#define TAPE_USB_CAPTURE(l,r) usb_tape_capture((l),(r))
+#endif
 #endif
 static uint8_t usb_route_modes[NPART];
 static int32_t usb_track_capture[NPART][2u * CTL] __attribute__((aligned(128)));
 static void usb_route_begin(uint32_t n)
 {
 #if FELUCCA_USB_6CH
+#if FELUCCA_TAPE
+    usb_tape_write=0;
+    for(uint32_t i=0;i<2u*n;i++)usb_tape_return[i]=0;
+#endif
     usb_six_block = usb_six_routes;
     usb_extra_block=usb_extra_routes;
     for(uint32_t f=0;f<3;f++)for(uint32_t i=0;i<n;i++)usb_fx_return[f][i]=0;
@@ -37,7 +52,13 @@ static __attribute__((minsize,noinline)) const int32_t *usb_route_finish(const i
                 uint32_t track=(source-4u)/3u;
                 mode=(source-4u)%3u+1u;
                 l=usb_track_capture[track][2u*i];r=usb_track_capture[track][2u*i+1u];
-            } else if (source) { l=master[2u*i];r=master[2u*i+1u]; }
+            }
+#if FELUCCA_TAPE
+            else if(source>=USB_TAPE_L && source<=USB_TAPE_MONO){
+                l=usb_tape_return[2u*i];r=usb_tape_return[2u*i+1u];mode=source-USB_TAPE_L+1u;
+            }
+#endif
+            else if (source>=1u && source<=3u) { l=master[2u*i];r=master[2u*i+1u]; }
             int32_t value=mode==1u?l:mode==2u?r:mode==3u?usb_route_mono(l,r):0;
             if(source>=22u && source<=24u)value=usb_fx_return[source-22u][i]; /* REV DELAY CHOR */
             usb_six_output[UAC_CHANNELS*i+slot]=value;
