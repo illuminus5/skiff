@@ -61,8 +61,9 @@ Run `sh tests/run_compressor_tests.sh` after generated headers exist.
 - Five mixed-engine scenes match bit-for-bit across all tested core splits
   with compressors enabled. Existing non-compressor worker tests pass as well.
 - 176 golden renders are unchanged; no health/routing failures or crashes.
-  The full host regression still fails ANALOG STRINGS and idle CPU baselines
-  (+33% each in this run). Baselines were not rewritten.
+  The final host regression flags ANALOG STRINGS +34%, PHASE WIRE +26%, and
+  idle +33%. WIRE is close to the host limit and varies between runs. These
+  CPU checks are not passing; baselines were not rewritten.
 - Original target budgets pass. Image 564400 B; data+bss 94196/98304 B;
   pool 346392/356352 B; RAM code 24228/24576 B.
 - New `ins_compress` path: 162 target instructions, 88 in loops, no loop
