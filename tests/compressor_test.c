@@ -33,6 +33,8 @@ int main(void){
     assert(trk[0].p[P_ITYPE]==IT_COMP&&trk[0].p[P_IA]==43&&trk[0].p[P_IB]==103&&trk[0].p[P_IC]==77);
     int stored=up_store(0,"COMP TEST");assert(stored==0||stored==3);trk[0].p[P_ITYPE]=IT_OFF;assert(!up_load(0));assert(trk[0].p[P_ITYPE]==IT_COMP&&trk[0].p[P_IA]==43&&trk[0].p[P_IB]==103&&trk[0].p[P_IC]==77);
     const char *labels[]={"THRESH","RATIO","RELEASE"};for(unsigned k=0;k<3;k++)assert(str_eq(track_desc(&trk[0],P_IA+k)->label,labels[k]));
+    assert(param_turn(ins_desc(IT_COMP,1),64,1)==80&&param_turn(ins_desc(IT_COMP,1),64,-1)==48&&param_turn(ins_desc(IT_COMP,1),127,1)==127);
+    go_title("INSERT");frame();assert(cur_page()->id[0]==P_ITYPE);turn(EN_K3,1);assert(trk[0].p[P_IB]==112);turn(EN_K3,-1);assert(trk[0].p[P_IB]==96);
     char val[16];const char *unit;param_format(ins_desc(IT_COMP,1),64,val,&unit);assert(str_eq(val,"4:1"));
     param_format(ins_desc(IT_COMP,0),0,val,&unit);assert(str_eq(val,"-48.0")&&str_eq(unit,"dB"));
     param_format(ins_desc(IT_COMP,2),127,val,&unit);assert(str_eq(val,"1000")&&str_eq(unit,"ms"));

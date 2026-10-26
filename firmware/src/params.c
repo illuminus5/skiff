@@ -330,6 +330,10 @@ static int32_t enum_rank(const param_desc_t *d, int32_t v)   /* v's place in the
 /* a knob turned `steps` (signed) from v: clamped, over the shown order, past aliases (enum_step) */
 static int32_t param_turn(const param_desc_t *d, int32_t v, int32_t steps)
 {
+    if(d->fmt==F_CMPRATIO){
+        int32_t current=clamp(v,0,127)>>4,next=clamp(current+steps,0,7);
+        return next==current?v:next*16; /* one visible ratio per detent; retain stored 0..127 values */
+    }
     const uint8_t *o = enum_order(d);
     if (o)
         return o[clamp(enum_rank(d, v) - d->min + steps, 0, d->max - d->min)] + d->min;
