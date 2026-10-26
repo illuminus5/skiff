@@ -94,7 +94,8 @@ static struct {                          /* HALL's state (in the pool: no .bss) 
 #define rev_side (hl.sd)
 
 /* (Skiff 1.3) FX > INSERT's TYPEs (track_insert, below); (2.0, D 2A) the drives' and CRUSH's shapes are DRIVE's too */
-enum { IT_OFF, IT_SOFT, IT_HARD, IT_FOLD, IT_FUZZ, IT_CRUSH, IT_PHASER, IT_FLANGER, IT_CHORUS, IT_N };
+enum { IT_OFF, IT_SOFT, IT_HARD, IT_FOLD, IT_FUZZ, IT_CRUSH, IT_PHASER, IT_FLANGER, IT_CHORUS, IT_COMP, IT_N };
+_Static_assert(IT_COMP==9 && IT_N==NELEM(N_ITYPE),"Append-only INSERT type names");
 /* the drives' and CRUSH's shape of v (a voice's full scale 32768; v already through the drive): the curve the INSERT
  * and DRIVE graphs draw too (ui_pgraph.c graph_insert, graph_drive) */
 static inline int32_t ins_shape(uint32_t ty, int32_t v, uint32_t sh)
@@ -831,6 +832,8 @@ static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_
  *                        aliasing as the old samplers), LPF (two one-pole low-passes at F_CUTOFF after them);
  *   PHASR                RATE (F_LFOHZ), DEPTH (the sweep around ~850 Hz: 0 still .. the whole 150 Hz .. 4.8 kHz),
  *                        FDBK (0 .. 0.7): four all-pass stages, mono, per track;
+ *   COMP                THRESH (-48..0 dB), RATIO (1..12:1), RELEASE (20..1000 ms); linked peak compression
+ *                       with fixed 3 ms attack, no makeup gain, and the existing INSERT MIX.
  *   FLANG CHOR           RATE, DEPTH, FDBK: a 256-sample line per track (5.8 ms); FLANG swept 0.25 .. 5 ms (a squared
  *                        triangle), feedback 0 .. 0.85; CHOR a sine around 3.2 ms (+-2.3 ms at DEPTH 127), feedback
  *                        0 .. 0.4. A DC blocker on the swept copy (a clipped loud input is lopsided).
@@ -862,6 +865,7 @@ typedef struct {
     int16_t line[IL_LEN];               /* FLANG / CHOR, at a quarter (headroom) */
 } ins_t;
 static ins_t ins[NTRK] __attribute__((section(".pool")));
+#include "compressor_math.h"
 
 static inline int32_t ins_mixq(int32_t m) { return m >= 127 ? 32768 : m <= 0 ? 0 : m * 258; }   /* MIX -> Q15 */
 /* a triangle of the sweep's place q, 0 .. 65534 (Q16) */
@@ -970,6 +974,37 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
     }
 }
 
+/* COMP shares INSERT storage: hp is Q24 linked gain. No additional pool RAM.
+ * A track is owned by one render core; no shared detector or cross-core reads.
+ * Threshold/ratio/release are block snapshots. Fixed 3 ms attack; no makeup.
+ * d/e get the same gain as b so SPREAD and panned drum lanes stay linked. */
+static __attribute__((noinline)) void ins_compress(ins_t *s,const track_t *t,int32_t *b,
+                                                  int32_t *d,int32_t *e,uint32_t n,int32_t tw)
+{
+    uint32_t peak=0;
+    for(uint32_t i=0;i<n;i++){
+        uint32_t a=cmp_abs(b[i]);if(a>peak)peak=a;
+        if(d){a=cmp_abs(d[i]);if(a>peak)peak=a;}
+        if(e){a=cmp_abs(e[i]);if(a>peak)peak=a;}
+    }
+    uint32_t release=(uint32_t)(16777216000ull/(44100u*cmp_release_ms((uint32_t)clamp(t->p[P_IC],0,127))));
+    /* Peak hold/release prevents the gain following individual waveform lobes. */
+    if(peak>(uint32_t)s->lp1)s->lp1=(int32_t)peak;
+    else s->lp1+=(int32_t)(((int64_t)((int32_t)peak-s->lp1)*(release*n))/16777216);
+    int32_t target=(int32_t)(cmp_target((uint32_t)s->lp1,(uint32_t)clamp(t->p[P_IA],0,127),
+                                     (uint32_t)clamp(t->p[P_IB],0,127)));
+    for(uint32_t i=0;i<n;i++){
+        int32_t error=target-s->hp;
+        uint32_t coefficient=error<0?126332u:release; /* 1-exp(-1/(0.003*FS)), Q24 */
+        s->hp+=(int32_t)(((int64_t)error*coefficient)/16777216);
+        s->w+=clamp(tw-s->w,-SL_SLOPE,SL_SLOPE);
+        int32_t gain=s->hp,x=b[i];
+        b[i]=pf_mix(x,(int32_t)((int64_t)x*gain/16777216),s->w);
+        if(d){x=d[i];d[i]=pf_mix(x,(int32_t)((int64_t)x*gain/16777216),s->w);}
+        if(e){x=e[i];e[i]=pf_mix(x,(int32_t)((int64_t)x*gain/16777216),s->w);}
+    }
+}
+
 /* the INSERT at rest at once (mix_part: TYPE turned OFF while the part was silent, its fade never ran) */
 static __attribute__((noinline)) void ins_rest(track_t *t)
 {
@@ -978,7 +1013,7 @@ static __attribute__((noinline)) void ins_rest(track_t *t)
 }
 
 /* the track's INSERT on its block b (mix_part): nothing while TYPE is OFF or MIX is 0 and faded */
-static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint32_t n)
+static __attribute__((noinline)) void track_insert_linked(track_t *t, int32_t *b, int32_t *d, int32_t *e, uint32_t n)
 {
     ins_t *s = &ins[(uint32_t)(t - trk) % NTRK];
     int32_t ty = clamp(t->p[P_ITYPE], 0, IT_N - 1), tw;
@@ -992,13 +1027,18 @@ static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint3
         }
         memset(s, 0, sizeof *s);                        /* starting: no stale line or filter */
         s->type = (uint8_t)ty;
+        if(ty==IT_COMP)s->hp=16777216;
     }
-    if (s->type >= IT_PHASER)
+    if(s->type==IT_COMP)
+        ins_compress(s,t,b,d,e,n,tw);
+    else if (s->type >= IT_PHASER)
         ins_swept(s, t, b, n, tw);
     else
         ins_drive(s, t, b, n, tw);
     t->ins_run = s->w != 0;                             /* (mix_part calls again while it fades) */
 }
+
+static __attribute__((noinline)) void track_insert(track_t *t,int32_t *b,uint32_t n){track_insert_linked(t,b,0,0,n);}
 
 /* (Skiff 1.3, from Felucca's #148) SPREAD: a POLY or UNISON part whose SPREAD is above 0. Its voices start left and
  * right of PAN in turn (voice.c voice_start; UNISON's detuned voices alternate), at PAN -/+ SPREAD / 2 (127: hard left
@@ -1063,7 +1103,7 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             d[i] = (d[i] << 1) - b[i];                  /* left - right */
     track_dist(t, b, n);
     if (t->p[P_ITYPE] | t->ins_run)
-        track_insert(t, b, n);                          /* (the mono sum, as DRIVE) */
+        track_insert_linked(t, b, d, e, n);              /* COMP links stereo components; other inserts keep mono processing */
     slicer_track_sd(t, b, d, e, n);
     if (((pf.mute >> k) & 1u) || t->p[P_MUTE] || pf.mg[k] != 32768) {   /* (the mute's ramp on both: from the same start,
                                                                           * the same; (2.0) a MUTE's too) */

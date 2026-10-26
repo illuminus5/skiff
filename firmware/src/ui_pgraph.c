@@ -360,6 +360,11 @@ static int32_t pg_ins_curve(const pg_curve_t *k, int32_t x)
     int32_t y;
     if (!k->type || !k->mix)
         return x;
+    if(k->type==IT_COMP){
+        int32_t g=(int32_t)cmp_target(cmp_abs(x),(uint32_t)clamp(k->a,0,127),(uint32_t)clamp(k->b,0,127));
+        int32_t wet=(int32_t)((int64_t)x*g/16777216);
+        return x+(int32_t)((int64_t)(wet-x)*k->mix/32768);
+    }
     if (k->type >= IT_PHASER) {                      /* (x: the place in the sweep's cycle) */
         uint32_t ph = (uint32_t)(x + 32768) << 16;      /* (one whole cycle across: the end wraps to the start) */
         int32_t s = k->type == IT_CHORUS ? osc_sine(ph) : (int32_t)ins_tri(ph) - 32768;
@@ -381,7 +386,8 @@ static void graph_insert(const track_t *t, uint16_t c)
     uint32_t hold = INS_HOLD[clamp(k.b, 0, 127) >> 3];
     for (i = 0; i < 176u; i++) {                     /* (the wave: a sine's cycle of 88 samples, its second pass) */
         int32_t x = sine_i(i * 48806447u) * 3 / 4, y;
-        if (ty >= IT_PHASER) {
+        if(ty==IT_COMP){y=pg_ins_curve(&k,x);}
+        else if (ty >= IT_PHASER) {
             y = pg_ins_curve(&k, (int32_t)((i % 44u) * 65536u / 44u) - 32768);   /* (two of its cycles) */
         } else {
             if (ty != IT_CRUSH || !(i % hold))

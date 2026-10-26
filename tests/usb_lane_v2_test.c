@@ -6,6 +6,7 @@
 int main(void){
     memset(trk,0,sizeof trk);memset(&song,0,sizeof song);host_tracks_init();
     host_preset(&trk[0],ENGI_DRUM,0);trk[0].p[P_LPAN0]=-64;
+    if(getenv("COMP_TEST")){trk[0].p[P_ITYPE]=IT_COMP;trk[0].p[P_IA]=64;trk[0].p[P_IB]=64;trk[0].p[P_IC]=24;trk[0].p[P_IMIX]=127;}
     usb_six_put(0,4);usb_six_put(1,5);
 #if FELUCCA_TAPE
     tape_wanted=1;tape_send[0]=50;

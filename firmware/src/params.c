@@ -34,7 +34,7 @@ static const char *const N_ORDER[] = {"NOTE", "PLAYED"};
 static const char *const N_LSYNC[] = {"OFF", "4BAR", "2BAR", "1/1", "1/2", "1/4", "1/8", "8T", "1/16", "16T", "1/32"};
 static const char *const N_LTRIG[] = {"NOTE", "FREE"};
 static const char *const N_LPOL[] = {"BI", "UNI"};
-static const char *const N_ITYPE[] = {"OFF", "SOFT", "HARD", "FOLD", "FUZZ", "CRUSH", "PHASR", "FLANG", "CHOR"};
+static const char *const N_ITYPE[] = {"OFF", "SOFT", "HARD", "FOLD", "FUZZ", "CRUSH", "PHASR", "FLANG", "CHOR", "COMP"};
 /* the INSERT's CRUSH: BITS 1..16 and RATE (the held sample's rate, fx.c INS_HOLD) over the range in 16 even parts */
 /* (Skiff 1.3, from Felucca 1.5's #175) ENV SYNC (voice.c esync_coef): ATK DEC REL as note values of the tempo, shortest
  * first. 0..127 split evenly over these 25 (param_format's F_INT name list); ESYNC_UNITS: each in 1/384 of a bar of 4/4
@@ -227,17 +227,18 @@ static const param_desc_t GP[G_COUNT] = {
 /* (Skiff 1.3, from Felucca 1.5) the INSERT's A B C as its TYPE means them (TP's ranges and defaults): the drives DRIVE
  * TONE LEVEL, CRUSH BITS RATE LPF, the swept ones RATE DEPTH FDBK; OFF TP's own */
 #define PU(l, f, df, n, u) {l, n, 0, 127, df, f, u}
-static const param_desc_t INS_DESC[3][3] = {
+static const param_desc_t INS_DESC[4][3] = {
     {PU("DRIVE", F_PCT, 64, 0, 0), PU("TONE", F_CUTOFF, 96, 0, 0), PU("LEVEL", F_DB, 96, 0, 0)},
     {PU("BITS", F_INT, 64, N_IBITS, 0), PU("RATE", F_INT, 96, N_IRATE, U_HZ), PU("LPF", F_CUTOFF, 96, 0, 0)},
     {PU("RATE", F_LFOHZ, 64, 0, 0), PU("DEPTH", F_PCT, 96, 0, 0), PU("FDBK", F_PCT, 96, 0, 0)},
+    {PU("THRESH", F_CMPTH, 64, 0, 0), PU("RATIO", F_CMPRATIO, 64, 0, 0), PU("RELEASE", F_CMPREL, 24, 0, 0)},
 };
 #undef PU
 static const param_desc_t *ins_desc(int32_t type, uint32_t k)
 {
     if (type <= 0 || type >= (int32_t)NELEM(N_ITYPE))
         return &TP[P_IA + k];
-    return &INS_DESC[type < 5 ? 0 : type == 5 ? 1 : 2][k];   /* (IT_SOFT .. IT_FUZZ, IT_CRUSH, the swept ones) */
+    return &INS_DESC[type == 9 ? 3 : type < 5 ? 0 : type == 5 ? 1 : 2][k];   /* (IT_SOFT .. IT_FUZZ, IT_CRUSH, the swept ones) */
 }
 
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
@@ -398,6 +399,14 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         }
         break;
     }
+    case F_CMPTH:
+        fmt_fix(val,-480+(v*480+63)/127,1);*unit="dB";break;
+    case F_CMPRATIO: {
+        static const char *const names[8]={"1:1","1.5:1","2:1","3:1","4:1","6:1","8:1","12:1"};
+        str_cpy(val,names[(uint32_t)clamp(v,0,127)>>4],8);fmt_named=1;break;
+    }
+    case F_CMPREL:
+        fmt_int(val,20+(v*980+63)/127);*unit="ms";break;
     case F_DB:
         if (v <= 0) {
             str_cpy(val, "OFF", 6);
