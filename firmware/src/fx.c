@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "usb_routing.c"
 /* Effects: per-track DIST insert, then sends into three
  * shared buses (chorus, tempo delay, reverb). Mono buses (HALL with its stereo difference), stereo dry mix. */
 #define DLY_LEN 65536u           /* 1.49 s: 1/4 at 40 BPM fits */
@@ -646,11 +647,17 @@ static __attribute__((noinline)) void cho_mode(const int32_t *cho_in, const int3
         fx.cho_w++;
         wet[i] = fx.cho_y << 1;
     }
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[2][i]=wet[i];
+#endif
     for (i = 0; i < n; i++) {                           /* the delay as in fx_buses */
         int32_t x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)];
         fx.dly_lp += mulq15(x - fx.dly_lp, col);
         dly_buf[fx.dly_w & (DLY_LEN - 1u)] = (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, dfb), -32768, 32767);
         fx.dly_w++;
+#if FELUCCA_USB_6CH
+        usb_fx_return[1][i]=mulq15(x << 1, dmix);
+#endif
         wet[i] += mulq15(x << 1, dmix);
     }
 }
@@ -734,15 +741,25 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
         dly_buf[fx.dly_w & (DLY_LEN - 1u)] =
             (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
         fx.dly_w++;
+#if FELUCCA_USB_6CH
+        usb_fx_return[2][i]=y;
+        usb_fx_return[1][i]=mulq15(x << 1,dmix);
+#endif
         y += mulq15(x << 1, dmix);
         wet[i] = y;
     }
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[0][i]=-wet[i];
+#endif
     rt = song.g[G_RTYPE] == 1 || song.g[G_RTYPE] == 2 ? song.g[G_RTYPE] : 0;   /* (phase 9) HALL) */
     hl.side = 0;
     if (rt != fx.rtype)
         rev_switch(rev_in, wet, n, rt);
     else
         rev_model((uint32_t)rt, rev_in, wet, n);
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[0][i]+=wet[i];
+#endif
 }
 
 /* after the buses: HALL's stereo difference to the left and from the right of the dry mix (the wet bus adds the
@@ -986,8 +1003,12 @@ static __attribute__((noinline)) void lpan_mix(track_t *t, const int32_t *b, con
             SM(d)[i] += mulq15(xs, dl);
         if (r)
             SM(v)[i] += mulq15(xs, r);
-        SM(l)[i] += ((x - yl) * gl) >> 12;
-        SM(r)[i] += ((x - yr) * gr) >> 12;
+        int32_t left=((x-yl)*gl)>>12,right=((x-yr)*gr)>>12;
+        SM(l)[i]+=left;SM(r)[i]+=right;
+#if FELUCCA_USB_ROUTING
+        uint32_t usb_mask=usb_route_modes[(uint32_t)(t-trk)];
+        if(usb_mask)usb_route_track(usb_mask,i,left,right);
+#endif
     }
     t->peak = pk;
 }
@@ -995,6 +1016,9 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
 {
     int32_t *d = SPREAD_BUF(t), *e = t->lpan_on ? LPAN_BUF(t) : 0;
     uint32_t i, k = (uint32_t)(t - trk);
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask = usb_route_modes[k];
+#endif
     int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN], s = (t->p[P_SPRD] + 1) >> 1;
     int32_t pa = clamp(pan - s, -64, 63), pb = clamp(pan + s, -64, 63);
     int32_t gla = 4096 - (pa > 0 ? pa * 64 : 0), gra = 4096 + (pa < 0 ? pa * 64 : 0);
@@ -1042,8 +1066,15 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             SM(d)[i] += mulq15(xs, dl);
         if (r)
             SM(v)[i] += mulq15(xs, r);
-        SM(l)[i] += ((x * glm) >> 12) + ((y * gld) >> 12);
-        SM(r)[i] += ((x * grm) >> 12) + ((y * grd) >> 12);
+        {
+            int32_t l = ((x * glm) >> 12) + ((y * gld) >> 12);
+            int32_t rr = ((x * grm) >> 12) + ((y * grd) >> 12);
+            SM(l)[i] += l;
+            SM(r)[i] += rr;
+#if FELUCCA_USB_ROUTING
+            if (usb_mask) usb_route_track(usb_mask, i, l, rr);
+#endif
+        }
     }
     t->peak = pk;
 }
@@ -1097,6 +1128,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
 {
     int32_t *b = SM(b);
     uint32_t i;
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask = usb_route_modes[(uint32_t)(t - trk)];
+#endif
 #if FELUCCA_CPU2
     uint32_t nr;
 #endif
@@ -1154,8 +1188,14 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
                 SM(d)[i] += mulq15(xs, d);
             if (r)
                 SM(v)[i] += mulq15(xs, r);
-            SM(l)[i] += (x * gl) >> 12;
-            SM(r)[i] += (x * gr) >> 12;
+            {
+                int32_t l = (x * gl) >> 12, rr = (x * gr) >> 12;
+                SM(l)[i] += l;
+                SM(r)[i] += rr;
+#if FELUCCA_USB_ROUTING
+                if (usb_mask) usb_route_track(usb_mask, i, l, rr);
+#endif
+            }
         }
         t->peak = pk;
     }
@@ -1233,10 +1273,30 @@ static __attribute__((noinline)) AUDIO_RAM void perf_master(int32_t *out, uint32
     }
 }
 
+
+static __attribute__((noinline)) void mix_finish(int32_t *out,uint32_t n,int perf,int32_t mg)
+{
+    uint32_t i;
+    if (perf) {
+        AUDIO_FAR(perf_master)(out, n);
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        int32_t l = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
+        int32_t r = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
+        master_out(&l, &r);
+        out[2u * i] = l;
+        out[2u * i + 1u] = r;
+    }
+}
+
 static void mix_block(int32_t *out, uint32_t n)
 {
     uint32_t i;
     int perf;
+#if FELUCCA_USB_ROUTING
+    usb_route_begin(n);
+#endif
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++)
         send_c[i] = send_d[i] = send_r[i] = mix_l[i] = mix_r[i] = 0;
@@ -1280,15 +1340,5 @@ static void mix_block(int32_t *out, uint32_t n)
     fx_buses(send_c, send_d, send_r, wet, n);
     if (hl.side)
         rev_side_mix(mix_l, mix_r, n);                  /* HALL: stereo */
-    if (perf) {
-        AUDIO_FAR(perf_master)(out, n);
-        return;
-    }
-    for (i = 0; i < n; i++) {
-        int32_t l = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
-        int32_t r = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
-        master_out(&l, &r);
-        out[2u * i] = l;
-        out[2u * i + 1u] = r;
-    }
+    mix_finish(out,n,perf,mg);
 }
