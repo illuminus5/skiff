@@ -86,7 +86,7 @@ were not changed. These CPU checks are not passing.
 
 Original target/memory checks pass. New voice/lane rendering and mono mixing
 have explicit out-of-line boundaries; their separate code-cost report is in
-the experiment results. No original budget was raised. The new compressor
+[the combined overview](compression.md). No original budget was raised. The new compressor
 paths still require physical timing validation. RAM code + undo uses
 24484/24576 bytes, leaving only 92 bytes in that region.
 
@@ -94,7 +94,7 @@ The kit-plus-five-synth host benchmark increased from 1435 to 1518 instructions
 per sample for DRUM and 1486 to 1576 for DRUM-X when lane compressors were
 enabled (approximately 6%). The workload retriggers all lanes but is not a
 worst-case all-lanes-continuously-active measurement. Results including kit
-compression and TAPE/filter/LFO are retained in the experiment log. These are
+compression and TAPE/filter/LFO are retained in the original workload report. These are
 host instruction counts, not FM-1 cycles or proof of real-time headroom.
 
 Sanitizers cover DSP, storage and UI tests. The uploaded-sample host fixture

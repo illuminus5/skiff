@@ -47,7 +47,7 @@ block. Peak hold/release prevents the gain following individual waveform lobes.
 Gain and mix are smoothed per sample. The control path uses no runtime floating
 point or dynamic allocation. Ratio 1:1 from rest, TYPE OFF and MIX 0 are neutral.
 
-## Validation and limits
+## Validation and limits (original per-track candidate)
 
 Run `sh tests/run_compressor_tests.sh` after generated headers exist.
 
@@ -74,7 +74,8 @@ Run `sh tests/run_compressor_tests.sh` after generated headers exist.
   2534.2 including TAPE playback/filter/LFO. These are host measurements, not
   pi32v2 cycles, and do not establish FM-1 real-time headroom.
 
-This prototype has not been physically tested or flashed automatically. Test
-one track first, then a drum kit, then a dense arrangement with TAPE and USB10.
+The user reported successful per-track compression on the FM-1. The combined
+per-drum revision still needs physical testing. Test a drum kit, then a dense
+arrangement with TAPE and USB10. Nothing was flashed automatically.
 Listen for glitches and check the device CPU display. The earlier tested TAPE
 package remains available as the rollback build.
