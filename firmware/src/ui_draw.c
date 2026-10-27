@@ -209,6 +209,11 @@ static void span_param(const card_span_t *sp, int32_t v, char *val, const char *
     param_format((const param_desc_t *)sp->p, v, val, unit);
     fmt_named = named;
 }
+/* DRUM COMP puts dB/ms in its labels so numeric values retain the big face. */
+static void span_value_only(const card_span_t *sp,int32_t v,char *val,const char **unit)
+{
+    span_param(sp,v,val,unit);*unit="";
+}
 static void span_names(const card_span_t *sp, int32_t v, char *val, const char **unit)
 {
     str_cpy(val, ((const char *const *)sp->p)[v], 12);
@@ -885,8 +890,13 @@ static void draw_columns(void)
         for(uint32_t dc=0;dc<4;dc++){
             const param_desc_t *d=dc<3?ins_desc(IT_COMP,dc):&TP[P_IMIX];
             int32_t value=(int32_t)dc_get(song.sel,page_lane(),dc);
-            param_format(d,value,val,&unit);card_span_of(d);
-            draw_column(dc,d->label,val,unit,VR_LIVE,value*1000/127,ICON_AUTO);
+            param_format(d,value,val,&unit);
+            const char *label=d->label;
+            if(dc==0||dc==2){
+                label=dc==0?"THRESH dB":"REL ms";unit="";
+                card_span_by(span_value_only,d,d->min,d->max);
+            }else card_span_of(d);
+            draw_column(dc,label,val,unit,VR_LIVE,value*1000/127,ICON_AUTO);
         }
         return;
     }

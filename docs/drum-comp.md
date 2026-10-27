@@ -9,7 +9,8 @@ USR1/USR2/USR3 samples. Existing track INSERT COMP, TAPE and USB10 remain.
 1. Select a DRUM or DRUM-X track and open **EDIT → DRUM COMP** (5/5).
 2. Turn **PRESETS** to choose the drum lane, or play its key. ALGORITHM keeps
    its normal track-selection function.
-3. Four headers: **THRESH / RATIO / RELEASE / MIX**. MIX starts at 0% (off).
+3. Four headers: **THRESH dB / RATIO / REL ms / MIX**. Units are in the
+   headers so all numeric values use the same large face. MIX starts at 0% (off).
    Raise MIX to hear compression. PRESETS on this page chooses the lane without
    loading another kit.
 4. Start around -18 dB, 3:1, 200 ms, MIX 100%, then adjust by ear. The eight-drum faders match EDIT > LANES (the former page 3/4); each shows
