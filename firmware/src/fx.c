@@ -1197,6 +1197,55 @@ static __attribute__((noinline)) void smx_render(track_t *t, voice_t *v, uint32_
     }
 }
 
+/* Mono tracks use the same explicit DSP/mix boundary as mix_spread. Keeps
+ * lane/voice rendering separate from the sample loop that feeds level/pan/sends. */
+static __attribute__((noinline)) void mix_mono(track_t *t,int32_t *b,uint32_t n SM_DECL)
+{
+    uint32_t i;
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask=usb_route_modes[(uint32_t)(t-trk)];
+#endif
+
+        int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN];
+        int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
+        int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
+        int32_t xmax = c > d ? c : d;
+        xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
+        track_dist(t, b, n);
+        if (t->p[P_ITYPE] | t->ins_run)
+            track_insert(t, b, n);                      /* ((1.3) the INSERT: off, nothing) */
+        slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
+        if (((pf.mute >> (t - trk)) & 1u) || t->p[P_MUTE] || pf.mg[t - trk] != 32768)   /* perform.c (RAM): a black */
+            AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */
+        if ((duck_on >> (t - trk)) & 1u)
+            duck_apply((uint32_t)(t - trk), b, n);      /* (Skiff) duck.c: under its source's hits */
+#if FELUCCA_TAPE
+        tape_track_send(t,b,0,n,gl,gr,0,0 SM_ARG(sm));
+#endif
+        for (i = 0; i < n; i++) {
+            int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
+            int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
+            if (a > pk)
+                pk = a;
+            if (c)
+                SM(c)[i] += mulq15(xs, c);
+            if (d)
+                SM(d)[i] += mulq15(xs, d);
+            if (r)
+                SM(v)[i] += mulq15(xs, r);
+            {
+                int32_t l = (x * gl) >> 12, rr = (x * gr) >> 12;
+                SM(l)[i] += l;
+                SM(r)[i] += rr;
+#if FELUCCA_USB_ROUTING
+                if (usb_mask) usb_route_track(usb_mask, i, l, rr);
+#endif
+            }
+        }
+        t->peak = pk;
+
+}
+
 /* one synth part into the dry mix and the sends (of sm: mx[0]; mx[1] on the second core); a part with no voice sounding
  * costs the LFO tick and a cleared buffer only (after the DIST tail has run out) */
 #if FELUCCA_CPU2
@@ -1242,45 +1291,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
             mod_end(t);
         return;
     }
-    {
-        int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN];
-        int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
-        int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
-        int32_t xmax = c > d ? c : d;
-        xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
-        track_dist(t, b, n);
-        if (t->p[P_ITYPE] | t->ins_run)
-            track_insert(t, b, n);                      /* ((1.3) the INSERT: off, nothing) */
-        slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
-        if (((pf.mute >> (t - trk)) & 1u) || t->p[P_MUTE] || pf.mg[t - trk] != 32768)   /* perform.c (RAM): a black */
-            AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */
-        if ((duck_on >> (t - trk)) & 1u)
-            duck_apply((uint32_t)(t - trk), b, n);      /* (Skiff) duck.c: under its source's hits */
-#if FELUCCA_TAPE
-        tape_track_send(t,b,0,n,gl,gr,0,0 SM_ARG(sm));
-#endif
-        for (i = 0; i < n; i++) {
-            int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
-            int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
-            if (a > pk)
-                pk = a;
-            if (c)
-                SM(c)[i] += mulq15(xs, c);
-            if (d)
-                SM(d)[i] += mulq15(xs, d);
-            if (r)
-                SM(v)[i] += mulq15(xs, r);
-            {
-                int32_t l = (x * gl) >> 12, rr = (x * gr) >> 12;
-                SM(l)[i] += l;
-                SM(r)[i] += rr;
-#if FELUCCA_USB_ROUTING
-                if (usb_mask) usb_route_track(usb_mask, i, l, rr);
-#endif
-            }
-        }
-        t->peak = pk;
-    }
+    mix_mono(t,b,n SM_ARG(sm));
     if (MOD(t).on)
         mod_end(t);                                     /* the stored values back */
 }

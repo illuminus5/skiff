@@ -27,7 +27,7 @@ int main(void){
     assert(tape_init(&tape_state,&sl_buf[0][0],sizeof sl_buf));tape_state.enabled=1;sl_lent=1;tape_wanted=tape_seq_on=1;
     for(unsigned i=0;i<2000;i++)tt_capture(&tape_state,1000,-1000);
     assert(project_save(0)==0);project_store_t saved;
-    assert(st_load(OBJ_PROJECT0,&saved,sizeof saved)==PROJ_STORE4&&sizeof saved==2560);
+    assert(st_load(OBJ_PROJECT0,&saved,sizeof saved)==PROJ_STORE4&&PROJ_STORE4==2560);
     assert(!memcmp(saved.raw+PROJ_TAPE_AT,expected,sizeof expected));
     assert(st_crc32(nor+0x9f000,0x41000)==protected_crc);
     configure(31);project_new();project_load(0);matches(expected);
@@ -35,11 +35,11 @@ int main(void){
     assert(tape_live==ts_pack(TS_HOLD,0,4,-175,81,-3));
     memset(proj_slot,0,sizeof proj_slot);skiff_tape_project_reset();proj_fetch(0);project_load(0);matches(expected);
     uint32_t len=0,crc=0;assert(list(2,&len,&crc)==0&&len==PROJ_STORE4);
-    uint8_t archive[PROJ_STORE4];assert(get_all(2,archive,sizeof archive)==0&&!memcmp(archive,&saved,sizeof saved));
+    uint8_t archive[PROJ_STORE4];assert(get_all(2,archive,sizeof archive)==0&&!memcmp(archive,&saved,PROJ_STORE4));
     assert(put_all(4,archive,sizeof archive,st_crc32(archive,sizeof archive))==0);project_new();project_load(2);matches(expected);
     project_store_t malformed=saved;malformed.raw[PROJ_TAPE_AT+2]='2';rehash(&malformed);
     unsigned before=erases;uint32_t sig=autosave_sig();
-    assert(put_all(4,&malformed,sizeof malformed,st_crc32(&malformed,sizeof malformed))==2&&erases==before&&autosave_sig()==sig);
+    assert(put_all(4,&malformed,PROJ_STORE4,st_crc32(&malformed,PROJ_STORE4))==2&&erases==before&&autosave_sig()==sig);
     project_t decoded;project_store_t old=saved;memset(old.raw+PROJ_TAPE_AT,0,TAPE_STORE_BYTES);rehash(&old);
     assert(proj_import(&decoded,&old,sizeof old)&&project_restore_runtime(&decoded)==0);
     assert(!tape_steps[0]&&!tape_send[5]&&tape_filter==TF_FILTER_DEFAULT&&tape_lfo==TF_LFO_DEFAULT&&tape_live==TAPE_STORE_LIVE_DEFAULT);
@@ -57,10 +57,10 @@ int main(void){
     configure(55);project_capture(&decoded);project_store_t next;assert(proj_pack4(&next,&decoded));
     for(unsigned page=0;page<=10;page++){
         memcpy(nor,baseline,sizeof nor);cut_after=(int)page;assert(st_save(OBJ_PROJECT0,&next,PROJ_STORE4)!=0);cut_after=-1;
-        project_store_t got;assert(st_load(OBJ_PROJECT0,&got,sizeof got)==PROJ_STORE4&&!memcmp(&got,&saved,sizeof got));
+        project_store_t got;assert(st_load(OBJ_PROJECT0,&got,sizeof got)==PROJ_STORE4&&!memcmp(&got,&saved,PROJ_STORE4));
         assert(proj_import(&decoded,&got,sizeof got)&&st_crc32(nor+0x9f000,0x41000)==protected_crc);
     }
     memcpy(nor,baseline,sizeof nor);assert(st_save(OBJ_PROJECT0,&next,PROJ_STORE4)==0);
-    assert(st_load(OBJ_PROJECT0,&saved,sizeof saved)==PROJ_STORE4&&!memcmp(&next,&saved,sizeof saved));
+    assert(st_load(OBJ_PROJECT0,&saved,sizeof saved)==PROJ_STORE4&&!memcmp(&next,&saved,PROJ_STORE4));
     puts("Tape projects: SAVE/load/reboot/backup/autosave, malformed rejection, disarmed restore, sample/preset preservation and all 11 torn-write points passed");return 0;
 }

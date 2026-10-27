@@ -25,6 +25,7 @@ static int32_t peak[NPART];                         /* each track's loudest (tra
 
 static void part_setup(track_t *t, uint32_t k)
 {
+    if(getenv("DRUM_COMP_TEST"))for(unsigned lane=0;lane<8;lane++){dc_set(k,lane,0,100);dc_set(k,lane,3,127);}
     if(getenv("COMP_TEST")){t->p[P_ITYPE]=IT_COMP;t->p[P_IA]=90;t->p[P_IB]=64;t->p[P_IC]=32;t->p[P_IMIX]=127;}
     t->p[P_DIST] = (int16_t)(10 + 15 * (k % 3u));    /* DRIVE: each track its type (t->dist_*) */
     t->p[P_DTYPE] = (int16_t)(k % DT_N);

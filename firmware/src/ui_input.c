@@ -1526,6 +1526,11 @@ static void edit_param(uint32_t slot, int32_t steps)
         sheet_of(pg->graph)->knob(slot, steps);
         return;
     }
+    if(pg->graph==GR_DCOMP){
+        uint32_t value=dc_get(song.sel,page_lane(),slot);
+        const param_desc_t *d=slot<3?ins_desc(IT_COMP,slot):&TP[P_IMIX];
+        dc_set(song.sel,page_lane(),slot,(uint32_t)param_turn(d,(int32_t)value,steps));return;
+    }
     if ((pg->graph == GR_LANES || pg->graph == GR_LMIX) && slot == 0u) {   /* (Skiff U3, R6) LANES: KNOB 1 the lane (the
                                                          * grid's too), KNOB 2 its level (params.c page_desc); ((2.0, #36)
                                                          * LANE MIX the same, DRUM-X's: the sound sheet's) */
@@ -1868,6 +1873,9 @@ static void cursor_turn(int32_t s)
  *     (SAVE held undoes it). Up to 1.0.3 it did that on HOME and PRESETS only */
 static void presets_turn(int32_t s)
 {
+    if(!ui.home&&cur_page()->graph==GR_DCOMP){
+        uint8_t *lane=page_lane_p();*lane=(uint8_t)clamp((int32_t)*lane+s,0,7);return;
+    }
     const page_t *pg = cur_page();
     uint32_t g = pg->graph;
     if (ui.home || g == GR_BROWSE) {

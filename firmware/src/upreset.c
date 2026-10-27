@@ -56,6 +56,8 @@
 #define UP_VER 4u                                /* 2 since 1.0; 1 is read too (PHYS MODEL 2 was DUST) */
 #define UP_VER_GRID 5u                           /* 2 with a drum grid as the pattern (see the top) */
 #define UP_VER_SID 6u                            /* ((2.0) by stored id, no pattern: see the top) */
+#define DC_UP_AT 143u
+#define DC_UP_TAG 0xDCu
 #define UP_SIDS (UP_PMAX * 2u + 32u)             /* (.. its room: the parameters' and the pattern's bytes) */
 #define UP_BANK_MAGIC 0x31425055u                /* "UPB1" */
 typedef struct {
@@ -75,6 +77,7 @@ typedef struct {
     uint16_t rsize, nslot;
     up_rec_t r[UP_PER_BANK];
 } up_bank_t;
+_Static_assert(SID_COUNT<=DC_UP_AT && DC_UP_AT+32u+1u==UP_SIDS,"Drum COMP preset extension bounds");
 _Static_assert(sizeof(up_rec_t) == 192, "user preset record layout");
 _Static_assert(P_COUNT <= UP_PMAX * 2u && SID_COUNT <= UP_SIDS, "user preset record: P_COUNT, the SIDs");
 /* (Skiff) packed[132..143] held the pattern's NUDGE (see the top); (phase 5) a user preset holds no pattern and nothing
@@ -89,6 +92,8 @@ static int up_valid(const up_rec_t *r)
           (FELUCCA_LEGACY || FELUCCA_FM4 || r->engine != ENGI_DIGITAL) && r->np >= 8u &&
           r->np <= (r->ver >= UP_VER_SID ? UP_SIDS : r->ver >= 4u ? UP_PMAX * 2u : UP_PMAX) && r->name[0])) return 0;
     if (r->ver >= 4u) for (uint32_t i = 0; i < r->np; i++) if (r->sid[i] > 191u) return 0;
+    if(r->ver==UP_VER_SID&&r->np<=DC_UP_AT&&r->sid[UP_SIDS-1]==DC_UP_TAG)
+        for(uint32_t i=0;i<32;i++)if(r->sid[DC_UP_AT+i]>127)return 0;
     return 1;
 }
 
@@ -397,7 +402,8 @@ static int up_store(uint32_t k, const char *name)
     up_set_name(&r, k, name);
     for (i = 0; i < P_COUNT; i++)
         v[i] = (int16_t)motion_base_value(TSEL, i);
-    up_set_sound(&r, v);                                /* ((2.0) version 6) */
+    up_set_sound(&r, v);
+    memcpy(r.sid+DC_UP_AT,drum_comp[song.sel%DC_TRACKS],DC_BYTES);r.sid[UP_SIDS-1]=DC_UP_TAG;                                /* ((2.0) version 6) */
     if (r.engine == ENGI_FM6 && TSEL->p[P_E7] == FM6_OWN && name && name[0]) {   /* (FM6 LAB) its own patch takes a
                                                          * typed name (its first 10: .syx keeps it); a factory patch
                                                          * (F n) and the automatic name leave it as it is */
@@ -478,6 +484,10 @@ static int up_load(uint32_t k)
         fm1_irq_on();
         upf_track_load(t, k);                           /* FM6: the preset's own patch (up_fm6.c) */
     }
+    fm1_irq_off();dc_defaults(song.sel);
+    if(r->ver==UP_VER_SID&&r->np<=DC_UP_AT&&r->sid[UP_SIDS-1]==DC_UP_TAG)
+        memcpy(drum_comp[song.sel%DC_TRACKS],r->sid+DC_UP_AT,DC_BYTES);
+    fm1_irq_on();
     t->user = (uint8_t)(k + 1u);
     load_end(t);
     sync_reload = 1;

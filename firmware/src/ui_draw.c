@@ -880,6 +880,16 @@ static void draw_columns(void)
                     r < n ? VR_LIVE : VR_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
         return;
     }
+    if(cur_page()->graph==GR_DCOMP){
+        lane_follow(page_lane_p());
+        for(uint32_t dc=0;dc<4;dc++){
+            const param_desc_t *d=dc<3?ins_desc(IT_COMP,dc):&TP[P_IMIX];
+            int32_t value=(int32_t)dc_get(song.sel,page_lane(),dc);
+            param_format(d,value,val,&unit);card_span_of(d);
+            draw_column(dc,d->label,val,unit,VR_LIVE,value*1000/127,ICON_AUTO);
+        }
+        return;
+    }
     if (cur_page()->graph == GR_LMIX)                  /* ((2.0, #36) LANE MIX: a key struck picks its lane, as the grid's */
         lane_follow(page_lane_p());                    /* keys and DRUM-X's sheet do (ui_dx.c) */
     if (cur_page()->graph == GR_LANES || cur_page()->graph == GR_LMIX)   /* ((Skiff U3, R6) LANES: KNOB 1 the lane, by its

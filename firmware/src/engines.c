@@ -6,6 +6,7 @@
  * part's area, never in arrays of its own for all the parts */
 static void *eng_part(const track_t *t);
 #include "dsp.c"
+#include "drum_comp.h"
 #include "eng_analog.c"
 #include "eng_phase.c"
 #include "eng_lofi.c"

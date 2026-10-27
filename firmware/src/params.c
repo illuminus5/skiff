@@ -501,7 +501,7 @@ enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_
        GR_DRIVE,                   /* (Skiff phase 9) FX > DRIVE: the TYPE's transfer at the drive (ui_pgraph.c) */
        GR_INS,                     /* (Skiff 1.3) FX > INSERT: its TYPE's transfer or sweep (ui_pgraph.c graph_insert) */
        GR_SMIX,                    /* (Skiff, #21) EDIT > SAMPLES: a user sample's LEVEL, REVERB, DELAY (ui.c smx_zone) */
-       GR_LMIX };                  /* (2.0, #36, the user's pick 1A) EDIT > LANE MIX: a kit's lane levels and pans */
+       GR_DCOMP, GR_LMIX };                  /* (2.0, #36, the user's pick 1A) EDIT > LANE MIX: a kit's lane levels and pans */
 
 typedef struct {
     const char *title;
@@ -527,6 +527,7 @@ static const page_t PAGES[] = {
     {"INSERT 2", FAM_FX, SC_TRACK, GR_INS, {P_IMIX, 0xFF, 0xFF, 0xFF}},  /* .. its dry / wet */
     {"SLICER", FAM_FX, SC_TRACK, GR_SLCR, {P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH}},
     {"DUCK", FAM_FX, SC_TRACK, GR_DUCK, {P_DKSRC, P_DKAMT, P_DKREL, 0xFF}},   /* (Skiff) ducking (duck.c) */
+    {"DRUM COMP", FAM_FX, SC_TRACK, GR_DCOMP, {0xFF,0xFF,0xFF,0xFF}},
     {"SCALE", FAM_SCL, SC_TRACK, GR_SCALE, {P_ROOT, P_SCALE, P_QUANT, P_TRANS}},   /* ((#8) was SCL) */
     {"CHORD", FAM_SCL, SC_TRACK, GR_CHORD, {P_CHRD, P_VOIC, 0xFF, 0xFF}},   /* SEL again: the chord keys (chord.c) */
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},

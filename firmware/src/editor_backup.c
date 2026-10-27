@@ -42,7 +42,7 @@ static void ed_bk_pack(const uint8_t *p, uint32_t n)
 static const uint8_t *ed_bk_object(uint32_t id, uint32_t *len)
 {
     *len = 0;
-    if (id == 0u) { *len = PROJ_SKF->size; return ED_BK_RAW; }    /* (Skiff phase 5: SKF2; phase 6: SKF3; 2.0: SKF4) */
+    if (id == 0u) { *len = ((const uint32_t *)ED_BK_RAW)[1]; return ED_BK_RAW; }    /* (Skiff phase 5: SKF2; phase 6: SKF3; 2.0: SKF4) */
     if (id == 1u) { *len = sizeof ed_bk_settings; return (const uint8_t *)&ed_bk_settings; }
     if (id >= 2u && id <= 5u) {                     /* ((2.0) the record's own size; one of a format of before as flash
                                                      * keeps it, for the editor's Restore to convert: proj_old) */
@@ -81,7 +81,7 @@ static uint32_t ed_bk_capture(void)
     if (ed_flash_stop()) return 3;
     (void)keep_all();                               /* (phase 5) the tracks' patterns written: the chunks hold them */
     project_capture(&proj_scratch);
-    if (!proj_pack2((project_store_t *)ED_BK_RAW, &proj_scratch, PROJ_SKF)) return 2;
+    if (!proj_pack2((project_store_t *)ED_BK_RAW, &proj_scratch, proj_save_fmt(&proj_scratch))) return 2;
     ed_bk_gen = ++proj_wire_gen;
 #if FELUCCA_FLASH
     ed_bk_settings = persist_saved;                 /* fields absent from this build survive */
@@ -222,7 +222,7 @@ static uint32_t ed_bk_commit(void)
  * FUN9, FUN8 (before the DRUM lane levels, 1.0.x), FUN7. ((2.0) the old ones are taken, then refused at the commit) */
 static int proj_store_len(uint32_t len)
 {
-    return len == PROJ_STORE_SIZE || len == PROJ_STORE4 || len == PROJ_STORE3 || len == PROJ_STORE2 ||
+    return len == PROJ_STORE5 || len == PROJ_STORE_SIZE || len == PROJ_STORE4 || len == PROJ_STORE3 || len == PROJ_STORE2 ||
            len == PROJ_STORE_V9 || len == PROJ_STORE_V8 || len == PROJ_STORE_V7;
 }
 static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)

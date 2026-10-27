@@ -83,7 +83,7 @@ static int test_tape_aux_page(void)
         fwrite(rgb,1,3,f);}fclose(f);}
     press(B_HOME);bad+=check("TAPE page closes without taking an instrument track",!ui.menu&&!tape_page_on&&song.sel<NTRK);
     press(B_FX);uint32_t count=0,sendpage=NPAGES;
-    for(unsigned i=0;i<NPAGES;i++)if(PAGES[i].fam==FAM_FX){++count;if(PAGES[i].graph==GR_NONE)sendpage=i;}
+    for(unsigned i=0;i<NPAGES;i++)if(PAGES[i].fam==FAM_FX){count+=page_visible(i);if(PAGES[i].graph==GR_NONE)sendpage=i;}
     for(unsigned i=0;i<7&&ui.page!=sendpage;i++)press(B_FX);
     bad+=check("TAPE SEND is seventh FX page",count==7&&ui.page==sendpage);
     song.sel=0;frame();turn(EN_K1,37);turn(EN_K2,80);
