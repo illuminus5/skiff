@@ -527,7 +527,6 @@ static const page_t PAGES[] = {
     {"INSERT 2", FAM_FX, SC_TRACK, GR_INS, {P_IMIX, 0xFF, 0xFF, 0xFF}},  /* .. its dry / wet */
     {"SLICER", FAM_FX, SC_TRACK, GR_SLCR, {P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH}},
     {"DUCK", FAM_FX, SC_TRACK, GR_DUCK, {P_DKSRC, P_DKAMT, P_DKREL, 0xFF}},   /* (Skiff) ducking (duck.c) */
-    {"DRUM COMP", FAM_FX, SC_TRACK, GR_DCOMP, {0xFF,0xFF,0xFF,0xFF}},
     {"SCALE", FAM_SCL, SC_TRACK, GR_SCALE, {P_ROOT, P_SCALE, P_QUANT, P_TRANS}},   /* ((#8) was SCL) */
     {"CHORD", FAM_SCL, SC_TRACK, GR_CHORD, {P_CHRD, P_VOIC, 0xFF, 0xFF}},   /* SEL again: the chord keys (chord.c) */
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},
@@ -540,6 +539,7 @@ static const page_t PAGES[] = {
                                                                          * project's kit on one sheet (ui_dx.c) */
     {"LANE MIX", FAM_EDIT, SC_TRACK, GR_LMIX, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (2.0, #36) DRUM and DRUM-X: LANE, its LEVEL
                                                                          * and PAN (page_desc) */
+    {"DRUM COMP", FAM_EDIT, SC_TRACK, GR_DCOMP, {0xFF,0xFF,0xFF,0xFF}},
     {"SLICES", FAM_EDIT, SC_TRACK, GR_SLICES, {0xFF, 0xFF, 0xFF, 0xFF}},   /* SLICE only: the slices by hand (ui_slice.c) */
     {"SAMPLES", FAM_EDIT, SC_GLOBAL, GR_SMIX, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (#21) SAMPLE on a USR set only: KNOB 1 the
                                                                          * sample, 2..4 its LEVEL REVERB DELAY (page_desc;

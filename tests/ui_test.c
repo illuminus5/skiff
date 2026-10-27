@@ -3007,9 +3007,9 @@ static int test_edit_cycle(void)
 #endif
     {   /* #97: a DRUM track's lane levels on EDIT > LANES ((Skiff U3, R6) one page: KNOB 1 the lane, KNOB 2 its level;
          * N5: VOICE and VOICE 2 change nothing on the hits, not there) */
-        static const char *const CYC_K[] = {"EDIT 1", "EDIT 2", "LANES", "LANE MIX", "EDIT 1"};
+        static const char *const CYC_K[] = {"EDIT 1", "EDIT 2", "LANES", "LANE MIX", "DRUM COMP", "EDIT 1"};
         set_engine_of(TSEL, ENGI_DRUM);
-        bad += check("EDIT cycle (DRUM): EDIT 1 EDIT 2 LANES (2.0) LANE MIX, EDIT 1", engine_cycle(CYC_K, NELEM(CYC_K)));
+        bad += check("EDIT cycle (DRUM): EDIT 1 EDIT 2 LANES LANE MIX DRUM COMP, EDIT 1", engine_cycle(CYC_K, NELEM(CYC_K)));
         go_title("LANES"); frame();
         ok = TSEL->p[P_LN5] == 127;
         turn(EN_K1, 5 - (int32_t)ui.lane);
@@ -3041,7 +3041,7 @@ static int test_edit_cycle(void)
                      str_eq(cur_page()->title, "EDIT 1") && !memcmp(ui.msg, "NO LANES ON ", 12));
     }
     {   /* (Skiff phase 7, 8) DRUM-X: its lane levels, and SOUND, the sheet of a sound of the project's kit (ui_dx.c) */
-        static const char *const CYC_X[] = {"EDIT 1", "EDIT 2", "SOUND", "LANE MIX", "EDIT 1"};   /* ((U3) LANES: the
+        static const char *const CYC_X[] = {"EDIT 1", "EDIT 2", "SOUND", "LANE MIX", "DRUM COMP", "EDIT 1"};   /* ((U3) LANES: the
                                                                                                 * sheet's LEVL) */
         static dx_lane_t keep[DV_NLANE];
         uint32_t pr;
@@ -3049,7 +3049,7 @@ static int test_edit_cycle(void)
         memcpy(keep, dx_kit, sizeof keep);
         set_engine_of(TSEL, ENGI_DRUMX);
         go_title("EDIT 1"); ui.fam_last[FAM_EDIT] = ui.page;   /* (EDIT reopens its last page: from the first) */
-        bad += check("EDIT cycle (DRUM-X): EDIT 1 EDIT 2 SOUND (2.0) LANE MIX, EDIT 1", engine_cycle(CYC_X, NELEM(CYC_X)));
+        bad += check("EDIT cycle (DRUM-X): EDIT 1 EDIT 2 SOUND LANE MIX DRUM COMP, EDIT 1", engine_cycle(CYC_X, NELEM(CYC_X)));
         ui_prefs |= PREF_BPM_LOCK;                    /* (SELECT: the pages, the sheet's rows) */
         dx_ui_lane = DV_KICK; dx_ui_win = 0;
         go_title("SOUND"); frame();
@@ -3080,7 +3080,9 @@ static int test_edit_cycle(void)
         ok = str_eq(cur_page()->title, "LANE MIX");   /* ((U3) no VOICE on the hits), its lane the sheet's */
         ok &= page_lane() == DV_SNARE && lock_id(2) == P_LPAN0 + DV_SNARE;
         turn(EN_SELECT, 1);
-        ok &= str_eq(cur_page()->title, "LANE MIX");
+        ok &= str_eq(cur_page()->title, "DRUM COMP") && page_lane()==DV_SNARE;
+        turn(EN_SELECT, 1);ok &= str_eq(cur_page()->title,"DRUM COMP");
+        turn(EN_SELECT, -1);ok &= str_eq(cur_page()->title,"LANE MIX");
         turn(EN_SELECT, -1);
         ok &= str_eq(cur_page()->title, "SOUND") && dx_ui_win == 3u;
         turn(EN_SELECT, -3);
@@ -3089,7 +3091,7 @@ static int test_edit_cycle(void)
         ok &= str_eq(cur_page()->title, "EDIT 2");
         turn(EN_SELECT, 1);
         ok &= str_eq(cur_page()->title, "SOUND") && dx_ui_win == 0u;
-        bad += check("SELECT past the sheet's foot: (2.0) LANE MIX on the sheet's sound, nothing after it (U3); back: the "
+        bad += check("SELECT past the sheet's foot: (2.0) LANE MIX then DRUM COMP on the same sound; clamp at last page; back: the "
                      "sheet's foot; up past its top: EDIT 2; on: its top", ok);
         key_down(13); frame(); key_up(13); frame();   /* (the first C is key 7: 13 is F#, HAT CL) */
         bad += check("a key struck on the track picks the sound edited (HAT CL)", dx_ui_lane == DV_HATC && str_eq(page_head(), "SOUND CH"));
@@ -7969,8 +7971,8 @@ static int test_u4(void)
         TSEL->engine = TSEL->eng_req;
         go_page(GR_DXSND); frame();
         page_pos(ti);
-        bad += check("#7 the sheets show where they are: FM6 OPERATOR 3/6, ALL OPS 4/6, DRUM-X SOUND 3/4 ((2.0) LANE MIX "
-                     "after it)", ok && str_eq(ti, "3/4"));
+        bad += check("#7 the sheets show where they are: FM6 OPERATOR 3/6, ALL OPS 4/6, DRUM-X SOUND 3/5 (LANE MIX and DRUM COMP "
+                     "after it)", ok && str_eq(ti, "3/5"));
     }
     ui_power_on();                                      /* F7: no silent dead ends */
     ui_prefs |= PREF_BPM_LOCK;                          /* (SELECT: the pages) */

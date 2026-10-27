@@ -913,14 +913,17 @@ static void graph_slicer(const track_t *t, uint16_t c)
  * its pattern looped, no swing): full up to the box's top, down by DEPTH at each hit (the source's colour under it,
  * a DRUM source's KICK lane only), back in a line over RELEASE; a hit's dip from the bar before runs into the bar's
  * start. BY OFF (or the track itself): the empty box */
+/* EDIT > DRUM COMP: the same eight-fader layout as EDIT > LANES.
+ * Each fader is that lane's compressor MIX; all themes reuse the lane widgets. */
 static void graph_dcomp(const track_t *t,uint16_t c)
 {
-    uint32_t lane=page_lane(),k=(uint32_t)(t-trk)%DC_TRACKS;
-    cv_text(12,16,&AF_M,drum_lane_name(t,lane),c);
-    cv_text(12,44,&AF_S,"PRESETS: DRUM",T_DIM);
-    int32_t mix=(int32_t)dc_get(k,lane,3);
-    cv_rect(12,78,210,12,T_RAISE);cv_rect(12,78,mix*210/127,12,c);
-    cv_text(12,100,&AF_S,"MIX",T_MID);
+    uint32_t selected=page_lane(),track=(uint32_t)(t-trk);
+    for(uint32_t lane=0;lane<DC_LANES;lane++){
+        int32_t x=3+29*(int32_t)lane;
+        int sel=lane==selected;
+        lane_fader_of(t,lane,x,82,76,(int32_t)dc_get(track,lane,3)*70/127,sel,c);
+        lane_tile(t,lane,x,90,sel);
+    }
 }
 static void graph_duck(const track_t *t, uint16_t c)
 {
