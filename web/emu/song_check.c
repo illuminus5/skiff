@@ -120,7 +120,7 @@ static int run_a(FILE *f)
     check("the edit made in T1's B plays the next time round", again == 1u);
     tap(B_PLAY);
     check("STOP", !song.playing);
-    render(16000);                                 /* the autosave's quiet stop: 10 s, then a round */
+    render(16000);                                 /* the autosave's quiet stop: 2 s, then a round */
     check("the autosave's round: every pattern written, then the project", pend_free() == PEND_N && as.writes >= 1u &&
           as.saved == autosave_sig());
     for (k = 0; k < NTRK; k++)                     /* (where each stopped, for b) */

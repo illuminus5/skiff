@@ -21,6 +21,7 @@ static const uint8_t SMK_WHITE_NOTE[SMK_NPAD] = {0, 2, 4, 6, 7, 9, 11, 12, 14, 1
 #define SMK_PAD_TAP 0x80u
 static uint8_t smk_pad_note[SMK_NPAD];   /* what a pad's press did: its white key + 1, SMK_PAD_TAP a step tap, 0 none */
 static volatile uint8_t smk_pad_steps;   /* the UI's: 1 the pads are step taps (smk_padq), 0 the white keys */
+static volatile uint8_t smk_pedal;       /* the UI's (smk_ui.c): 1 the pedal is down, it holds the keys (seq.c) */
 #define SMK_PADQ 32u
 static volatile uint16_t smk_padq[SMK_PADQ];   /* step taps: pad << 8 | velocity (0: let go) */
 static volatile uint8_t smk_padq_w, smk_padq_r;

@@ -6,6 +6,8 @@
  *   cc -o ota_test tests/ota_test.c && ./ota_test FILE.fwsc
  * SMK-37 (-DBOARD_SMK37=1): `./ota_test M-VAVE.fwsc official` takes M-VAVE's own package (its 36 interleave blocks):
  * the app stages its own loader (SMK_LDR, made here) in place of the package's, under the stock record name.
+ * ((2.0.2, #64) FM-1: `./ota_test FM-1.fwsc official`, M-VAVE's V15 or V16: their loader staged as it is, after the
+ * head check.)
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -26,6 +28,7 @@
 #define T_FL_OTHER 0x93000u              /* the other board's (the FM-1's) */
 #define T_FL_OTHER_NAME "0x93000"
 #define T_PARM_ID "ota-" SMK_MODEL "_016"
+#define T_SMK 1
 #define OTA_LDR_HOST 1                   /* ota.c: SMK_LDR from here, not build/gen's (made by make_own_ldr) */
 static uint8_t SMK_LDR[0x1F00];
 static uint32_t smk_ldr_len;
@@ -37,6 +40,8 @@ static uint32_t smk_ldr_len;
 #define T_FL_LEN "0x93000"
 #define T_FL_OTHER 0x9D000u              /* an SMK-37 Pro package's */
 #define T_FL_OTHER_NAME "0x9D000"
+#define T_FL_V16 0xA9000u                /* ((2.0.2, #64) M-VAVE's V16's: with the official loader only) */
+#define T_SMK 0
 #endif
 #define T_AREA_HI (T_AREA + 0x5000u)
 #define FELUCCA_OTA_DRYRUN 0
@@ -261,15 +266,19 @@ int main(int argc, char **argv)
     reset_dev();
     rc = ota_session();
     printf("  %u requests\n", requests);
-    bad += check("session commits (flash.bin exactly " T_FL_LEN ")", rc == 0 && committed);
-    bad += check(official ? "headers + the head check + confirm, no loader read" : "headers + loader + confirm, no head reads",
-                 requests >= (official ? 36u : 10u) && requests <= (official ? 40u : 30u));
+    bad += check("session commits (flash.bin a size this board takes)", rc == 0 && committed);
+    if (official && T_SMK)
+        bad += check("headers + the head check + confirm, no loader read", requests >= 36u && requests <= 40u);
+    else if (official)                                     /* ((2.0.2) the FM-1's: M-VAVE's loader read and staged too) */
+        bad += check("headers + the head check + the loader + confirm", requests >= 70u && requests <= 85u);
+    else
+        bad += check("headers + loader + confirm, no head reads", requests >= 10u && requests <= 30u);
     {
         uint8_t *h = nor + T_AREA, *p = committed_parm;
         uint32_t k, zero = 1;
         for (k = 8u + sizeof T_PARM_ID - 1u; k < 0x28u; k++)
             zero &= p[k] == 0;
-        if (official)
+        if (official && T_SMK)
             bad += check("M-VAVE's package: Skiff's own loader staged, whole", T_EMB &&
                          !memcmp(nor + T_AREA + 0x20u, SMK_LDR + 0x20u, smk_ldr_len - 0x20u) &&
                          ota_rd32(h + 8) == smk_ldr_len);
@@ -290,16 +299,37 @@ int main(int argc, char **argv)
     bad += check("boot cleanup erases the area", ota_boot_cleanup() == 1 && area_erased());
     bad += check("second boot: nothing to do", ota_boot_cleanup() == 0);
 
-    /* 1.6.1: another board's package (flash.bin not this board's app area size): refused in step 1, nothing erased */
+    /* 1.6.1: another board's package (flash.bin not this board's app area size): refused in step 1, nothing erased;
+     * ((2.0.2) after the header's 2 reads exactly: web/fm1ota.js stockRefusal counts on it) */
     {
         uint8_t keep[0x40 + 11 * 0x50];
         memcpy(keep, logical, sizeof keep);
         reset_dev();
         set_fl_size(logical, T_FL_OTHER);
         rc = ota_session();
-        bad += check("another board's size (" T_FL_OTHER_NAME "): -15, no commit, no erase", rc == -15 && !committed && erases == 0 &&
-                     area_erased());
+        bad += check("another board's size (" T_FL_OTHER_NAME "): -15 after 2 reads, no commit, no erase",
+                     rc == -15 && requests == 2u && !committed && erases == 0 && area_erased());
+#if !BOARD_SMK37
+        reset_dev();                                       /* ((2.0.2, #64) V16's size: the official loader's alone */
+        set_fl_size(logical, T_FL_V16);
+        rc = ota_session();
+        if (official)
+            bad += check("V16's size (0xA9000), the official loader: commits", rc == 0 && committed);
+        else
+            bad += check("V16's size (0xA9000), Skiff's own loader: -15, no commit, no erase",
+                         rc == -15 && requests == 3u && !committed && erases == 0 && area_erased());
+#endif
         memcpy(logical, keep, sizeof keep);
+    }
+    /* (2.0.2, #64) the official loader rewrites the head: a unit whose head is not the package's (V15's package on a unit
+     * V16 started, or back) is refused, -5 at the head's first read after the 3 before it (that block differs), nothing
+     * erased: web/fm1ota.js stockRefusal names the other version from where the reads stopped */
+    if (official) {
+        reset_dev();
+        nor[0x20] ^= 0xFFu;
+        rc = ota_session();
+        bad += check("the unit's head not the package's: -5 after 4 reads, no commit, no erase",
+                     rc == -5 && requests == 4u && !committed && erases == 0 && area_erased());
     }
     /* host disappears in the middle */
     reset_dev();

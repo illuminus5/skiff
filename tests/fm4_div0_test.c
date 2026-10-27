@@ -13,6 +13,7 @@
  * 2. a 0.9 project (FUN3, as 0.9-beta stored it) with DIGITAL tracks (ORGAN, then each other DIGITAL preset)
  *    imports as FM6 with the patches the guarded form gives.
  * Run by tests/run_tests.sh (needs build/gen from one firmware build). */
+#define FELUCCA_LEGACY 1                        /* ((2.0) the formats of before: the converter's build, core.h) */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main

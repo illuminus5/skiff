@@ -26,7 +26,7 @@ static const char *const N_ALLOC[] = {"ROT", "REUSE"};
 static const char *const N_DIR[] = {"FWD", "RVRS", "PING", "RAND"};   /* ((Skiff U4, L2) RVRS: REV is reverb) */   /* (Skiff) DIR_* (seq.c seq_next) */
 static const char *const N_DKSRC[] = {"OFF", "T1", "T2", "T3", "T4", "T5", "T6"};   /* (Skiff) P_DKSRC: the track ducked under */
 _Static_assert(sizeof N_DKSRC / sizeof N_DKSRC[0] == NTRK + 1u, "DUCK's BY: OFF and every track");
-static const char *const N_DTYPE[] = {"SOFT", "HARD", "FOLD", "BITS"};   /* (Skiff phase 9) P_DTYPE: DT_* (fx.c) */
+static const char *const N_DTYPE[] = {"SOFT", "HARD", "FOLD", "CRUSH", "FUZZ"};   /* (Skiff phase 9) P_DTYPE: DT_* (fx.c) */
 #define TRK_STR_(n) #n
 #define TRK_STR(n) TRK_STR_(n)
 static const char *const N_ORDER[] = {"NOTE", "PLAYED"};
@@ -46,9 +46,9 @@ static const char *const ESYNC_NAMES[ESYNC_N + 1u] = {
 static const uint16_t ESYNC_UNITS[ESYNC_N] = {0, 4, 6, 8, 9, 12, 16, 18, 24, 32, 36, 48, 64, 72,
                                               96, 128, 144, 192, 256, 288, 384, 576, 768, 1152, 1536};
 static const param_desc_t ESYNC_DESC[3] = {   /* ATK DEC REL with ENV SYNC on: the range and defaults as ever */
-    {"ATTACK", F_INT, 0, 127, 10, ESYNC_NAMES, 0},
-    {"DECAY", F_INT, 0, 127, 70, ESYNC_NAMES, 0},
-    {"RELEASE", F_INT, 0, 127, 60, ESYNC_NAMES, 0},
+    {"ATTACK", ESYNC_NAMES, 0, 127, 10, F_INT, 0},
+    {"DECAY", ESYNC_NAMES, 0, 127, 70, F_INT, 0},
+    {"RELEASE", ESYNC_NAMES, 0, 127, 60, F_INT, 0},
 };
 static uint32_t esync_idx(int32_t v) { return (uint32_t)(v & 127) * ESYNC_N >> 7; }   /* (param_format's split) */
 static const char *const N_IBITS[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15",
@@ -86,8 +86,8 @@ static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-",
                                              "DRUM-X",
 };
 
-#define PD(l, f, mn, mx, df) {l, f, mn, mx, df, 0, 0}
-#define PE(l, n, df) {l, F_ENUM, 0, (int16_t)(sizeof(n) / sizeof(n[0]) - 1), df, n, 0}
+#define PD(l, f, mn, mx, df) {l, 0, mn, mx, df, f, 0}
+#define PE(l, n, df) {l, n, 0, (int16_t)(sizeof(n) / sizeof(n[0]) - 1), df, F_ENUM, 0}
 
 static const param_desc_t TP[P_COUNT] = {
     [P_LEVEL] = PD("LEVEL", F_DB, 0, 127, 104),
@@ -122,7 +122,7 @@ static const param_desc_t TP[P_COUNT] = {
     [P_SLEN] = PD("LENGTH", F_STEPS, 1, NSTEP, 16),
     [P_SDIV] = PE("DIV", N_DIV, 2),
     [P_SSWING] = PD("SWING", F_PCT, 0, 100, 0),
-    [P_SGATE] = PD("GATE", F_PCT, 1, 127, 64),
+    [P_SGATE] = PD("GATE", F_PCT, 1, 127, 127),   /* ((2.0) a note 1 STEP by default: NOTES' LENGTH; 64 before) */
     [P_DIST] = PD("DIST", F_PCT, 0, 127, 0),
     [P_CHOR] = PD("CHORUS", F_PCT, 0, 127, 0),
     [P_DLY] = PD("DELAY", F_PCT, 0, 127, 0),
@@ -179,11 +179,16 @@ static const param_desc_t TP[P_COUNT] = {
     [P_IB] = PD("B", F_PCT, 0, 127, 96),
     [P_IC] = PD("C", F_PCT, 0, 127, 96),
     [P_IMIX] = PD("MIX", F_PCT, 0, 127, 127),
-    [P_ESYNC] = PE("SYNC", N_ONOFF, 0),            /* (1.3) ENV SYNC: OFF, ATK DEC REL in ms, as before */
+    [P_ESYNC] = PE("ENV SYNC", N_ONOFF, 0),        /* (1.3) ENV SYNC: OFF, ATK DEC REL in ms, as before ((2.0) on LFO 2:
+                                                    * its whole name) */
 /* (Skiff phase 9) the DRUM engine's lanes, each moved from its design (eng_drum.c drum_render): 64 = as designed */
 #define LANE2(k) [P_LTUNE0 + (k)] = PD("TUNE", F_ST16, 0, 127, 64), [P_LDECAY0 + (k)] = PD("DECAY", F_BIPCT, -64, 63, 0)
     LANE2(0), LANE2(1), LANE2(2), LANE2(3), LANE2(4), LANE2(5), LANE2(6), LANE2(7),
 #undef LANE2
+/* (2.0, #36) DRUM's and DRUM-X's lanes, each panned as the track's PAN (voice.c lpan_render): C as before */
+#define LANE3(k) [P_LPAN0 + (k)] = PD("PAN", F_BIPCT, -64, 63, 0)
+    LANE3(0), LANE3(1), LANE3(2), LANE3(3), LANE3(4), LANE3(5), LANE3(6), LANE3(7),
+#undef LANE3
 };
 
 static const param_desc_t GP[G_COUNT] = {
@@ -221,10 +226,10 @@ static const param_desc_t GP[G_COUNT] = {
 
 /* (Skiff 1.3, from Felucca 1.5) the INSERT's A B C as its TYPE means them (TP's ranges and defaults): the drives DRIVE
  * TONE LEVEL, CRUSH BITS RATE LPF, the swept ones RATE DEPTH FDBK; OFF TP's own */
-#define PU(l, f, df, n, u) {l, f, 0, 127, df, n, u}
+#define PU(l, f, df, n, u) {l, n, 0, 127, df, f, u}
 static const param_desc_t INS_DESC[3][3] = {
     {PU("DRIVE", F_PCT, 64, 0, 0), PU("TONE", F_CUTOFF, 96, 0, 0), PU("LEVEL", F_DB, 96, 0, 0)},
-    {PU("BITS", F_INT, 64, N_IBITS, 0), PU("RATE", F_INT, 96, N_IRATE, "Hz"), PU("LPF", F_CUTOFF, 96, 0, 0)},
+    {PU("BITS", F_INT, 64, N_IBITS, 0), PU("RATE", F_INT, 96, N_IRATE, U_HZ), PU("LPF", F_CUTOFF, 96, 0, 0)},
     {PU("RATE", F_LFOHZ, 64, 0, 0), PU("DEPTH", F_PCT, 96, 0, 0), PU("FDBK", F_PCT, 96, 0, 0)},
 };
 #undef PU
@@ -279,6 +284,17 @@ static int32_t param_fit(const param_desc_t *d, int32_t v)
 {
     v = clamp(v, d->min, d->max);
     return d->names == N_DRUM_KIT ? enum_orig(d, v) : v;
+}
+
+/* the track's settings, not the sound's: what a sound load (factory or user preset, an engine jump,
+ * TOOLS INIT, (2.0, #30) a song entry's sound: launch.c esnd_put, in the audio ISR) leaves alone. The mix (LEVEL,
+ * PAN, MUTE: the TRACKS faders), the arpeggiator (ARP, ARP 2), the scale and key map (SCL), the pattern parameters
+ * (LEN, DIV, SWING, GATE) and the SLICER insert, which chops whatever the track plays in time with its sequencer */
+static int param_kept(uint32_t i)
+{
+    return i == P_LEVEL || i == P_PAN || i == P_MUTE || (i >= P_AMODE && i <= P_SGATE) ||
+           (i >= P_SLCR && i <= P_SLDEPTH) || i == P_CHRD || i == P_VOIC || i == P_DIR ||   /* ((Skiff) DIR: the pattern's; */
+           (i >= P_DKSRC && i <= P_DKREL);           /* the ducking: the mix's) */
 }
 
 /* a knob moved an F_ENUM from `from` to v: past any alias in that direction (back to `from` at the end) */
@@ -386,7 +402,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         if (v <= 0) {
             str_cpy(val, "OFF", 6);
         } else {
-            fmt_fix(val, LEVEL_DB_X10[v], 1);
+            fmt_fix(val, LEVEL_DB_X10(v), 1);
             *unit = "dB";
         }
         break;
@@ -404,7 +420,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         str_cpy(val, d->names[v < d->min ? d->min : v > d->max ? d->max : v], 8);   /* ((Skiff U4, V5) 7 letters: the
                                                        * card falls to M, then S, where V is too wide) */
         if (d->unit)
-            *unit = d->unit;
+            *unit = PD_UNIT_OF(d);
         break;
     case F_BPM:
         fmt_int(val, v);
@@ -445,7 +461,7 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
             fmt_int(val, v);
         }
         if (d->unit)
-            *unit = d->unit;
+            *unit = PD_UNIT_OF(d);
         break;
     }
 }
@@ -455,22 +471,24 @@ enum { FAM_HOME, FAM_ENV, FAM_LFO, FAM_FX, FAM_SCL, FAM_EDIT, FAM_GLO, FAM_SAVE,
        FAM_COUNT };
 enum { SC_TRACK, SC_GLOBAL, SC_ENGINE, SC_STEP, SC_TRK };   /* SC_TRK: the TRACKS page (ui_input.c tracks_edit) */
 enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_BROWSE, GR_SLOTS, GR_USER, GR_TRK,
-       GR_SLCR, GR_MOD, GR_CHANCE, GR_CHORD, GR_SLICES,
+       GR_SLCR, GR_MOD,
+       GR_FEEL,                    /* (Skiff 2.0, D) SEQ > FEEL: CHANCE RATCHET NUDGE TYPE of the selection (ui.c nsel), on
+                                    * the tiles (a DRUM track: the grid); CHANCE's and PLAY's before */
+       GR_CHORD, GR_SLICES,
        GR_EVENTS,                  /* SEQ > AUTOMATION ((Skiff U3, R5) the list, AUTO LIST's, and its own row: ui_events.c;
                                     * SAVE > TOOLS (R3) and the AUTOMATION page of before are gone) */
-       GR_PLAY,                    /* (Skiff) SEQ > PLAY: STEP NUDGE DIR, the roll or the grid as CHANCE (ui_draw.c) */
        GR_BANK,                    /* (Skiff) SAVE > PATTERNS: the bank's 16 slots of the track (bank.c) */
        GR_DUCK,                    /* (Skiff) FX > DUCK: the track's level over a bar of its source's hits */
-       GR_TILES,                   /* (Skiff) SEQ > STEP as the B mockup: the bar's 16 steps as tiles (ROLL: the roll) */
        GR_SONG,                    /* (Skiff phase 5) SEQ > SONG: the tracks' lists (bank.c), ENTRY PATTERN REPS SONG */
        GR_DXSND,                   /* (Skiff phase 7, 8) EDIT > SOUND: a sound of the DRUM-X kit, the sheet (ui_dx.c) */
        GR_LANES,                   /* (Skiff U3, R6) EDIT > LANES (DRUM): the eight lane levels, KNOB 1 the lane (ui.lane) */
-       GR_ENVDST, GR_LFODST, GR_DELAY, GR_REVERB, GR_CHORUS, GR_GLOBAL, GR_VOICE, GR_VOICE2,
+       GR_DELAY, GR_REVERB, GR_CHORUS, GR_GLOBAL, GR_VOICE, GR_VOICE2,   /* ((2.0) ENV DEST LFO DEST: MOD) */
        GR_ARP2,                    /* (Skiff U5, V1) the pages' own graphs, the scope's before (ui_pgraph.c); ARP 2: ARP's */
        GR_FMOP, GR_FMALL,          /* (FM6 LAB) EDIT > OPERATOR and ALL OPS: FM6's patch, two sheets (ui_fm6.c) */
        GR_DRIVE,                   /* (Skiff phase 9) FX > DRIVE: the TYPE's transfer at the drive (ui_pgraph.c) */
        GR_INS,                     /* (Skiff 1.3) FX > INSERT: its TYPE's transfer or sweep (ui_pgraph.c graph_insert) */
-       GR_SMIX };                  /* (Skiff, #21) EDIT > SAMPLES: a user sample's LEVEL, REVERB, DELAY (ui.c smx_zone) */
+       GR_SMIX,                    /* (Skiff, #21) EDIT > SAMPLES: a user sample's LEVEL, REVERB, DELAY (ui.c smx_zone) */
+       GR_LMIX };                  /* (2.0, #36, the user's pick 1A) EDIT > LANE MIX: a kit's lane levels and pans */
 
 typedef struct {
     const char *title;
@@ -484,13 +502,12 @@ typedef struct {
  * top row) and LANES 2 (R6: one LANES page) are gone */
 static const page_t PAGES[] = {
     {"ENV", FAM_ENV, SC_TRACK, GR_ADSR, {P_ATK, P_DEC, P_SUS, P_REL}},
-    {"ENV DEST", FAM_ENV, SC_TRACK, GR_ENVDST, {P_ED_FLT, P_ED_PIT, P_ED_SHP, P_ESYNC}},   /* (P_ED_FX: nothing reads it;
-                                                                                         * (1.3) ENV SYNC) */
     {"ENV 2", FAM_ENV, SC_TRACK, GR_ADSR, {P_EG2_ATK, P_EG2_DEC, P_EG2_SUS, P_EG2_REL}},   /* (Skiff phase 9) MOD's ENV2 */
     {"LFO", FAM_LFO, SC_TRACK, GR_LFO, {P_LRATE, P_LWAVE, P_LPHASE, P_LFADE}},
-    {"LFO 2", FAM_LFO, SC_TRACK, GR_LFO, {P_LSYNC, P_LTRIG, P_LPOL, 0xFF}},   /* (1.3, #16) SYNC TRIG POLARITY */
-    {"LFO DEST", FAM_LFO, SC_TRACK, GR_LFODST, {P_LD_PIT, P_LD_FLT, P_LD_SHP, P_LD_AMP}},
-    {"MOD", FAM_LFO, SC_TRACK, GR_MOD, {0xFF, P_M1SRC, P_M1DST, P_M1AMT}},   /* KNOB 1: the slot (mod_ui_slot) */
+    {"LFO 2", FAM_LFO, SC_TRACK, GR_LFO, {P_LSYNC, P_LTRIG, P_LPOL, P_ESYNC}},   /* (1.3, #16) SYNC TRIG POLARITY; (2.0)
+                                                                               * ENV SYNC, ENV DEST's of before */
+    {"MOD", FAM_LFO, SC_TRACK, GR_MOD, {0xFF, P_M1SRC, P_M1DST, P_M1AMT}},   /* KNOB 1: the route (mod_ui_route; (2.0,
+                                                                         * D 1A) LFO DEST and ENV DEST are its first 7) */
     {"FX", FAM_FX, SC_TRACK, GR_FX, {P_DIST, P_CHOR, P_DLY, P_REV}},
     {"DRIVE", FAM_FX, SC_TRACK, GR_DRIVE, {P_DIST, P_DTYPE, P_DTONE, 0xFF}},   /* (Skiff phase 9) DIST's TYPE, TONE */
     {"INSERT", FAM_FX, SC_TRACK, GR_INS, {P_ITYPE, P_IA, P_IB, P_IC}},   /* (1.3, from Felucca 1.5) the track's INSERT */
@@ -507,6 +524,8 @@ static const page_t PAGES[] = {
                                                                          * (page_desc) */
     {"SOUND", FAM_EDIT, SC_TRACK, GR_DXSND, {0xFF, 0xFF, 0xFF, 0xFF}},     /* (Skiff phase 7, 8) DRUM-X only: a sound of the
                                                                          * project's kit on one sheet (ui_dx.c) */
+    {"LANE MIX", FAM_EDIT, SC_TRACK, GR_LMIX, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (2.0, #36) DRUM and DRUM-X: LANE, its LEVEL
+                                                                         * and PAN (page_desc) */
     {"SLICES", FAM_EDIT, SC_TRACK, GR_SLICES, {0xFF, 0xFF, 0xFF, 0xFF}},   /* SLICE only: the slices by hand (ui_slice.c) */
     {"SAMPLES", FAM_EDIT, SC_GLOBAL, GR_SMIX, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (#21) SAMPLE on a USR set only: KNOB 1 the
                                                                          * sample, 2..4 its LEVEL REVERB DELAY (page_desc;
@@ -530,26 +549,32 @@ static const page_t PAGES[] = {
     {"PROJECT", FAM_SAVE, SC_GLOBAL, GR_SLOTS, {G_SLOT, 0xFF, G_LOAD, G_SAVE}},
     {"ARP", FAM_ARP, SC_TRACK, GR_ARP, {P_AMODE, P_ARATE, P_AOCT, P_AGATE}},
     {"ARP 2", FAM_ARP, SC_TRACK, GR_ARP2, {P_ASWING, P_APROB, P_AHOLD, P_AORDER}},
-    {"STEP", FAM_SEQ, SC_STEP, GR_TILES, {0, 1, 2, 3}},   /* (Skiff) the mockup's tiles: STEP NOTE VELO CHNC */
-    {"ROLL", FAM_SEQ, SC_STEP, GR_ROLL, {0, 1, 2, 3}},      /* (Skiff: Felucca's STEP, its piano roll; U3: not on a drum
-                                                         * track, STEP is its grid) */
-    {"CHANCE", FAM_SEQ, SC_STEP, GR_CHANCE, {0xFF, 0xFF, 0xFF, 0xFF}},
-    {"PLAY", FAM_SEQ, SC_TRACK, GR_PLAY, {0xFF, 0xFF, P_DIR, 0xFF}},   /* (Skiff) the step's NUDGE, the track's DIR */
-    {"PATTERN", FAM_SEQ, SC_TRACK, GR_STEPS, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},
+    {"NOTES", FAM_SEQ, SC_STEP, GR_ROLL, {0, 1, 2, 3}},   /* (Skiff 2.0, D: STEP ROLL CHANCE PLAY as two pages) the roll:
+                                                         * PITCH START LENGTH VELOCITY of the selection (a DRUM track:
+                                                         * the grid, LANE HIT ACC VELOCITY); PRESETS the step */
+    {"FEEL", FAM_SEQ, SC_STEP, GR_FEEL, {0xFF, 0xFF, 0xFF, 0xFF}},
+    {"PATTERN", FAM_SEQ, SC_TRACK, GR_STEPS, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},   /* (2.0) PRESETS: the track's DIR */
     {"AUTOMATION", FAM_SEQ, SC_TRACK, GR_EVENTS, {0xFF, 0xFF, 0xFF, 0xFF}},   /* 1.1.5's AUTO LIST: the locks and events */
     {"SONG", FAM_SEQ, SC_TRACK, GR_SONG, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (Skiff phase 5) the lists (ui_input.c song_knob) */
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
-static uint8_t mod_ui_slot;      /* the MOD page: the matrix slot (0..3) KNOB 2..4 edit */
-static uint32_t page_lane(void);   /* (Skiff U3, R6) EDIT > LANES: the lane KNOB 1 picked (ui.c: ui.lane) */
+/* (2.0, D 1A) the MOD page: the route KNOB 1 picks (0..10): the seven fixed routings (LFO DEST's and ENV DEST's of
+ * before: the LFO to PITCH CUT SHAPE AMP, the ENV to PITCH CUT SHAPE), whose AMOUNT alone turns, then the matrix's
+ * four slots (MOD_SLOT0 on), their SOURCE DEST AMOUNT */
+#define MOD_ROUTES 11u
+#define MOD_SLOT0 7u
+static const uint8_t MOD_FIXED[MOD_SLOT0] = {P_LD_PIT, P_LD_FLT, P_LD_SHP, P_LD_AMP, P_ED_PIT, P_ED_FLT, P_ED_SHP};
+static uint8_t mod_ui_route;
+static uint32_t page_lane(void);   /* (Skiff U3, R6) EDIT > LANES, (2.0) LANE MIX: the lane KNOB 1 picked (ui.c) */
 static uint32_t smx_zone(uint32_t *k);   /* (#21) EDIT > SAMPLES: the sample (ui.c) */
 static int16_t smx_sel __attribute__((section(".pool")));   /* (#21) .. KNOB 1's: its number, 1..16 */
 
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
 {
-    uint32_t id = pg->graph != GR_LANES ? pg->id[slot] : slot == 1u ? P_LN0 + page_lane() :   /* (LANES: its LEVEL, */
+    uint32_t id = pg->graph == GR_LMIX ? (slot == 1u ? P_LN0 + page_lane() : slot == 2u ? P_LPAN0 + page_lane() : 0xFFu) :
+                  pg->graph != GR_LANES ? pg->id[slot] : slot == 1u ? P_LN0 + page_lane() :   /* (LANES: its LEVEL, */
                   slot == 2u ? P_LTUNE0 + page_lane() : slot == 3u ? P_LDECAY0 + page_lane() : 0xFFu;   /* (phase 9)
-                                                       * TUNE, DECAY) */
+                                                       * TUNE, DECAY; (2.0) LANE MIX: LEVEL, PAN) */
     if (pg->graph == GR_SMIX) {                       /* (#21) SAMPLES: KNOB 1 the sample, 2..4 its LEVEL, REVERB, DELAY */
         static const param_desc_t SMX_D[4] = {PD("SAMPLE", F_INT, 1, 16, 1), PD("LEVEL", F_PCT, 0, 127, 127),
                                               PD("REVERB", F_PCT, 0, 127, 0), PD("DELAY", F_PCT, 0, 127, 0)};
@@ -571,8 +596,13 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
         *valp = &song.g[id];
         return &GP[id];
     }
-    if (pg->graph == GR_MOD)                          /* SRC DST AMT of the slot shown */
-        id += 3u * mod_ui_slot;
+    if (pg->graph == GR_MOD) {                        /* the route shown: a fixed one's AMOUNT, a slot's SRC DST AMT */
+        if (mod_ui_route < MOD_SLOT0 && slot != 3u) {
+            *valp = 0;
+            return 0;
+        }
+        id = mod_ui_route < MOD_SLOT0 ? MOD_FIXED[mod_ui_route] : id + 3u * (mod_ui_route - MOD_SLOT0);
+    }
     *valp = &TSEL->p[id];
     return track_desc(TSEL, id);
 }

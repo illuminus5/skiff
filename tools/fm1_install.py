@@ -10,7 +10,7 @@ device asks (SysEx read requests on the logical image) and we answer. Then
 the FM-1 restarts and the installed identity is checked.
 
   fm1_install.py PACKAGE.fwsc [--port NAME] [--yes] [--force]
-  fm1_install.py FM-1.fwsc            (the official V15 file: back to the stock firmware)
+  fm1_install.py FM-1.fwsc            (the official V15 or V16 file: back to the stock firmware)
   fm1_install.py SMK-37_Pro_016.fwsc (the official SMK-37 Pro V016 file: back to the stock firmware)
   fm1_install.py --info [--port NAME]
   fm1_install.py --uboot PACKAGE.fwsc (the flash backup's way in: step 1 only, nothing written, then the loader is
@@ -48,6 +48,9 @@ LOADER_MARK = b"FELUCCA-LOADER-1"
 # the unmodified official FM-1 V15 (FM-1.fwsc from M-VAVE): returning to it is allowed without --force,
 # as the web installer's "Return to official V15" (web/fm1pkg.js validateStockPackage)
 STOCK_V15_SHA256 = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a"
+# (2.0.2, #64) the unmodified official FM-1 V16 (M-VAVE's FM-1.fwsc since 2026-10-21, FM-1_016): a unit that ran V16
+# goes back to it (Skiff stages an official package only when its head is the unit's: firmware/src/ota.c)
+STOCK_V16_SHA256 = "d017fb65e70aca97ee29d944470c3515a74581df5c0576bf70de917c7b2b61d5"
 # the unmodified official SMK-37 Pro V016 (SMK-37_Pro_016.fwsc, 36 interleave blocks): the return of an SMK-37 Pro
 STOCK_SMK016_SHA256 = "2d98ce72530e71d617384963423820536f094501299e2cfec0a8d3c3fb6bcfb0"
 PORT_RE = re.compile(r"fm-1|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi", re.I)   # never probe other gear
@@ -609,10 +612,10 @@ def load_package(path, force):
     product = product_of(raw)
     if not re.fullmatch(r"[^_]+_\d+", product):
         raise InstallError("badpkg", f"{path}: not an FM-1 package (identity {product!r})")
-    official = hashlib.sha256(raw).hexdigest() in (STOCK_V15_SHA256, STOCK_SMK016_SHA256)
+    official = hashlib.sha256(raw).hexdigest() in (STOCK_V15_SHA256, STOCK_V16_SHA256, STOCK_SMK016_SHA256)
     if LOADER_MARK not in raw and not official and not force:
         raise InstallError("badpkg", f"{path}: no Felucca update loader in this package; only Felucca's own "
-                                     "packages and the unmodified official V15 (FM-1.fwsc) or SMK-37 Pro V016 "
+                                     "packages and the unmodified official V15 or V16 (FM-1.fwsc) or SMK-37 Pro V016 "
                                      "(SMK-37_Pro_016.fwsc) are installed (--force overrides)")
     return product, deinterleave(raw)
 

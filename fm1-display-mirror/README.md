@@ -15,12 +15,12 @@ From the repository root:
 sh fm1-display-mirror/build.sh --bulk
 ```
 
-The output is `build/skiff-1.4-mirrorbulk.fwsc`. The script never flashes it.
+The output is `build/skiff-2.0.2-mirrorbulk.fwsc`. The script never flashes it.
 Save an editor backup and retain a working firmware package before installing.
 Stop the mirror bridge, then use the normal installer manually:
 
 ```sh
-python3 tools/fm1_install.py build/skiff-1.4-mirrorbulk.fwsc
+python3 tools/fm1_install.py build/skiff-2.0.2-mirrorbulk.fwsc
 ```
 
 Rollback uses the same installer with the retained package. This assumes the
@@ -62,7 +62,7 @@ changed screens. An unchanged screen sends no frames, so 0 FPS alone does not
 indicate a disconnect.
 
 A slower diagnostic MIDI-only fallback builds without `--bulk`, producing
-`build/skiff-1.4-mirror.fwsc`. Run the viewer with `--midi` for that profile.
+`build/skiff-2.0.2-mirror.fwsc`. Run the viewer with `--midi` for that profile.
 It omits CDC by default and uses bounded SysEx replies. Bulk is recommended for
 animation. Hardware access uses pyserial; MIDI fallback and optional stage timing
 use python-rtmidi. Mock mode uses only the Python standard library.
@@ -118,7 +118,7 @@ MIRROR_PYTHON=fm1-display-mirror/.venv/bin/python sh fm1-display-mirror/tests/ru
 ```
 
 Tests cover capture/compression with sanitizers, exact panel reconstruction,
-540 visible engine/page combinations, held HOME/GLO, all three LFO pages,
+488 visible engine/page combinations, held HOME/GLO, LFO/LFO 2 and MOD,
 dropped updates and recovery, MIDI priority/fragmentation, USB descriptors and
 packet boundaries, settings, timings, HTTP/WS access checks and browser pacing.
 Run the ordinary repository suite separately after a normal firmware build.
@@ -136,15 +136,14 @@ screen sleep/wake, held overlays, palettes and loaded musical projects need
 further hardware acceptance. Compilation and host tests do not prove physical
 USB reliability.
 
-The ordinary suite currently has a legacy `FELUCCA_FM4=1` menu-navigation
-assertion failure (`ALGORITHM and PRESETS reach every row`). The same assertion
-fails on unchanged upstream commit `c01fa1e` with the same generated assets. A
-suite run also crashed in that legacy test; isolated sanitized and ordinary
-reruns completed with the assertion failure. These results are not reported as
-a clean full-suite pass.
-The broad ASan/UBSan UI run also stopped making progress and was terminated
-after more than twelve minutes at full CPU. Dedicated mirror sanitizer tests
-passed; the broad UI sanitizer result remains incomplete.
+This branch targets Skiff 2.0.2. Its MOD routing sheet replaces the former LFO
+DEST page: MOD is captured normally; only LFO/LFO 2 use graph-strip transfers.
+The mirror, default firmware, and MIDI fallback profiles pass the original
+target/memory checks. Native UI and web checks pass with fresh firmware
+descriptors; the menu reachability test uses a 64-bit mask for the expanded
+menu. Dedicated mirror sanitizer tests pass; the broad whole-UI sanitizer
+soak was not rerun for this update. This merged revision still needs hardware
+acceptance; the earlier stream4 measurements above are not measurements of it.
 
 Bulk USB is the default bridge transport. `--bulk` remains accepted for existing
 commands; use `--midi` explicitly for the slower MIDI-only firmware. Add

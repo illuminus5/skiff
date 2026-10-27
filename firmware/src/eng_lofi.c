@@ -44,8 +44,8 @@ static const uint8_t WRAM[16][16] = {
 static const char *const N_DCY[] = {"CONST", "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10",
                                     "D11", "D12", "D13", "D14", "D15", "L1", "L2", "L3", "L4", "L5", "L6", "L7",
                                     "L8", "L9", "L10", "L11", "L12", "L13", "L14", "L15", 0};
-static const param_desc_t LOFI_WAVNUM = {"WAV#", F_INT, 0, 127, 64, N_WRAM, 0};   /* = edit[2] but the names */
-static const param_desc_t LOFI_DCY = {"DCY", F_INT, 0, 127, 0, N_DCY, 0};        /* = edit[3] but the names */
+static const param_desc_t LOFI_WAVNUM = {"WAV#", N_WRAM, 0, 127, 64, F_INT, 0};   /* = edit[2] but the names */
+static const param_desc_t LOFI_DCY = {"DCY", N_DCY, 0, 127, 0, F_INT, 0};        /* = edit[3] but the names */
 
 static const param_desc_t *lofi_desc(const track_t *t, uint32_t k)
 {
@@ -222,14 +222,14 @@ static const engine_t ENG_LOFI = {
     .name = "LOFI",
     .page_title = {"CHIP", "MOTION"},
     .edit = {
-        {"CHIP", F_ENUM, 0, 4, 0, N_CHIP, 0},
-        {"WAVE", F_ENUM, 0, 4, 0, N_RWAVE, 0},
-        {"DUTY", F_INT, 0, 127, 64, 0, 0},              /* WRAM: the table, DUTY / 8 (lofi_desc) */
-        {"CRUSH", F_PCT, 0, 127, 0, 0, 0},               /* STEP: the envelope (lofi_desc) */
-        {"SWEEP", F_PCT, 0, 127, 0, 0, 0},
-        {"VIBRATO", F_PCT, 0, 127, 0, 0, 0},
-        {"ARP", F_ENUM, 0, 3, 0, N_RARP, 0},
-        {"TONE", F_PCT, 0, 127, 127, 0, 0},
+        {"CHIP", N_CHIP, 0, 4, 0, F_ENUM, 0},
+        {"WAVE", N_RWAVE, 0, 4, 0, F_ENUM, 0},
+        {"DUTY", 0, 0, 127, 64, F_INT, 0},              /* WRAM: the table, DUTY / 8 (lofi_desc) */
+        {"CRUSH", 0, 0, 127, 0, F_PCT, 0},               /* STEP: the envelope (lofi_desc) */
+        {"SWEEP", 0, 0, 127, 0, F_PCT, 0},
+        {"VIBRATO", 0, 0, 127, 0, F_PCT, 0},
+        {"ARP", N_RARP, 0, 3, 0, F_ENUM, 0},
+        {"TONE", 0, 0, 127, 127, F_PCT, 0},
     },
     .presets = LOFI_PRESETS,
     .npresets = NELEM(LOFI_PRESETS),

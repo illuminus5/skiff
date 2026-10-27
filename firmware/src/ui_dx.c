@@ -13,7 +13,6 @@
  * The panel (graph_dx): the kit's 8 sounds, the one edited in the track's colour; then the sheet, a row a value, A's bar
  * (the track's colour) and B's (white) with their numbers; LEVL and DRV; the switches in words; the window's rows on a
  * band with a mark at the left, a scroll bar at the right */
-static uint8_t dx_ui_seen = 0xFFu;                   /* the last key note followed */
 static const char *const DX_LANE_ABBR[8] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
 static const char *const DX_WAVE[4] = {"SIN", "FM", "MTL", "BEL"};
 static const char *const DX_FILT[3] = {"LP", "BP", "HP"};
@@ -30,15 +29,6 @@ static const uint8_t DX_WIN[DX_NWIN][4][2] = {          /* each window's knobs: 
 #define DX_ROWS 7u                                      /* PTCH PMOD DCAY NOIS COLR, LEVL + DRV, MODE */
 static const uint8_t DX_ROW0[DX_NWIN] = {0, 2, 4, 6}, DX_NROW[DX_NWIN] = {2, 2, 2, 1};   /* the rows a window is on */
 
-/* a key struck on the track (seq.c last_note) picks the sound it plays */
-static void dx_follow(void)
-{
-    if (last_note != dx_ui_seen) {
-        if (dx_ui_seen != 0xFFu)                     /* (the first look only takes note of it) */
-            dx_ui_lane = (uint8_t)drum_lane(last_note);
-        dx_ui_seen = last_note;
-    }
-}
 static void dx_lane_turn(int32_t s) { dx_ui_lane = (uint8_t)clamp((int32_t)(dx_ui_lane & 7u) + (s > 0 ? 1 : -1), 0, 7); }
 static const char *dx_title(void)                     /* the header's: "SOUND SD" */
 {
@@ -92,7 +82,7 @@ static void dx_cards(void)
     static const uint8_t ICON[DXP_N] = {ICON_PITCH, ICON_ENV, ICON_DECAY, ICON_NOISE, ICON_TONE};
     uint32_t l, w, k;
     const dx_lane_t *L;
-    dx_follow();
+    lane_follow(&dx_ui_lane);                           /* (a key struck picks the sound it plays: ui.c) */
     l = dx_ui_lane & 7u;
     w = dx_ui_win % DX_NWIN;
     L = &dx_kit[l];
@@ -107,31 +97,31 @@ static void dx_cards(void)
             str_cpy(lab, DX_VAL[i], sizeof lab);       /* ((Skiff U4) the word in full: PITCH A) */
             str_cpy(lab + str_len(lab), DX_WIN[w][k][0] == DXK_A ? " A" : " B", 3);
             fmt_int(val, (int32_t)v);
-            draw_column(k, lab, val, "", VAL(k), (int32_t)v * 1000 / 127, ICON[i]);
+            draw_column(k, lab, val, "", VR_LIVE, (int32_t)v * 1000 / 127, ICON[i]);
             break;
         }
         case DXK_LEVEL: {
             int16_t v = TSEL->p[P_LN0 + l];
             param_format(&TP[P_LN0 + l], v, val, &unit);
-            draw_column(k, "LEVEL", val, unit, VAL(k), v * 1000 / 127, ICON_LEVEL);
+            draw_column(k, "LEVEL", val, unit, VR_LIVE, v * 1000 / 127, ICON_LEVEL);
             break;
         }
         case DXK_DRV:
-            draw_column(k, "DRIVE", m & DX_DRIVE ? "ON" : "OFF", "", m & DX_DRIVE ? VAL(k) : T_DIM, m & DX_DRIVE ? 1000 : 0,
+            draw_column(k, "DRIVE", m & DX_DRIVE ? "ON" : "OFF", "", m & DX_DRIVE ? VR_LIVE : VR_DIM, m & DX_DRIVE ? 1000 : 0,
                         ICON_DRIVE);
             break;
         case DXK_WAVE:
-            draw_column(k, "WAVE", DX_WAVE[m & 3u], "", VAL(k), (int32_t)(m & 3u) * 333, ICON_WAVE);
+            draw_column(k, "WAVE", DX_WAVE[m & 3u], "", VR_LIVE, (int32_t)(m & 3u) * 333, ICON_WAVE);
             break;
         case DXK_FILT:
-            draw_column(k, "FILTER", DX_FILT[((m >> 2) & 3u) % 3u], "", VAL(k), (int32_t)((m >> 2) & 3u) * 500, ICON_CUTOFF);
+            draw_column(k, "FILTER", DX_FILT[((m >> 2) & 3u) % 3u], "", VR_LIVE, (int32_t)((m >> 2) & 3u) * 500, ICON_CUTOFF);
             break;
         case DXK_SNAP:
-            draw_column(k, "SNAP", (m >> 4) & 1u ? "ON" : "OFF", "", (m >> 4) & 1u ? VAL(k) : T_DIM, (m >> 4) & 1u ? 1000 : 0,
+            draw_column(k, "SNAP", (m >> 4) & 1u ? "ON" : "OFF", "", (m >> 4) & 1u ? VR_LIVE : VR_DIM, (m >> 4) & 1u ? 1000 : 0,
                         ICON_ENV);
             break;
         default:
-            draw_column(k, "P SHAPE", DX_PMOD[(m >> 5) & 3u], "", VAL(k), (int32_t)((m >> 5) & 3u) * 333, ICON_ENV);
+            draw_column(k, "P SHAPE", DX_PMOD[(m >> 5) & 3u], "", VR_LIVE, (int32_t)((m >> 5) & 3u) * 333, ICON_ENV);
             break;
         }
     }

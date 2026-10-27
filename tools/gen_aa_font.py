@@ -36,9 +36,12 @@ import aa_raster as ar  # noqa: E402
 
 FONTS = Path(__file__).resolve().parents[1] / "fonts"
 LOCAL_INTER = os.path.expanduser("~/Library/Fonts/Inter.ttc")   # 4.001: 0 Regular, 10 Medium, 12 SemiBold
-EXTRAS = [0xA9, 0xB0, 0xB7, 0xC4, 0xD6, 0xDC, 0xE4, 0xF6, 0xFC, 0x2026]  # (c) deg . A: O: U: a: o: u: (Latin-1), ...
+# (Skiff 2.0) the extras a text holds: the middle dot, u: (Hügelton) and the ellipsis; names are printable ASCII (the
+# editor, NAME, FM6 patch names: editor_project.c, ui_name.c, editor_fm6.c), so (c) deg A: O: U: a: o: went
+EXTRAS = [0xB7, 0xFC, 0x2026]                  # (Latin-1), ...
 CODE = {0x2026: 0x85}                  # characters outside Latin-1 -> their one-byte code in the firmware
-PHASES, PHASES_L = 4, 2                # horizontal phases per glyph (aa_raster.raster_font): S M, L
+PHASES, PHASES_L = 2, 1                # horizontal phases per glyph (aa_raster.raster_font): S M, L V ((Skiff 2.0)
+                                       # were 4 and 2: a glyph within 1/4 px of its place, 20 KB more flash)
 # faces stored Huffman-coded (--huff): M, L and V. S, the most drawn and the least compressible (-15 %), stays
 # 2 px per byte, so the labels draw at full speed
 HUFF = [("M", "L", "V")]
@@ -247,7 +250,8 @@ def main():
     ap.add_argument("--face", action="append", default=[])
     ap.add_argument("--tracking", type=float, default=0.0, help="extra advance per glyph in em")
     ap.add_argument("--gamma", type=float, default=1.0, help="coverage curve; <1 thickens light-on-dark text")
-    ap.add_argument("--kern-min", type=int, default=1, help="smallest kerning pair kept, in 1/16 px (0 pairs = no kerning)")
+    ap.add_argument("--kern-min", type=int, default=4,
+                    help="smallest kerning pair kept, in 1/16 px (0 pairs = no kerning); (Skiff 2.0) 1/4 px, was 1")
     ap.add_argument("--huff", default=",".join(HUFF[0]), help="faces stored Huffman-coded (comma list, '' = none)")
     a = ap.parse_args()
     HUFF[0] = tuple(x for x in a.huff.split(",") if x)

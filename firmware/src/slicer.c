@@ -98,10 +98,10 @@ static void sl_enter(const track_t *t, sl_t *s)
 }
 
 /* m samples of one step (no boundary inside). sd: (1.3) SPREAD's side signal (fx.c mix_spread) or 0: it gets the gate
- * and the live sound's share of the cross-fade (the repeat is the mono recording: on PAN). Inlined into both callers:
- * slicer_track's (sd 0) is the code it always was */
+ * and the live sound's share of the cross-fade (the repeat is the mono recording: on PAN); sd2 ((2.0, #36) the lane
+ * pans' second side sum) or 0 the same. Inlined into both callers: slicer_track's (sd, sd2 0) is the code it always was */
 static inline __attribute__((always_inline)) void sl_seg(const track_t *t, sl_t *s, int16_t *buf, int32_t *b,
-                                                          int32_t *sd, uint32_t m)
+                                                          int32_t *sd, int32_t *sd2, uint32_t m)
 {
     uint32_t mode = (uint32_t)t->p[P_SLCR], j, nbit = (sl_pattern(t) >> ((s->idx + 1u) & 15u)) & 1u;
     int32_t depth = t->p[P_SLDEPTH] * 258;          /* Q15, 0..32766 */
@@ -123,6 +123,14 @@ static inline __attribute__((always_inline)) void sl_seg(const track_t *t, sl_t 
             if (s->w)
                 z -= mulq16(z, (uint32_t)s->w << 1);
             sd[j] = z;
+        }
+        if (sd2) {
+            int32_t z = sd2[j];
+            if (s->gc)
+                z -= mulq16(z, (uint32_t)s->gc << 1);
+            if (s->w)
+                z -= mulq16(z, (uint32_t)s->w << 1);
+            sd2[j] = z;
         }
         if (s->rec_on) {                            /* 2:1, the pair's mean; Q15 >> 2 (the mix's headroom) */
             if ((s->pos + j) & 1u) {
@@ -169,14 +177,15 @@ static void slicer_track(const track_t *t, int32_t *b, uint32_t n)
         if (m > n - i)
             m = n - i;
         if (act)
-            sl_seg(t, s, sl_buf[k], b + i, 0, m);
+            sl_seg(t, s, sl_buf[k], b + i, 0, 0, m);
         s->pos += m;
         i += m;
     }
 }
 
-/* (1.3) slicer_track with SPREAD's side signal sd (fx.c mix_spread; b != 0) */
-static __attribute__((noinline)) void slicer_track_sd(const track_t *t, int32_t *b, int32_t *sd, uint32_t n)
+/* (1.3) slicer_track with SPREAD's side signal sd (fx.c mix_spread; b != 0); ((2.0, #36) the lane pans' second sum,
+ * sd2, or 0) */
+static __attribute__((noinline)) void slicer_track_sd(const track_t *t, int32_t *b, int32_t *sd, int32_t *sd2, uint32_t n)
 {
     uint32_t k = (uint32_t)(t - trk), i = 0;
     sl_t *s = &sl[k];
@@ -189,7 +198,7 @@ static __attribute__((noinline)) void slicer_track_sd(const track_t *t, int32_t 
         if (m > n - i)
             m = n - i;
         if (act)
-            sl_seg(t, s, sl_buf[k], b + i, sd + i, m);
+            sl_seg(t, s, sl_buf[k], b + i, sd + i, sd2 ? sd2 + i : 0, m);
         s->pos += m;
         i += m;
     }

@@ -19,7 +19,10 @@ static const uint8_t ED_MENU[][2] = {
     {MI_ANIM, 3}, {MI_LEDS, 4}, {MI_HOLD, 5}, {MI_ACCEL, 6},
 #endif
     {MI_BPMLOCK, 8},                   /* ((Skiff U2) id 7, FX LATCH, retired) */
-    {MI_LOWCUT, 9}, {MI_USB, 10}, {MI_SERIAL, 11},
+    {MI_LOWCUT, 9}, {MI_USB, 10},
+#if FELUCCA_CDC
+    {MI_SERIAL, 11},                                   /* ((Skiff 2.0) none in a build without the console: a release) */
+#endif
     {MI_CLICK, 12}, {MI_CLKLVL, 13}, {MI_COUNTIN, 14},
     {MI_RESTORE, 15},                                  /* 1.2 (Discussion #130), a row of SYSTEM */
     {MI_SCLLED, 16},                                   /* 1.2 (Discussion #127), a row of CONTROL */
@@ -28,25 +31,12 @@ static const uint8_t ED_MENU[][2] = {
     {MI_KVEL, 18},                                     /* (SMK-37) KEY VELOCITY, a row of CONTROL */
 #endif
     {MI_PHEAD, 19},                                    /* (Skiff #27) PLAYHEAD, a row of DISPLAY */
+    {MI_RETURN, 20},                                   /* (2.0, D 2A) RETURN, a row of CONTROL */
 };
 #define ED_MENU_N NELEM(ED_MENU)
 
 /* rc as UI_SET: 0 applied and saved, 3 applied in RAM only (no flash, a failed write), 4 queued until STOP */
-static uint32_t ed_menu_save(void)
-{
-    settings_save();
-#if FELUCCA_FLASH
-    if (!flash_ok || persist_pending == 2u) return 3;
-    if (persist_pending == 1u) return 4;
-    {
-        persist_t p = persist_saved;
-        settings_export(&p);
-        return memcmp(&p, &persist_saved, sizeof p) ? 3u : 0u;
-    }
-#else
-    return 3;
-#endif
-}
+static uint32_t ed_menu_save(void) { return ed_ui_save(); }   /* ((2.0) the same check: editor_preferences.c) */
 
 static int ed_menu_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
 {

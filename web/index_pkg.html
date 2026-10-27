@@ -73,8 +73,8 @@ const TEXT = {
     brick: "FM-1 で万一インストールに失敗して起動しなくなった場合は、復旧に Transporter が必要です:",
     smk: "SMK-37 Pro は Skiff に新しく対応した機種です。インストール前にバックアップと公式への戻し方をお読みください:",
     beta: "Skiff はカスタムファームウェアです。不具合は GitHub で知らせてください。このカスタムファームウェアを使ったことで機器が壊れたり不具合が起きたりしても、作者は一切の責任を負いません。自己責任でお使いください。",
-    back: "M-VAVE から公式ファームウェア（FM-1 は V15、SMK-37 Pro は V016）を取得し、未変更の FM-1.fwsc または SMK-37_Pro_016.fwsc を選んでください。ファイルはこのブラウザ内で検証し、サーバーへ送りません。",
-    stockTitle: "公式ファームウェアに戻す", stockFile: "公式 FM-1.fwsc または SMK-37_Pro_016.fwsc", stockGo: "バックアップして公式ファームウェアへ戻す",
+    back: "M-VAVE から公式ファームウェア（FM-1 は Skiff の前に入っていた版で V15 か V16、SMK-37 Pro は V016）を取得し、未変更の FM-1.fwsc または SMK-37_Pro_016.fwsc を選んでください。M-VAVE のダウンロードページは現在 V16 です。V15 は M-VAVE の fm1_open リポジトリ（sdk/firmware/FM-1_015.fwsc）にあります。ファイルはこのブラウザ内で検証し、サーバーへ送りません。",
+    stockTitle: "公式ファームウェアに戻す", stockFile: "公式 FM-1.fwsc（V15 または V16）または SMK-37_Pro_016.fwsc", stockGo: "バックアップして公式ファームウェアへ戻す",
     stockBackup: "現在の曲・保存曲・音色バンク・サンプル・設定を先に保存します。全体バックアップ非対応版は、Skiff を更新してから行ってください。復元は Skiff を再インストールしてエディタから行います。",
     stockRecovery: "更新中断の再開：全体バックアップはすでにパソコンへ保存済み",
     stockValid: "公式ファームウェアを確認しました: ", stockConfirm: "全体バックアップファイルをパソコンに保存できましたか？ 続けると公式ファームウェアへ戻します。Skiff の曲は公式ファームウェアでは開けません。",
@@ -82,7 +82,16 @@ const TEXT = {
     stockUnsupported: "このファームウェアは Skiff の全体バックアップを作れません。古い Skiff なら先に最新版をインストールしてください。他のファームウェアから戻すには M-VAVE のアップデーターを使ってください。",
     stockIsStock: "この機器はすでにその公式ファームウェアです。",
     stockNotSkiff: "この機器は Skiff ではないため、バックアップする Skiff の曲はありません。他のファームウェアから戻すには M-VAVE のアップデーターを使ってください。機器の報告: ",
+    saved20: "Skiff 2.0 は、それより前のファームウェアで保存したデータをそのままでは開けません。先にこの機器の全体バックアップをこのパソコンに保存しました（Skiff-backup-....json）。これが元に戻す方法です: 今のファームウェアを入れ直し、エディタで復元します。Skiff 2.0 をインストールしますか？",
+    converting: "前のファームウェアで保存したデータを 2.0 用に変換中 ",
+    converted: "完了。前のファームウェアで保存したデータを 2.0 用に変換しました（下に一覧）。",
+    asIs: "完了。この機器のデータはそのまま 2.0 で開けます。",
+    convertedPart: "完了しましたが、前のファームウェアで保存したデータの一部はそのままです（下に一覧）。本体では OLD FORMAT と表示されます。空きパターンが足りなかったプロジェクトは、SAVE > PATTERNS で空けてからエディタでバックアップし、それを復元すると変換されます。",
+    convertFailed: "インストールは完了しましたが、前のデータの変換に失敗しました。保存したバックアップをエディタで復元してください（復元時に変換されます）。",
     stockWrongModel: "選んだファイルは、接続している機器とは別の機種用です。",
+    stockSkiffOld: "書き込みはしていません。この Skiff はその公式版にまだ対応していません。最新の Skiff をインストールしてから、公式ファームウェアに戻してください。",
+    stockNeedsV16: "書き込みはしていません。この FM-1 の起動部は V16 のものです（Skiff の前は V16 でした）。戻せるのは V16 です。M-VAVE の現在の FM-1.fwsc（V16）を選んでください。",
+    stockNeedsV15: "書き込みはしていません。この FM-1 の起動部は V15 のものです（Skiff の前は V15 でした）。戻せるのは V15 です。M-VAVE の fm1_open リポジトリ（sdk/firmware）の FM-1_015.fwsc を選んでください。その後 M-VAVE の M-UPGRADE で V16 にできます。",
     backup: "全体バックアップ保存中 ", stockError: "公式ファイルを確認できません: ",
     nomidi: "このブラウザでは使えません。Chrome か Edge で開いてください。", loadfail: "読み込めませんでした: ",
     start: "開始します", verify: "確認中", loader: "書き込みモードに切り替え中", write: "書き込み中",
@@ -113,8 +122,8 @@ const TEXT = {
     brick: "If an install fails on an FM-1 and it no longer starts, recovering it needs a Transporter:",
     smk: "The SMK-37 Pro is new to Skiff. Before installing, read about the backup and the way back to stock:",
     beta: "Skiff is custom firmware; please report problems on GitHub. The author accepts no responsibility if your keyboard is damaged or misbehaves because of this custom firmware. Use it at your own risk.",
-    back: "Get the official firmware from M-VAVE (FM-1: V15, SMK-37 Pro: V016) and select the unmodified FM-1.fwsc or SMK-37_Pro_016.fwsc. The browser validates it locally; it is not sent to a server.",
-    stockTitle: "Return to the official firmware", stockFile: "Official FM-1.fwsc or SMK-37_Pro_016.fwsc", stockGo: "Back up and return to the official firmware",
+    back: "Get the official firmware from M-VAVE (FM-1: the version it had before Skiff, V15 or V16; SMK-37 Pro: V016) and select the unmodified FM-1.fwsc or SMK-37_Pro_016.fwsc. M-VAVE's download page now has V16; V15 is in M-VAVE's fm1_open repository (sdk/firmware/FM-1_015.fwsc). The browser validates it locally; it is not sent to a server.",
+    stockTitle: "Return to the official firmware", stockFile: "Official FM-1.fwsc (V15 or V16) or SMK-37_Pro_016.fwsc", stockGo: "Back up and return to the official firmware",
     stockBackup: "Current music, saved music, sound banks, samples and settings are saved first. Older firmware needs a Skiff update for complete backups. To restore an archive later, reinstall Skiff and use the editor.",
     stockRecovery: "Resume an interrupted update: I already saved a complete backup to this computer",
     stockValid: "Official firmware verified: ", stockConfirm: "Has the complete backup file been saved to this computer? Continue to return to the official firmware. The official firmware cannot open Skiff music.",
@@ -122,7 +131,16 @@ const TEXT = {
     stockUnsupported: "This firmware cannot make a complete Skiff backup. An older Skiff: install the current Skiff first. Another firmware: return with M-VAVE's updater.",
     stockIsStock: "This keyboard already runs that official firmware.",
     stockNotSkiff: "This keyboard is not running Skiff, so there is no Skiff music to back up. To return from another firmware, use M-VAVE's updater. It reports: ",
+    saved20: "Skiff 2.0 opens nothing that firmware before it saves: a complete backup of this unit was saved to this computer first (Skiff-backup-....json). It is the way back: install your firmware of now, then restore it in the editor. Install Skiff 2.0?",
+    converting: "Converting what the firmware before saved, for 2.0 ",
+    converted: "Done. What the firmware before saved was converted for 2.0 (the list below).",
+    asIs: "Done. Everything this unit had opens in 2.0 as it is.",
+    convertedPart: "Done, but some of what the firmware before saved stays as it was (the list below): the unit shows it as OLD FORMAT. A project no free pattern could take converts once you free some (SAVE > PATTERNS), take a backup in the editor and restore it.",
+    convertFailed: "Installed, but converting what the firmware before saved failed: restore the saved backup in the editor, which converts it. ",
     stockWrongModel: "The selected file is for another model than the connected keyboard.",
+    stockSkiffOld: "Nothing was written. This Skiff can't take that official version yet: install the current Skiff first, then return to the official firmware.",
+    stockNeedsV16: "Nothing was written. This FM-1's start-up part is V16's (it ran V16 before Skiff), so its way back is V16: select M-VAVE's current FM-1.fwsc (V16).",
+    stockNeedsV15: "Nothing was written. This FM-1's start-up part is V15's (it ran V15 before Skiff), so its way back is V15: select FM-1_015.fwsc from M-VAVE's fm1_open repository (sdk/firmware). M-VAVE's M-UPGRADE can take it to V16 afterwards.",
     backup: "Saving complete backup ", stockError: "Cannot validate official firmware: ",
     nomidi: "This browser cannot do it. Open the page in Chrome or Edge.", loadfail: "Could not load: ",
     start: "Starting", verify: "Verifying", loader: "Switching to update mode", write: "Writing",
@@ -210,8 +228,12 @@ $("go").addEventListener("click", async () => {
     if (!IS_OTA(dev.id) && needsStockUpdate(dev.id)) { sayK("needV016", dev.id.text); return; }
     const image = await imageFor(entry);
     const step = stepper();
-    if (IS_OTA(dev.id)) sayK((await up.resume(image, step, entry.product)) ? "done" : "stopped");
-    else await up.install(image, entry.product, step);
+    if (IS_OTA(dev.id)) { sayK((await up.resume(image, step, entry.product)) ? "done" : "stopped"); return; }
+    const model = entry.product.split("_")[0];
+    const archive = await backupBefore(up, model);   // ((2.0) over firmware before it: the backup first, the way back)
+    if (archive && !confirm(t("saved20"))) return;
+    await up.install(image, entry.product, step);
+    if (archive) await convertAfter(up, model, archive);
   } catch (e) {
     if (e && e.code && TEXT[lang][e.code]) sayK(e.code, e.detail || (e.code === "loadfail" ? e.message : ""));
     else sayK("error", e && e.message);
@@ -223,7 +245,7 @@ $("stock-file").addEventListener("change", async () => {
   const epoch = ++stockFileEpoch, file = $("stock-file").files[0]; stock = null; lockInstaller(false);
   if (!file) return;
   try {
-    if (![STOCK_V15_SIZE, STOCK_SMK016_SIZE].includes(file.size)) throw new Error("FM-1.fwsc / SMK-37_Pro_016.fwsc");
+    if (![STOCK_V15_SIZE, STOCK_V16_SIZE, STOCK_SMK016_SIZE].includes(file.size)) throw new Error("FM-1.fwsc / SMK-37_Pro_016.fwsc");
     const verified = await validateStockPackage(new Uint8Array(await file.arrayBuffer()));
     if (epoch !== stockFileEpoch) return;
     stock = verified; sayK("stockValid", verified.product); lockInstaller(false);
@@ -233,6 +255,47 @@ function saveArchive(archive) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(archive)], {type:"application/json"}));
   const a = document.createElement("a"); a.href = url; a.download = `Skiff-backup-${new Date().toISOString().slice(0,10)}.json`;
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// ((Skiff 2.0, Tier B: design/TIER_B.md 10) installing 2.0 over firmware before it that answers complete backups (Skiff,
+// Felucca 1.0.3 on): its backup taken and saved to this computer first (the way back; a failure stops before anything is
+// written); after the install, what 2.0 can't read converted (web/conv/conv.js) and only that written back. Other
+// firmware (stock, JIANT: nothing of Skiff's to convert) installs as before
+const major = (v) => +(/(\d+)\.\d/.exec(v || "") || [0, 0])[1];
+async function backupBefore(up, model) {
+  if (major(meta.version) < 2) return null;
+  const device = await up.find((id) => !IS_OTA(id) && sameModel(id.model, model));
+  if (!device) return null;
+  const input = device.link.input, output = device.link.output; device.link.close();
+  const link = new BackupConnection(input, output);
+  try {
+    let reply;
+    try { reply = await link.request([1, []]); }
+    catch (e) { if (e.code === "timeout") return null; throw e; }
+    const info = archiveInfo(reply);
+    if (!info.supported || major(info.version) >= 2) return null;
+    const archive = await captureBackup((r, o) => link.request(r, o), info.version,
+      (done, total) => sayK("backup", `${Math.round(done / Math.max(1, total) * 100)}%`));
+    saveArchive(archive);
+    return archive;
+  } finally { link.close(); }
+}
+async function convertAfter(up, model, archive) {
+  let link = null;
+  sayK("converting");
+  try {
+    const device = await up.waitFor((id) => !IS_OTA(id) && sameModel(id.model, model), 20000);
+    if (!device) throw new Error("the unit does not answer");
+    const input = device.link.input, output = device.link.output; device.link.close();
+    link = new BackupConnection(input, output);
+    const r = (await loadConverter("../editor/conv/conv.wasm")).convert(readBackup(archive));
+    if (r.writeBack.length)
+      await restoreBackup((q, o) => link.request(q, o), r.archive,
+        (done, total) => sayK("converting", `${Math.round(done / Math.max(1, total) * 100)}%`), r.writeBack);
+    for (const x of r.report)
+      if (x.what !== "kept" || x.note) log(`${x.id}: ${x.was} -> ${x.now} (${x.what})${x.note ? `: ${x.note}` : ""}`);
+    sayK(r.report.some((x) => /^(refused|kept as)/.test(x.what)) ? "convertedPart" : r.writeBack.length ? "converted" : "asIs");
+  } catch (e) { sayK("convertFailed", e.message); log(String(e.stack || e)); }
+  finally { if (link) link.close(); }
 }
 function archiveInfo(a) {
   let pos = a.indexOf(0); if (pos < 0) throw new Error("Invalid INFO");
@@ -275,7 +338,12 @@ $("stock-go").addEventListener("click", async () => {
         (done,total) => sayK("backup", `${Math.round(done / Math.max(1,total) * 100)}%`));
       saveArchive(archive); link.close(); link = null;
       if (!confirm(t("stockConfirm"))) return;
-      await up.install(selected.image, selected.product, step);
+      try { await up.install(selected.image, selected.product, step); }
+      catch (e) {                                      // ((2.0.2, #64) the version this unit needs, or Skiff too old)
+        const k = stockRefusal(selected.product, e);
+        if (!k) throw e;
+        log(String(e.stack || e)); sayK(k);
+      }
     }
   } catch (e) {
     if (e.code && TEXT[lang][e.code]) sayK(e.code,e.detail || ""); else sayK("error",e.message);

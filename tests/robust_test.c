@@ -51,11 +51,22 @@ static int projects(void)
 {
     static project_t p, q;
     static project_store_t st;
-    static project_v5_t v5;
     int bad = 0;
-    uint32_t i, pos, sum, e0;
+    uint32_t e0;
     reset();
     project_capture(&p);
+#if !FELUCCA_LEGACY
+    bad += check("(2.0) a captured project packs (SKF4) and imports", proj_pack2(&st, &p, PROJ_SKF) &&
+                 proj_import(&q, &st, PROJ_STORE4));
+    q = p; q.t[2].engine = (uint8_t)NENGINES;
+    bad += check("(2.0) SKF4 with an engine past the last is not a project", proj_pack2(&st, &q, PROJ_SKF) &&
+                 !proj_import(&q, &st, PROJ_STORE4));
+    q = p; q.t[2].engine = ENGI_DIGITAL;
+    bad += check("(2.0) .. nor one with a DIGITAL track (engine 1: the converter's)", proj_pack2(&st, &q, PROJ_SKF) &&
+                 !proj_import(&q, &st, PROJ_STORE4));
+#else
+    static project_v5_t v5;
+    uint32_t i, pos, sum;
     bad += check("a captured project packs and imports", proj_pack(&st, &p) && proj_import(&q, &st, PROJ_STORE_SIZE));
     pos = 68u + st.raw[66];                                 /* track 1's engine byte (after its parameters) */
     for (e0 = NENGINES; e0 < 256u; e0 += 37u) {
@@ -72,10 +83,12 @@ static int projects(void)
     v5.t[2].engine = NENGINES;
     v5.sum = proj_hash(&v5, sizeof v5 - 4u);
     bad += check("FUN5 with an engine past the last is not a project", !proj_import(&q, &v5, sizeof v5));
+#endif
     p.t[1].engine = 200; p.sum = proj_sum(&p);              /* a RAM project_t (valid magic, size and sum) */
     e0 = trk[1].eng_req;
     bad += check("restoring a project with an engine past the last is refused, nothing changes",
                  project_restore_runtime(&p) == 1 && trk[1].eng_req == e0);
+#if FELUCCA_LEGACY
     /* a retained RAM slot holding FUN5 (its own size): bounded as one from flash (vel 200 cannot be packed) */
     reset();
     v5.t[2].engine = trk[2].engine;
@@ -86,6 +99,18 @@ static int projects(void)
     project_load(2);
     bad += check("a retained FUN5 RAM slot loads bounded (velocity 200 -> inside 0..127)",
                  trk[0].step[0].n == 1u && trk[0].step[0].note[0] == 60u && trk[0].step[0].vel <= 127u);
+#else
+    reset();                                                /* (2.0) a retained RAM slot of before (FUN5): not loaded */
+    memset(&proj_slot[2], 0, sizeof proj_slot[2]);
+    proj_slot[2].align = 0x46554E35u;
+    {
+        step_t s0 = trk[0].step[0];
+        uint32_t e = trk[2].eng_req;
+        project_load(2);
+        bad += check("(2.0) a retained FUN5 RAM slot: not loaded, the music as it was",
+                     !memcmp(&trk[0].step[0], &s0, sizeof s0) && trk[2].eng_req == e);
+    }
+#endif
     return bad;
 }
 
@@ -98,7 +123,7 @@ static int user_presets(void)
     memset(bk, 0, sizeof *bk);
     bk->magic = UP_BANK_MAGIC; bk->rsize = sizeof(up_rec_t); bk->nslot = UP_PER_BANK;
     r = &bk->r[0];                                          /* a note pattern with a note > 127 and stray flags */
-    r->used = UP_USED; r->ver = 2; r->engine = 0; r->np = 8; r->name[0] = 'A';
+    r->used = UP_USED; r->ver = UP_VER; r->engine = 0; r->np = 8; r->name[0] = 'A';   /* ((2.0) 4: 2 is the converter's) */
     r->note[3] = 200; r->flags[3] = 0x43;
     r->note[4] = 0; r->flags[4] = 0x03;                     /* a rest with flags */
     r = &bk->r[1];                                          /* a drum grid: accents where there is no hit */

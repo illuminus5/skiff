@@ -81,9 +81,9 @@ static const uint8_t FM4_TO_FM6[FM4_NPRESETS] = {0, 1, 2, 3, 6, 4, 5, 7};
 
 /* EDIT: the ranges are the stores' (a value of engine 1 is clamped to them before it converts) */
 #define FM4_EDIT(l0, l1, l2, l3, l4, l5, l6, f0, f1, n0, n1) {                                              \
-        {l0, f0, 0, 7, 0, n0, 0}, {l1, f0, 0, 14, 1, n1, 0}, {l2, f0, 0, 14, 1, n1, 0}, {l3, f0, 0, 14, 1, n1, 0}, \
-        {l4, F_PCT, 0, 127, 60, 0, 0}, {l5, f1, 0, 127, 60, 0, 0}, {l6, F_PCT, 0, 127, 0, 0, 0},               \
-        {"-", F_INT, 0, 0, 0, 0, 0}}
+        {l0, n0, 0, 7, 0, f0, 0}, {l1, n1, 0, 14, 1, f0, 0}, {l2, n1, 0, 14, 1, f0, 0}, {l3, n1, 0, 14, 1, f0, 0}, \
+        {l4, 0, 0, 127, 60, F_PCT, 0}, {l5, 0, 0, 127, 60, f1, 0}, {l6, 0, 0, 127, 0, F_PCT, 0},               \
+        {"-", 0, 0, 0, 0, F_INT, 0}}
 
 #if !FELUCCA_FM4
 /* engine 1 without the DSP: never selectable, no presets, silent (a track never keeps it: fm4_convert) */
@@ -103,6 +103,7 @@ static const engine_t ENG_FM4_GONE = {
 #endif
 
 /* ------------------------------------------------------- conversion --- */
+#if FELUCCA_LEGACY                /* ((2.0) the converter's (web/conv): 2.0 reads no DIGITAL sound, core.h) */
 #define FM4_MUTE (-100000)       /* the microsteps of silence */
 #ifndef FM4_FB_NOISE
 #define FM4_FB_NOISE 20          /* FDBK from here: DIGITAL's op 4 turns to noise (its feedback near 0.33 cycles) */
@@ -377,3 +378,4 @@ static void fm4_preset_values(int16_t *p, uint32_t k)
     for (i = P_FM1_ATK; i <= P_FM4_LEVEL; i++)
         p[i] = (i - P_FM1_ATK) % 5u == 2u || (i - P_FM1_ATK) % 5u == 4u ? 127 : 0;
 }
+#endif

@@ -65,7 +65,7 @@ def main(path):
     # level: 0 = off, else dB = (v - 112) / 2  (112 = 0 dB, 127 = +7.5 dB)
     db = [None] + [(v - 112) / 2 for v in range(1, 128)]
     L += arr("LEVEL_Q12", "uint16_t", [0] + [int(round(4096 * 10 ** (d / 20))) for d in db[1:]])
-    L += arr("LEVEL_DB_X10", "int16_t", [-999] + [int(round(d * 10)) for d in db[1:]])
+    L.append("#define LEVEL_DB_X10(v) (((int32_t)(v) - 112) * 5)   /* (Skiff 2.0) v 1..127: its dB x 10, exactly */")
     # per-sample exponential decay for drum voices: 5 ms .. 4 s to -60 dB, Q16
     dms = [5.0 * (800 ** (v / 127)) for v in range(128)]
     L += arr("DECAY_K", "uint16_t", [min(65535, int(65536 * math.exp(-6.9 / (m / 1000 * FS)))) for m in dms])

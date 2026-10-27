@@ -8,6 +8,15 @@ const BLOCKS = 20, BLK = 0x30, KEEP = 0x2F, MAX_BLOCKS = 64;
 export const STOCK_V15_SHA256 = "db1642b2b6fa5c2cccb11ffd13878068bb28601678d3644049f99dc40e7edb8a";
 export const STOCK_APP_SIZE = 0x8DFBC;
 export const STOCK_V15_SIZE = 699956;
+// (2.0.2, #64) the unmodified official FM-1 V16 (M-VAVE's FM-1.fwsc since 2026-10-21; FM-1_016): the way back of a unit
+// that ran V16 (its head is V16's: Skiff's ota.c stages a package whose head is the unit's only)
+export const STOCK_V16_SHA256 = "d017fb65e70aca97ee29d944470c3515a74581df5c0576bf70de917c7b2b61d5";
+export const STOCK_V16_SIZE = 718196;
+// each official FM-1 file's layout as pinned: identity, flash.bin's size, the app's offset and size
+const FM1_STOCK = {
+  [STOCK_V15_SHA256]: { product: "FM-1_015", flash: 602112, appOff: 16672, app: STOCK_APP_SIZE },
+  [STOCK_V16_SHA256]: { product: "FM-1_016", flash: 692224, appOff: 16704, app: 0x91FA8 },
+};
 // the unmodified official SMK-37 Pro V016 (SMK-37_Pro_016.fwsc, 36 interleave blocks): the return of an SMK-37 Pro
 // (the same pin as tools/fm1_install.py)
 export const STOCK_SMK016_SHA256 = "2d98ce72530e71d617384963423820536f094501299e2cfec0a8d3c3fb6bcfb0";
@@ -289,7 +298,7 @@ export async function sha256hex(bytes) {
   return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-// Only the user's unmodified official firmware is accepted for a return to stock: FM-1 V15 (FM-1.fwsc) or
+// Only the user's unmodified official firmware is accepted for a return to stock: FM-1 V15 or V16 (FM-1.fwsc) or
 // SMK-37 Pro V016 (SMK-37_Pro_016.fwsc). The digest pins every file, loader and flash layout; filenames are
 // not evidence. (On an SMK, Skiff stages its own loader for it: M-VAVE's must not run from Skiff's staging.)
 export async function validateStockPackage(bytes) {
@@ -300,14 +309,15 @@ export async function validateStockPackage(bytes) {
       throw new Error("The official firmware has an unsupported SMK-37 layout.");
     return { product: "SMK-37 Pro_016", image, sha256: sha };
   }
-  if (bytes.length !== STOCK_V15_SIZE || sha !== STOCK_V15_SHA256)
-    throw new Error("Select the unmodified official firmware: FM-1.fwsc (FM-1 V15) or SMK-37_Pro_016.fwsc (SMK-37 Pro V016).");
+  const L = FM1_STOCK[sha];
+  if (!L || bytes.length !== (L.product === "FM-1_016" ? STOCK_V16_SIZE : STOCK_V15_SIZE))
+    throw new Error("Select the unmodified official firmware: FM-1.fwsc (FM-1 V15 or V16) or SMK-37_Pro_016.fwsc (SMK-37 Pro V016).");
   const pkg = new Package(bytes);
-  if (pkg.product !== "FM-1_015" || pkg.flashFileOff !== 1044 || pkg.flashSize !== 602112 ||
-      pkg.appBase !== 16384 || pkg.appOff !== 16672 || pkg.app.size !== STOCK_APP_SIZE ||
+  if (pkg.product !== L.product || pkg.flashFileOff !== 1044 || pkg.flashSize !== L.flash ||
+      pkg.appBase !== 16384 || pkg.appOff !== L.appOff || pkg.app.size !== L.app ||
       !pkg.entries.some((e) => e.type === 100 && e.name === "ota.bin" && e.size === 19969))
     throw new Error("The official firmware has an unsupported FM-1 layout.");
-  return { product: pkg.product, image: logicalImage(bytes), sha256: STOCK_V15_SHA256 };
+  return { product: pkg.product, image: logicalImage(bytes), sha256: sha };
 }
 
 // official V15 + Felucca app -> installable package (Uint8Array)

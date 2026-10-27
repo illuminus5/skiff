@@ -12,7 +12,7 @@ static void midi_test_reset(void)
     memset(midi_bend_target, 0, sizeof midi_bend_target); memset(&midi_clock, 0, sizeof midi_clock);
     memset(&um, 0, sizeof um); memset(midi_in_source, 0, sizeof midi_in_source);
     mi_r = mi_w = 0; midi_in_overflow = 0; midi_beat_samples = 0;
-    fm1_in.notes = kb_prev = 0; fm1_ms = 0; song.sel = 0;
+    fm1_in.notes = kb_prev = 0; fm1_ms = 0; sel_set(0);
     events_block(CTL);
 }
 static void queued(uint32_t st, uint32_t d1, uint32_t d2, uint32_t source)
@@ -83,9 +83,9 @@ static int ownership_test(void)
     bad += check("MIDI release cannot cut a still-held local keyboard note", gate_note(t, local));
     fm1_in.notes = 0; events_block(CTL);
     bad += check("local release after MIDI release ends the shared note", !gate_note(t, local));
-    queued(0x94, 65, 100, 1); song.sel = 1; queued(0x84, 65, 0, 1);
+    queued(0x94, 65, 100, 1); sel_set(1); queued(0x84, 65, 0, 1);
     bad += check("note-off follows its note-on across selected-track changes", !gate_note(&trk[0], 65) && !midi_notes[4][65]);
-    song.sel = 0; queued(0x94, 67, 100, 1); queued(0xB4, 64, 127, 1); queued(0x84, 67, 0, 1);
+    sel_set(0); queued(0x94, 67, 100, 1); queued(0xB4, 64, 127, 1); queued(0x84, 67, 0, 1);
     panic_req |= 1u; events_block(CTL);
     queued(0x90, 67, 100, 1); queued(0xB4, 64, 0, 1);
     bad += check("preset panic forgets old pedal owners so later pedal-up preserves new notes", !midi_notes[4][67] && gate_note(&trk[0], 67));
@@ -243,7 +243,7 @@ static int any_gate(void)
 static int route_test(void)
 {
     int bad = 0; uint32_t ch, src, owned = 0;
-    midi_test_reset(); song.sel = 2;
+    midi_test_reset(); sel_set(2);
     bad += check("ROUT defaults to CH1-N (the tracks' channels)", song.g[G_ROUTE] == 0);
     for (src = 1; src <= 2u; src++)
         for (ch = F; ch < 16u; ch++) queued(0x90 | ch, 60 + ch, 100, src);
@@ -269,7 +269,7 @@ static int route_test(void)
     queued(0xB1, 123, 0, 1); queued(0x83, 40, 0, 2);
     bad += check("CH1-N: panic on channel 2 still works", !gate_note(&trk[1], 62) && !midi_owners[1] && !midi_owners[3]);
 
-    midi_test_reset(); song.sel = 2; song.g[G_ROUTE] = 1; trk[2].p[P_VOICE] = V_POLY; trk[2].p[P_SUS] = 127; events_block(CTL);
+    midi_test_reset(); sel_set(2); song.g[G_ROUTE] = 1; trk[2].p[P_VOICE] = V_POLY; trk[2].p[P_SUS] = 127; events_block(CTL);
     queued(0x90, 60, 100, 1); queued(0x90 | F, 62, 100, 2); queued(0x99, 64, 100, 1); queued(0x9F, 65, 100, 2);
     bad += check("SEL: channels 1, 7, 10, 16 all play the selected track", gate_note(&trk[2], 60) && gate_note(&trk[2], 62) && gate_note(&trk[2], 64) && gate_note(&trk[2], 65) && !gate_note(&trk[0], 60) && midi_owners[2] == 4u);
     queued(0xEF, 127, 127, 1); queued(0xB9, 1, 66, 2); queued(0xD0 | F, 33, 0, 1);
@@ -338,10 +338,10 @@ static int cc_map_test(void)
     queued(0xB4, 7, 5, 1); queued(0xB9, 74, 5, 2); queued(0xBF, 91, 5, 1);
     ok = !memcmp(before, trk[2].p, sizeof before) && trk[0].p[P_LEVEL] != 5 && trk[3].p[P_LEVEL] != 5;
     bad += check("ROUT CH1-4: mapped CCs on channels 5..16 reach no part", ok);
-    song.g[G_ROUTE] = 1; song.sel = 2; events_block(CTL);
+    song.g[G_ROUTE] = 1; sel_set(2); events_block(CTL);
     queued(0xB9, 7, 5, 2);
     bad += check("ROUT SEL: channel 10's CC7 sets the selected track's LEVEL", trk[2].p[P_LEVEL] == 5 && trk[0].p[P_LEVEL] != 5);
-    song.g[G_ROUTE] = 0; song.sel = 0; events_block(CTL);
+    song.g[G_ROUTE] = 0; sel_set(0); events_block(CTL);
 
     /* AUTOMATION: the selected track armed and playing records the CC as a knob move; else it is the new base */
     midi_test_reset();

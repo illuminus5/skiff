@@ -409,6 +409,25 @@ static double ref_out(uint64_t k, double (*x)(int64_t, void *), void *ctx)
     return y;
 }
 
+/* (Skiff 2.0) the most a frame of the C resampler can differ from the double-precision one: its taps' rounding
+ * (UAC_FIR_Q; phases 80..159 read 79..0 backwards) at full scale, plus the two outputs' rounding (Q30: 1 LSB) */
+static int32_t rs_tol = 1;
+static void rs_tol_init(void)
+{
+    double worst = 0;
+    uint32_t p, k;
+    for (p = 0; p < RL; p++) {
+        double e = 0;
+        for (k = 0; k < UAC_FIR_N; k++) {
+            double q = p < UAC_FIR_L / 2u ? UAC_FIR[p][k] : UAC_FIR[UAC_FIR_L - 1u - p][UAC_FIR_N - 1u - k];
+            e += fabs(q / (double)(1 << UAC_FIR_Q) - H[p + RL * (RN - 1u - k)]);
+        }
+        if (e > worst)
+            worst = e;
+    }
+    rs_tol = 1 + (int32_t)(worst * 32768.0);
+}
+
 static int32_t s16r(double v)
 {
     v = floor(v + 0.5);
@@ -579,20 +598,26 @@ static void test_resampler(void)
     char s[160];
 
     proto_init();
-    /* the table: each phase sums to 1 << 30 and is the prototype computed here (oldest input first) */
+    rs_tol_init();
+    /* the table: each phase sums to 1 << UAC_FIR_Q and is the prototype computed here (oldest input first): each tap
+     * within its rounding, the phase's largest one carrying the sum's */
     for (i = 0; i < UAC_FIR_L / 2u; i++) {
         int64_t t = 0;
+        uint32_t big = 0;
+        for (k = 1; k < UAC_FIR_N; k++)
+            if (fabs(H[i + RL * (RN - 1u - k)]) > fabs(H[i + RL * (RN - 1u - big)]))
+                big = k;
         for (k = 0; k < UAC_FIR_N; k++) {
-            double want = H[i + RL * (RN - 1u - k)] * (1 << 30);
+            double want = H[i + RL * (RN - 1u - k)] * (1 << UAC_FIR_Q);
             t += UAC_FIR[i][k];
-            if (fabs(UAC_FIR[i][k] - want) > 2e-5 * (1 << 30))
+            if (fabs(UAC_FIR[i][k] - want) > (k == big ? UAC_FIR_N / 2.0 : 0.5) + 2e-5 * (1 << UAC_FIR_Q))
                 tab_ok = 0;
         }
-        sum_ok &= t == (int64_t)1 << 30;
+        sum_ok &= t == (int64_t)1 << UAC_FIR_Q;
     }
     check("FIR table = sinc x Kaiser (24 x 160 taps, beta 9, 22 kHz); phases sum to 1.0", tab_ok && sum_ok);
 
-    /* every frame against the double-precision resampler: noise (period 1000), +-1 LSB */
+    /* every frame against the double-precision resampler: noise (period 1000), +- rs_tol LSB */
     rs_reset();
     for (k = n = 0; k < 48000u;) {
         int32_t l[40], r[40];
@@ -604,11 +629,11 @@ static void test_resampler(void)
         m = rs_block(blk, 32, l, r);
         for (j = 0; j < m; j++, k++) {
             int32_t want = s16r(ref_out(k, rnd_x, &seed));
-            if (abs(l[j] - want) > 1 || abs(r[j] + want) > 1)
+            if (abs(l[j] - want) > rs_tol || abs(r[j] + want) > rs_tol)
                 bad++;
         }
     }
-    snprintf(s, sizeof s, "1 s of noise: every frame = the double-precision resampler +-1 LSB (%u off)", bad);
+    snprintf(s, sizeof s, "1 s of noise: every frame = the double-precision resampler +-%d LSB (%u off)", rs_tol, bad);
     check(s, bad == 0);
     snprintf(s, sizeof s, "  frames out / in: %u / %u (160 / 147)", k, n);
     check(s, k == (160u * n - 1u) / 147u + 1u);          /* the outputs whose newest input frame is < n */
@@ -631,10 +656,10 @@ static void test_resampler(void)
         }
         if (FQ[i] >= 100 && FQ[i] <= 15000 && (worst == 0 || sb < worst))
             worst = sb;
-        if (FQ[i] == 1000)
-            check(s, sb >= 90.0);
+        if (FQ[i] == 1000)                              /* ((Skiff 2.0) Q15 taps: 84..88 dB; Q30's: 93..95) */
+            check(s, sb >= 86.0);
         else if (FQ[i] <= 15000)
-            check(s, sb >= 88.0);
+            check(s, sb >= 82.0);
         else if (FQ[i] == 18000)
             check(s, sb >= 80.0 && g > -0.2);
         else
@@ -706,8 +731,8 @@ static void take_packet48(void)
             k48 += from;
             continue;
         }
-        if (abs(l - s16r(ref_out(k48 - UA_PRIME48, ring_x, 0))) > 1 ||
-            abs(r - s16r(ref_out(k48 - UA_PRIME48, ring_xr, 0))) > 1)
+        if (abs(l - s16r(ref_out(k48 - UA_PRIME48, ring_x, 0))) > rs_tol ||
+            abs(r - s16r(ref_out(k48 - UA_PRIME48, ring_xr, 0))) > rs_tol)
             bad48++;
         k48++;
     }

@@ -34,13 +34,16 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "launch_step", "launch_swap",                     # (Skiff) live switching (launch.c): a staged pattern
          "throw_on", "throw_off",                         # (Skiff) throws (throw.c): while one is out
          "rev_room", "rev_spring",                # the reverb bus (fx.c): REVERB TYPE ROOM / SPRING
-         "dist_hard", "dist_fold", "dist_bits",   # (Skiff phase 9) FX > DRIVE's TYPEs (fx.c), on a track that uses one
+         "dist_hard", "dist_fold", "dist_crush",  # (Skiff phase 9) FX > DRIVE's TYPEs (fx.c), on a track that uses one
+         "dist_fuzz",                             # ((2.0) INSERT's shapers; CRUSH was dist_bits)
          "rev_hall", "rev_side_mix", "cho_mode",  # REVERB TYPE HALL ((Skiff #19) Felucca's) and its stereo; (Skiff
                                                   # phase 9) CHORUS MODE / FEEDBACK (fx.c)
          "mix_part", "mix_split",                 # (Skiff 1.3) a track's block (fx.c), on either core; the split
          "track_insert", "ins_drive", "ins_swept",   # (Skiff 1.3) FX > INSERT (fx.c), on a track that uses one
          "mix_spread", "esync_coef", "mod_depth",   # (Skiff 1.3) SPREAD (fx.c), ENV SYNC (voice.c), MOD DEPTH (mod.c)
-         "smx_render"]                          # (Skiff, #21) a user sample's sound with its own sends (fx.c)
+         "smx_render",                           # (Skiff, #21) a user sample's sound with its own sends (fx.c)
+         "lpan_render", "lpan_mix",              # (2.0, #36) a kit's lane panned: its voice, the mix (voice.c, fx.c)
+         "drum_smp"]                             # (2.0, #35) a user kit's lane (eng_drum.c)
 # built only with FELUCCA_FM4=1 (DIGITAL, src/eng_digital.c; not in the default build, so not in BUDGET): absent,
 # they are skipped; present, checked against these (their budget lines until the engine was retired in 1.0)
 OPTIONAL = {"digital_render": 12, "digital_render_legacy": 333, "digital_render_custom": 558,

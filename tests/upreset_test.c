@@ -3,7 +3,9 @@
 /* Host test of the user preset record (firmware/src/upreset.c, -DUP_HOST part):
  * UP_PUT parsing, a bank round trip through storage.c on a simulated NOR,
  * bank / record version checks, map-by-count, pattern <-> steps, PHYS MODEL DRUM records -> the DRUM engine,
- * drum grid records (version 3: UP_PUT's kind 1 and its high bits, a round trip). */
+ * drum grid records (version 3: UP_PUT's kind 1 and its high bits, a round trip). (2.0) Built twice (run_tests.sh): as
+ * 2.0 is (versions 4..6, no DIGITAL record: OLD FORMAT) and with FELUCCA_LEGACY, the converter's (versions 1..3, the
+ * PHYS DRUM and SAMPLE PERC records -> DRUM, a DIGITAL record kept). */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -87,11 +89,31 @@ int main(void)
     n = put_frame(a, 0, NENGINES, "X", 0);
     bad += check("UP_PUT bad engine -> args", up_parse(a, n, &r, &slot) == 1);
     n = put_frame(a, 3, ENGI_DIGITAL, "OLD FM", 0);   /* (DIGITAL, retired: a record keeps it, its load converts) */
+#if FELUCCA_LEGACY
     bad += check("UP_PUT engine 1 (DIGITAL): kept as it is", up_parse(a, n, &r, &slot) == 0 && slot == 3u &&
                                                         r.engine == ENGI_DIGITAL && up_valid(&r));
     up_migrate(&r);
     bad += check("  a bank read keeps it engine 1 (its values DIGITAL's)", r.engine == ENGI_DIGITAL && up_value(&r, P_E4) ==
                                                                        (int16_t)(P_E4 % 100u));
+#else
+    {   /* (2.0) no DIGITAL record: UP_PUT refuses one; a bank's (and versions 1..3) are OLD FORMAT, their bytes kept */
+        up_rec_t keep = r;
+        bad += check("(2.0) UP_PUT engine 1 (DIGITAL) -> args, the record unchanged",
+                     up_parse(a, n, &r, &slot) == 1 && !memcmp(&r, &keep, sizeof r));
+        *up_rec(30) = r;
+        up_rec(30)->engine = ENGI_DIGITAL;
+        ok = !up_used(30) && up_old(30);
+        up_rec(30)->engine = 2;
+        ok &= up_used(30) && !up_old(30);
+        up_rec(30)->ver = 3;
+        ok &= !up_used(30) && up_old(30);
+        up_rec(30)->ver = 1;
+        ok &= !up_used(30) && up_old(30);
+        memset(up_rec(30), 0, sizeof r);
+        ok &= !up_used(30) && !up_old(30);
+        bad += check("(2.0) a DIGITAL record, versions 1..3: not used, OLD FORMAT", ok);
+    }
+#endif
     n = put_frame(a, 0, 0, "", 0);
     bad += check("UP_PUT empty name -> args", up_parse(a, n, &r, &slot) == 1);
     n = put_frame(a, 0, 0, "THIRTEEN CHRS", 0);
@@ -134,7 +156,7 @@ int main(void)
     up_bank[1].rsize = sizeof(up_rec_t);
     up_bank[1].nslot = UP_PER_BANK;
     *up_rec(17) = r;
-    up_rec(17)->ver = UP_VER_GRID + 1u;
+    up_rec(17)->ver = UP_VER_SID + 1u;
     bad += check("record with another version -> empty", !up_used(17));
     up_rec(17)->ver = UP_VER_GRID;
     bad += check("a version 3 record (a drum grid) is used", up_used(17));
@@ -179,6 +201,7 @@ int main(void)
         bad += check("a grid record: bank round trip", up_used(20) && !memcmp(up_rec(20), &got, sizeof got));
     }
 
+#if FELUCCA_LEGACY                                          /* ((2.0) the converter's) */
     /* PHYS MODEL DRUM (before 1.0) -> the DRUM engine: from flash (a record of an older layout too), by UP_PUT */
     {
         static const int16_t OLD[8] = {4, 70, 80, 60, 50, 110, 100, 70}, NEW[8] = {2, 70, 80, 60, 50, 110, 1, 0};
@@ -258,6 +281,7 @@ int main(void)
             ok &= up_value(&got, P_E0 + k) == KIT[k];
         bad += check("UP_PUT of SAMPLE PERC -> DRUM kit", ok);
     }
+#endif
 
     /* map by count: a record from a build with 2 parameters fewer */
     for (i = 0; i < P_COUNT; i++)
@@ -272,6 +296,7 @@ int main(void)
     for (i = 0; i < 8u; i++)
         ok &= v[P_E0 + i] == (int16_t)((P_E0 - 2u + i) % 100u);
     bad += check("np < P_COUNT: mapped by count", ok);
+#if FELUCCA_LEGACY                                          /* ((2.0) versions 1..3: the converter's) */
     /* a record saved before the SLICER (P_COUNT 53, P_E0 45): the four SLICER parameters (just
      * before P_E0) take their defaults, everything else keeps its id */
     r.ver = 2;
@@ -281,8 +306,9 @@ int main(void)
     up_params(&r, v, def);
     ok = P_SLCR == 45 && P_SLDEPTH + 1 == P_M1SRC && P_M4AMT + 1 == P_FM1_ATK && P_FM4_LEVEL + 1 == P_CHRD &&
          P_VOIC + 1 == P_LN0 && P_LN7 + 1 == P_DIR && P_DKREL + 1 == P_DTYPE && P_LDECAY7 + 1 == P_LSYNC &&
-         P_ESYNC + 1 == P_E0 && P_E0 == 127 && P_COUNT == 135;   /* ((Skiff) DIR, the ducking; phase 9: DRIVE, ENV 2, the
-                                                                  * lanes; 1.3: LFO SYNC TRIG POL, SPREAD, INSERT, ENV SYNC) */
+         P_ESYNC + 1 == P_LPAN0 && P_LPAN7 + 1 == P_E0 && P_E0 == 135 && P_COUNT == 143;   /* ((Skiff) DIR, the ducking;
+                                                                  * phase 9: DRIVE, ENV 2, the lanes; 1.3: LFO SYNC TRIG POL,
+                                                                  * SPREAD, INSERT, ENV SYNC; (2.0, #36) the lane pans) */
     for (i = 0; i < 45u; i++)
         ok &= v[i] == (int16_t)(2000 + i);
     for (i = P_SLCR; i < P_E0; i++)
@@ -304,6 +330,7 @@ int main(void)
     for (i = 0; i < 8u; i++)
         ok &= v[P_E0 + i] == (int16_t)(3000 + 49 + i);
     bad += check("old record (np 57): SLICER kept, matrix defaults, E0..E7 kept", ok);
+#endif
     /* records of versions 4 (packed bytes) and 5 (a drum grid) saved before the DRUM lane levels (1.0.x: P_COUNT 91,
      * P_E0 83), before the chord keys (89, P_E0 81) and before the FM operator ENVs (69, P_E0 61): their engine
      * values land on today's E0..E7 (91..98), the lane levels (100 %) and the chord keys their defaults (OFF, CLOSE), the
@@ -317,7 +344,7 @@ int main(void)
                 uint32_t np = NPS[b];
                 up_rec_t o;
                 memset(&o, 0, sizeof o);
-                o.used = UP_USED; o.ver = VERS[a]; o.engine = 1; o.np = (uint8_t)np;
+                o.used = UP_USED; o.ver = VERS[a]; o.engine = 2; o.np = (uint8_t)np;   /* ((2.0) PHASE: no DIGITAL) */
                 memcpy(o.name, "OLD", 3);
                 for (i = 0; i < np; i++)
                     up_set_value(&o, i, (int16_t)(i % 100u - 30));
@@ -341,6 +368,50 @@ int main(void)
     for (i = 0; i < P_COUNT; i++)
         ok &= v[i] == (int16_t)i;
     bad += check("np == P_COUNT: as stored", ok);
+    {   /* (2.0, Tier B 7) version 6: the sound by stored id over the parameters' and the pattern's bytes, no pattern; a
+         * newer record's ids passed over, an older one's missing ones at their defaults */
+        static int16_t s[P_COUNT];
+        up_rec_t six;
+        uint32_t k;
+        for (i = 0; i < P_COUNT; i++)
+            s[i] = (int16_t)((int32_t)(i * 7u % 192u) - 64);
+        memset(&six, 0, sizeof six);
+        six.used = UP_USED; six.engine = 2; memcpy(six.name, "SIX", 3);
+        up_set_sound(&six, s);
+        up_params(&six, v, def);
+        ok = six.ver == UP_VER_SID && six.np == SID_COUNT && up_valid(&six) && !up_pat(&six) && !up_grid(&six) &&
+             !memcmp(v, s, sizeof s) && UP_SIDS == 176u;
+        for (k = SID_COUNT; k < UP_SIDS; k++)
+            ok &= !six.sid[k];
+        bad += check("v6: by stored id, round trip, the rest 0", ok);
+        got = six;
+        got.np = (uint8_t)(SID_COUNT + 5u);                 /* a newer firmware's: five more ids */
+        memset(got.sid + SID_COUNT, 64 + 9, 5);
+        up_params(&got, v, def);
+        ok = up_valid(&got) && !memcmp(v, s, sizeof s);
+        got.np = 100;                                       /* an older one's: the first 100 */
+        up_params(&got, v, def);
+        ok &= up_valid(&got) && !memcmp(v, s, 100u * sizeof v[0]) && v[100] == def[100] &&
+              v[P_COUNT - 1u] == def[P_COUNT - 1u];
+        bad += check("v6: a newer record's ids passed over, an older one's defaults", ok);
+        got = six; got.sid[3] = 192u;
+        ok = !up_valid(&got);
+        got = six; got.np = (uint8_t)(UP_SIDS + 1u);
+        ok &= !up_valid(&got);
+        bad += check("v6 refused: a byte past 191, more ids than its room", ok);
+        got = six;                                          /* (ids into the old pattern's bytes; MODEL 4 where a */
+        got.np = (uint8_t)UP_SIDS;                          /* record by count has PHYS's E0: neither touched) */
+        for (k = SID_COUNT; k < UP_SIDS; k++)
+            got.sid[k] = (uint8_t)(64u + k % 50u);
+        got.sid[UP_SIDS - 8u] = 64u + 4u;
+        got.engine = ENGI_PHYS;
+        *up_rec(22) = got;
+        st_save(OBJ_UPRESET0 + 1, &up_bank[1], sizeof up_bank[1]);
+        memset(up_bank, 0, sizeof up_bank);
+        up_bank_check(1, st_load(OBJ_UPRESET0 + 1, &up_bank[1], sizeof up_bank[1]));
+        bad += check("v6: a bank round trip leaves its bytes as they are",
+                     up_used(22) && !memcmp(up_rec(22), &got, sizeof got) && up_rec(22)->engine == ENGI_PHYS);
+    }
     printf("%s\n", bad ? "USER PRESET TEST FAILED" : "user preset test passed");
     return bad != 0;
 }

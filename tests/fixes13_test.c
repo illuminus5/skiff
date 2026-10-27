@@ -51,7 +51,7 @@ static int auto_k3(void)
     uint8_t idx[MOTION_MAX];
     uint32_t p0, a, b, c0, c1;
     ui_power_on();
-    song.sel = 0;
+    sel_set(0);
     t = TSEL;
     p0 = ev_id_step(t, NSTEP, (uint32_t)-1, 1);         /* the list's first three parameters */
     a = ev_id_step(t, NSTEP, p0, 1);

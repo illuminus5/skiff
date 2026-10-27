@@ -269,6 +269,7 @@ static void job_song(const job_t *j)
     host_preset(t2, TRK_DEF[1][0], TRK_DEF[1][1]);
     host_preset(t3, 3, 0);
     host_drums(td);
+    t1->p[P_SGATE] = t3->p[P_SGATE] = td->p[P_SGATE] = 64;   /* ((2.0) the golden's GATE: 50 %, the default before) */
     for (i = 0; i < 16u; i++) {
         uint8_t n = ACID[i];
         put_step(t1, i, n ? 1u : 0u, &n, n ? ST_NOTE : ST_REST, ACIDF[i]);
@@ -655,7 +656,7 @@ static void mode_release_reset(uint32_t engine, uint32_t mode)
 {
     uint32_t p;
     memset(trk, 0, sizeof trk);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     host_tracks_init();
     for (p = 0; p < NPART; p++) {
         host_preset(&trk[p], p ? 0u : engine, 0);
@@ -928,7 +929,7 @@ static int chk_hang(char *msg, uint32_t n)
                 fm1_in.notes = keys;
                 ev++;
             } else if (r == 9u) {
-                song.sel = (uint8_t)rnd(NTRK);     /* another track selected */
+                sel_set((uint8_t)rnd(NTRK));     /* another track selected */
             }
             blk();
         }

@@ -1,13 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
  * Real sequencer/project/UI sources: motion lifecycle and compact migration. */
+#define FELUCCA_LEGACY 1                        /* ((2.0) its projects are SKF1 and older: the converter's build) */
 #define UI_TEST_NO_MAIN 1
 #include "ui_test.c"
 
 static int motion_recording(void)
 {
     int bad = 0; ui_power_on(); track_t *t = &trk[0];
-    t->p[P_REV] = 23; song.sel = 0; song.rec = 1;
+    t->p[P_REV] = 23; sel_set(0); song.rec = 1;
     seq_start(); seq_tick(t, CTL); /* first real step */
     t->p[P_REV] = 92;
     bad += check("motion records the selected armed track at its current step", !motion_capture(t, P_REV, 92) &&
@@ -372,7 +373,7 @@ static int arp_new_modes(void)
     ok &= arp_plays(t, (const uint8_t[]){67}, 1);      /* (CHORD's other notes ended) */
     bad += check("ARP REPEAT switched to THUMB and back, CHORD to REPEAT: each plays its own", ok);
     /* recording: CHORD writes its notes into one step, as the keys' chords (POLY) */
-    song.sel = 0; song.rec = 1;
+    sel_set(0); song.rec = 1;
     t->p[P_VOICE] = V_POLY;
     for (i = 0; i < NSTEP; i++)
         t->step[i] = (step_t){0};
@@ -584,7 +585,7 @@ static int lock_ui(void)
     track_t *t;
     uint32_t k0, k4, kn;
     ui_power_on();
-    song.sel = 3;                                        /* track 4: DRUM, the grid */
+    sel_set(3);                                        /* track 4: DRUM, the grid */
     t = &trk[3];
     track_defaults_steps(t);
     t->p[P_SLEN] = 16;
@@ -698,23 +699,23 @@ static int step_gates(void)
     bad += check("  RATCH x2: each part its gate from the lock", ok && t->p[P_SGATE] == 64);
     t = lock_track(0);
     t->p[P_SGATE] = 64;
-    go_title("PLAY");
+    go_title("NOTES");                                   /* ((2.0) its LENGTH: PLAY's GATE before) */
     ui.cursor = 3;
     frame();
     ok = motion_param(P_SGATE) && !motion_param(P_SLEN) && !motion_param(P_SDIV) && !motion_param(P_SSWING);
-    turn(EN_K4, -1);
-    turn(EN_K4, -1);
+    turn(EN_K3, -1);
+    turn(EN_K3, -1);
     ok &= motion_lock_get(t, 3, P_SGATE, &v) && v == 62 && t->p[P_SGATE] == 64 && motion_lock_steps(0) == 1u << 3;
-    turn(EN_K4, 2);
+    turn(EN_K3, 2);
     ok &= !motion_lock_get(t, 3, P_SGATE, &v) && !motion_count(t);
-    bad += check("PLAY KNOB 4: the cursor step's GATE from the track's; back at the track's, no lock", ok);
-    turn(EN_K4, -3);
+    bad += check("NOTES KNOB 3 (LENGTH): the cursor step's GATE from the track's; back at the track's, no lock", ok);
+    turn(EN_K3, -3);
     ok = motion_lock_get(t, 3, P_SGATE, &v) && v == 61;
     frames(2000);                                        /* (a new act: its own undo copy) */
     hold(B_SAVE);
     bad += check("  SAVE held: the lock undone", ok && !motion_lock_get(t, 3, P_SGATE, &v));
-    open_family(FAM_SEQ);                                /* PATTERN's KNOB 4 with a step held on STEP */
-    go_title("PATTERN");
+    open_family(FAM_SEQ);                                /* ((2.0.2, #56) PATTERN is no lock source: a step held on */
+    go_title("PATTERN");                                 /* NOTES after it keeps the sound's knobs, LENGTH its GATE) */
     frame();
     go_page(GR_ROLL);
     ui.cursor = 5;                                       /* (the roll: the step being entered, its note key held: */
@@ -726,8 +727,9 @@ static int step_gates(void)
     key_up(key_at(0, 0));
     frame();
     song.rec = 0;
-    bad += check("  a step held on STEP, KNOB 4 after PATTERN: its GATE lock (KNOB 1..3, LEN DIV SWING: none)",
-                 lock_id(3) == P_SGATE && lock_id(0) == 0xFFu && motion_lock_get(t, 5, P_SGATE, &v) && v == 62);
+    bad += check("  (2.0.2, #56) a step held on NOTES after PATTERN: KNOB 4 locks the sound's, no GATE (LENGTH's, above)",
+                 lock_id(3) != P_SGATE && lock_id(3) != 0xFFu && motion_lock_get(t, 5, lock_id(3), &v) &&
+                 !motion_lock_get(t, 5, P_SGATE, &v));
     return bad;
 }
 static int lock_undo(void)
@@ -737,7 +739,7 @@ static int lock_undo(void)
     track_t *t;
     uint32_t k4;
     ui_power_on();
-    song.sel = 3;
+    sel_set(3);
     t = &trk[3];
     track_defaults_steps(t);
     t->p[P_SLEN] = 16;
@@ -785,7 +787,7 @@ static int auto_list(void)
     uint32_t id0, id1, i;
     uint8_t idx[MOTION_MAX];
     ui_power_on();
-    song.sel = 0;
+    sel_set(0);
     t = &trk[0];
     track_defaults_steps(t);
     t->p[P_SLEN] = 16;
@@ -900,7 +902,7 @@ static track_t *tk_track(void)                        /* track 1: 8 empty steps,
     for (i = 0; i < NSTEP; i++)
         t->step[i] = (step_t){{0}, 0, ST_REST};
     motion_clear(t);
-    song.sel = 0;
+    sel_set(0);
     song.rec = 0;
     return t;
 }
@@ -950,6 +952,42 @@ static int takes(void)
                  t->step[0].note[0] == 60 && t->step[1].time == ST_NOTE && t->step[1].note[0] == 64 &&
                  t->step[2].time == ST_TIE && t->step[3].time == ST_TIE && t->step[4].time == ST_REST);
     seq_stop();
+
+    {   /* (2.0, #25) POLY, forward: a held note goes on by itself, beside a note there and past one played meanwhile */
+        int32_t x;
+        t = tk_track();
+        t->p[P_VOICE] = V_POLY;
+        t->step[1] = (step_t){{64}, 1, ST_NOTE, 0, 90};
+        seq_start(); seq_tick(t, CTL);
+        input_on(t, 60, 100);
+        for (i = 0; i < 4u; i++) lock_next(t);
+        input_off(t, 60);
+        for (i = 0; i < 4u; i++) lock_next(t);
+        take_commit(0);
+        x = note_at(&t->step[1], 60);
+        ok = t->step[0].note[0] == 60 && note_span(t, 0, 0) == 4u && t->step[1].n == 2u && t->step[1].note[0] == 64 &&
+             x >= 0 && step_tied(&t->step[1], (uint32_t)x) && t->step[3].time == ST_TIE && t->step[4].time == ST_REST;
+        bad += check("takes:   (2.0) POLY: the held note goes on beside the note there, its own tie (E4 kept)", ok);
+        seq_stop();
+
+        t = tk_track();
+        t->p[P_VOICE] = V_POLY;
+        seq_start(); seq_tick(t, CTL);
+        input_on(t, 60, 100);                         /* C4 on step 1 .. */
+        lock_next(t); lock_next(t);
+        input_on(t, 64, 100);                         /* .. E4 on step 3 while it is held .. */
+        lock_next(t); lock_next(t);
+        input_off(t, 60);                             /* .. C4 let go early in 5, E4 early in 6 */
+        lock_next(t);
+        input_off(t, 64);
+        for (i = 0; i < 3u; i++) lock_next(t);
+        take_commit(0);
+        x = note_at(&t->step[2], 64);
+        ok = note_span(t, 0, 0) == 4u && x >= 0 && !step_tied(&t->step[2], (uint32_t)x) &&
+             note_span(t, 2, (uint32_t)x) == 3u && t->step[5].time == ST_REST;
+        bad += check("takes:   (2.0) POLY: E4 played while C4 is held: both go on (C4 1-4, E4 3-5), no TIE cut", ok);
+        seq_stop();
+    }
 
     t = tk_track();
     song.rec = 1;

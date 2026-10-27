@@ -5,7 +5,8 @@
  * byte-swapped (the panel takes RGB565 big-endian).
  * Text and icons are 4-bit alpha bitmaps made at build time (tools/gen_aa_font.py: Barlow Condensed;
  * tools/gen_aa_icons.py: Fukiai). A glyph is trimmed to its ink box, advances are in 1/16 px, and
- * each glyph is rasterised at 1 << psh horizontal phases (S M 4, L 2: drawn at a pen of +0, +1/4 .. px);
+ * each glyph is rasterised at 1 << psh horizontal phases (S M 2: drawn at a pen of +0 and +1/2 px; L V 1: the rounded
+ * pen; (Skiff 2.0) were 4 and 2);
  * cv_text takes the phase that puts it within a phase step of its true place. Blending uses a 16-entry
  * ramp per (ink, background) pair, cached, so a pixel costs a nibble read and a store. Colours come from the theme tokens. */
 typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
@@ -19,7 +20,9 @@ typedef struct {
     const uint8_t *ex;                  /* codes of the extra glyphs */
     uint8_t psh;                        /* log2 of the phases per glyph: g[i << psh] .. g[(i << psh) + phases - 1] */
     const uint8_t *hc;                  /* data's Huffman code (cv_alpha_hc), 0 = 2 px per byte (cv_alpha) */
+    uint8_t sc;                         /* (Skiff 2.0) a pixel face (cv_alpha_px): its scale 1..3, | PX_BOLD; 0 = Barlow */
 } aafont_t;
+#define PX_BOLD 0x80u
 typedef struct { const char *name; uint16_t bg, surf, text, theme, accent; } ui_pal_t;
 typedef struct { uint16_t off; uint8_t w; const char *label; } kc_t;
 #include "ui_fonts.h"                   /* AF_S 12 px / 400, AF_M 15 px / 500, AF_L 28 px / 600 */
@@ -417,7 +420,7 @@ static const uint16_t *ramp(uint16_t fg, uint16_t bg)
     return v;
 }
 
-/* (Skiff N2) THEME NEON's text effect, cv_fx_on .. cv_fx_off around a text in a pixel face (cv_alpha): its rows
+/* (Skiff N2) THEME NEON's text effect, cv_fx_on .. cv_fx_off around a text in a pixel face (cv_alpha_px): its rows
  * slanted, a px right every 3 rows above the baseline (an italic, cv_fx_w px wider), and with a ramp its colour down
  * the capitals' rows, white to sky blue, violet at the horizon, orange to gold below it (80s chrome) */
 #define FX_ROWS 32
@@ -453,19 +456,44 @@ static void cv_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
     uint32_t k = 0, gx, gy;
     y += cv_oy;
     for (gy = 0; gy < h; gy++) {
-        int32_t py = y + (int32_t)gy, sh = 0;
-        uint16_t *row, c = 0;
+        int32_t py = y + (int32_t)gy;
+        uint16_t *row;
         if (py < cv_cy0 || py >= cv_cy1) {
             k += w;
             continue;
         }
         row = cv_px + (uint32_t)py * cv_w;
+        for (gx = 0; gx < w; gx++, k++) {
+            uint32_t v = (d[k >> 1] >> ((k & 1u) ? 0 : 4)) & 15u;
+            int32_t px = x + (int32_t)gx;
+            if (v && (uint32_t)px < cv_w)
+                row[px] = rv[v];
+        }
+    }
+    GFX_HOOK_PIXELS(w * h);
+}
+
+/* (Skiff 2.0) a pixel face's glyph, its box w x h: S's 1x pixels (tools/gen_pixel_font.py) drawn sc & 3 times their
+ * size and, PX_BOLD, each doubled to the right (a column wider); NEON's slant and chrome (cv_fx) */
+static uint32_t nib(const uint8_t *d, uint32_t k) { return (d[k >> 1] >> ((k & 1u) ? 0 : 4)) & 15u; }
+static void cv_alpha_px(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint16_t *rv, uint32_t sc)
+{
+    const uint32_t s = sc & 3u, b = sc >> 7, sw = (w - b) / s;
+    uint32_t gx, gy;
+    y += cv_oy;
+    for (gy = 0; gy < h; gy++) {
+        int32_t py = y + (int32_t)gy, sh = 0;
+        uint32_t k = gy / s * sw;
+        uint16_t *row, c = 0;
+        if (py < cv_cy0 || py >= cv_cy1)
+            continue;
+        row = cv_px + (uint32_t)py * cv_w;
         if (cv_fx.on) {                              /* ((Skiff N2) NEON: slanted, chrome) */
             sh = py < cv_fx.base ? (cv_fx.base - 1 - py) / 3 : 0;
             c = cv_fx.col[py < cv_fx.top ? 0 : py - cv_fx.top < FX_ROWS ? py - cv_fx.top : FX_ROWS - 1];
         }
-        for (gx = 0; gx < w; gx++, k++) {
-            uint32_t v = (d[k >> 1] >> ((k & 1u) ? 0 : 4)) & 15u;
+        for (gx = 0; gx < w; gx++) {
+            uint32_t i = gx / s, v = (i < sw ? nib(d, k + i) : 0u) | (b && gx ? nib(d, k + i - 1u) : 0u);
             int32_t px = x + (int32_t)gx + sh;
             if (v && (uint32_t)px < cv_w)
                 row[px] = c ? c : rv[v];
@@ -639,6 +667,8 @@ static int32_t text_run(int32_t x, int32_t y, const aafont_t *f, const char *s, 
                 ;                                    /* (text_ink: measured only) */
             else if (f->hc)
                 cv_alpha_hc(gx, gy, g->bw, g->bh, f->data + g->off, f->hc, rv);
+            else if (f->sc)
+                cv_alpha_px(gx, gy, g->bw, g->bh, f->data + g->off, rv, f->sc);
             else
                 cv_alpha(gx, gy, g->bw, g->bh, f->data + g->off, rv);
             if (gx < x0) x0 = gx;

@@ -23,6 +23,16 @@ export const packageFor = (packages, model) => packages.find((p) => sameModel(mo
 // the SMK port's install was verified from V016. FM-1s, Skiff (7xx), other ports (9xx) and recovery (000) pass
 export const SMK_MODELS = ["SMK-37 Pro", "SMK-37 Elite", "MKE-P37"];
 export const needsStockUpdate = (id) => SMK_MODELS.includes(id.model) && id.version > 0 && id.version < 16;
+// (2.0.2, #64) why a running Skiff turned an official FM-1 file away, from where its reads stopped (firmware/src/ota.c
+// ota_stage, the counts pinned by tests/ota_test.c): after the header's 2, flash.bin's size (V16's file, a Skiff before
+// 2.0.2); within the boot area's 32 after the 3 before them, the head (the unit started on the other version). The
+// message's key (index_pkg.html), or null
+export function stockRefusal(product, e) {
+  if (!e || e.code !== "stopped" || !/^FM-1_/.test(product)) return null;
+  if (e.served === 2) return "stockSkiffOld";
+  if (e.served >= 4 && e.served <= 35) return product === "FM-1_016" ? "stockNeedsV15" : "stockNeedsV16";
+  return null;
+}
 
 // step 2's percentage, forward only, from the flash.bin bytes served (as tools/fm1_install.py WriteMeter).
 // Felucca's and Skiff's loaders read flash.bin twice, upward: a check pass, then the write pass without the
@@ -229,7 +239,11 @@ export class Updater {
     await sleep(2000);
     const s1 = await this.serve(dev.link, image, 0xE0000000, 8000, (n) => step("verify", n));
     dev.link.close();
-    if (!s1.finished) throw fail(s1.lost ? "lost" : "stopped", `the device ${s1.lost ? "was disconnected" : "stopped"} after ${s1.served} requests: nothing was written`);
+    if (!s1.finished) {
+      const e = fail(s1.lost ? "lost" : "stopped", `the device ${s1.lost ? "was disconnected" : "stopped"} after ${s1.served} requests: nothing was written`);
+      e.served = s1.served;                             // ((2.0.2) where it stopped: stockRefusal)
+      throw e;
+    }
     step("loader");
     await sleep(3000);
     const ota = await this.waitFor((id) => id.model === "ota-" + model, 30000);

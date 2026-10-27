@@ -80,7 +80,7 @@ static void key_events_test(void)
     track_t *t = &trk[0];
     uint32_t before;
     memset(trk, 0, sizeof trk);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     host_tracks_init();
     kb_prev = 0;
     usb.config = 1;
@@ -108,13 +108,13 @@ static void key_events_test(void)
     t->p[P_ROOT] = 6;
     t->p[P_TRANS] = 12;
     song.octave = 1;
-    song.sel = 1;                          /* key-up follows the original note/part */
+    sel_set(1);                          /* key-up follows the original note/part */
     fm1_in.notes = 0;
     keyboard_block();
     assert(t->arp_phys == 0 && t->nheld == 0);
     assert(mo_w == 2 && ((midi_out_q[1] >> 16) & 127u) == 63);
     assert(((midi_out_q[1] >> 8) & 255u) == 0x80u);
-    song.sel = 0;
+    sel_set(0);
     t->p[P_QUANT] = 0;
     fm1_in.notes = 1u << 8;                /* held black key must release after enabling mode */
     keyboard_block();
@@ -175,7 +175,7 @@ static void seq_quant_test(void)
         {.time = ST_REST},
     };
     memset(trk, 0, sizeof trk);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     host_tracks_init();
     song.g[G_BPM] = 120;
     host_preset(t, 0, 0);                          /* ANALOG, POLY */
@@ -280,7 +280,7 @@ static int arp_is(track_t *t, uint32_t a, uint32_t b)   /* UP over two notes: a 
 static void arp_reset(track_t *t)
 {
     memset(trk, 0, sizeof trk);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     host_tracks_init();
     kb_prev = 0;
     fm1_in.notes = 0;
@@ -436,7 +436,7 @@ static void seq_trn_test(void)
         {.time = ST_REST},
     };
     memset(trk, 0, sizeof trk);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     host_tracks_init();
     song.g[G_BPM] = 120;
     host_preset(t, 0, 0);                          /* ANALOG, POLY */

@@ -81,13 +81,19 @@
   .slots.named { grid-template-columns: auto auto auto auto auto; }   /* ((Skiff W3) RENAME too) */
   /* ((Skiff W3) the Song tab: an entry, a pattern: the one a track is on filled, the one staged dashed, the one picked
      ringed; empty dim; a pattern nothing uses dashed and dim) */
-  .lists td { padding: 1px; }
+  .lists td { padding: 2px 1px; }   /* ((2.0, #44, the chain sheet's A) round its tile: a chain's box, its tiles on it, the
+                                       track's colour dimmed, as on the device; two side by side, a notch between them) */
+  .lists td.chain { background: color-mix(in srgb, var(--s, var(--fg)) 35%, var(--tile)); }
+  .lists td.cp { box-shadow: inset 2px 0 var(--tile); }
+  .lists td.cn { box-shadow: inset -2px 0 var(--tile); }
   .lists button, .pool button { min-width: 2.6em; padding: 1px 2px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
     font-variant-numeric: tabular-nums; }
   .lists button.on, .pool button.on { background: var(--fg); color: var(--bg); }
   .lists button.next, .lists button.tog.next { outline: 2px dashed var(--fg); outline-offset: -4px; }
   .lists button.pick, .pool button.pick { box-shadow: 0 0 0 2px var(--fg); }
   .lists button.empty, .pool button.empty, .seg button.empty { color: var(--dim); }
+  .lists button.snd { clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%); }   /* ((2.0, #30) an entry
+                                                 with a sound: its corner cut, as on the device) */
   .pool button.unused { color: var(--dim); border-style: dashed; }
   .lists sub { font-size: 70%; }
   .pool { display: grid; grid-template-columns: repeat(8, 2.8em); gap: 3px; }
@@ -125,6 +131,16 @@
   .smp input.root { width: 48px; }
   .smp input.pct { width: 52px; }
   .smp .bad { text-decoration: underline wavy; }
+  /* (#35) DRUM KIT: a row a lane, its file (a drop target) and its level; one upload */
+  .smp .kit { display: grid; grid-template-columns: auto minmax(0, 1fr) 120px auto; gap: 6px 12px; align-items: center;
+              max-width: 600px; margin: 6px 0; }
+  .smp .kit > b { font: 500 15px "Barlow Condensed", sans-serif; letter-spacing: .03em; }
+  .smp button.kitf { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .smp button.kitf.empty { background: none; border: 1px dashed var(--line); color: var(--dim); }
+  .smp button.kitf.over { outline: 1px solid var(--fg); }
+  .smp .kitlen { display: flex; gap: 12px; align-items: center; max-width: 600px; }
+  .smp .kitlen progress { flex: 1; width: auto; }
+  .smp button.go { background: var(--fg); color: var(--bg); margin: 8px 0 4px; }
   footer { margin-top: 24px; font-size: 11px; color: var(--dim); }
   .row.pushed .v { font-weight: 600; }
   .row.modrow { grid-template-columns: 16px 1fr 1fr 1fr 52px; }
@@ -348,7 +364,8 @@
     <p class="dim" data-t="sgHelp"></p>
     <div class="group" id="sg-lists" hidden>
       <h2 data-t="sgLists" data-ic="control_arrow_loop"></h2>
-      <p class="bar"><label><input type="checkbox" id="sgsong"> <span data-t="sgSong"></span></label>
+      <p class="bar"><label><span data-t="sgSong"></span> <select id="sgsong"><option value="0">OFF</option>
+          <option value="1">ON</option><option value="2">ONCE</option></select></label>
         <label><span data-t="sgLaunch"></span> <select id="sglaunch"><option value="0">LOOP</option><option value="1">BAR</option>
           <option value="2">BEAT</option><option value="3">NOW</option></select></label>
         <button id="sgcancel" data-t="sgCancel"></button></p>
@@ -488,7 +505,7 @@ const CMD = { INFO: 1, GET: 2, SET: 3, DUMP: 4, DESC: 5, STEP_GET: 6, STEP_SET: 
   UI_STATE: 34, UI_SET: 35, UI_PALETTES: 36, FAV_GET: 37, FAV_SET: 38, COLORS: 39,
   MOTION: 64, BACKUP_LIST: 65, BACKUP_GET: 66, BACKUP_PUT: 67,
   FM6_GET: 68, FM6_PUT: 69, FM6_LIST: 70, FM6_ERASE: 71, MENU_DESC: 72, MENU_SET: 73, KIT_GET: 74, KIT_PUT: 75, TRANSPORT: 76, PROJ_NAME: 77, POOL: 78, LIST: 79, PERFORM: 80,
-  SMP_MIX: 81 };
+  SMP_MIX: 81, LIST2: 82 };
 /* frames the device sends on its own (while WATCH is on); never replies */
 const PUSH = new Set([CMD.CHANGED, CMD.RELOAD, CMD.STEP_CHANGED, CMD.TRACK_CHANGED]);
 /* user preset bank: name 1..12 printable ASCII, a 16-step pattern of (note, flags 1 acc 2 slide 4 tie) */
@@ -595,7 +612,8 @@ const MENU = [
   { id: 14, name: "COUNT-IN", names: ["OFF", "1 BAR", "2 BARS"], def: 0, tab: 2 }, { id: 15, name: "RESTORE LAST", names: ["ON", "OFF"], def: 0, tab: 3 },
   { id: 16, name: "SCALE LEDS", names: ["OFF", "ON"], def: 0, tab: 1 },
   { id: 17, name: "SCREEN OFF", names: ["NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"], def: 3, tab: 0 },
-  { id: 19, name: "PLAYHEAD", names: ["THEME", "LINE"], def: 0, tab: 0 }];   /* ((Skiff #27) HOME's figure at the playhead, or the line) */
+  { id: 19, name: "PLAYHEAD", names: ["THEME", "LINE"], def: 0, tab: 0 },   /* ((Skiff #27) HOME's figure at the playhead, or the line) */
+  { id: 20, name: "RETURN", names: ["SNAP", "1 BEAT", "1 BAR"], def: 2, tab: 1 }];   /* ((2.0) how MOMENTARY, FX's macros, throws come back) */
 /* (Skiff W1) a step's trig condition (core.h TC_NAME; INFO 43 01 says how many) */
 const TC_NAMES = ["--", "FILL", "!FILL", "1:2", "2:2", "1:3", "2:3", "3:3", "1:4", "2:4", "3:4", "4:4"];
 /* (Skiff W3) the DRUM-X kit: the factory's (drumx_voice.c DX_KIT_INIT: {mode, A, B}, A and B PITCH P MOD DECAY NOISE
@@ -627,7 +645,8 @@ function readHits(r, o) {
   o.flam = r.i < r.a.length ? r.b() : 0;          /* (Skiff W1, INFO 43 01) FLAM, COND, NUDGE + 32; older firmware: none */
   o.cond = r.i < r.a.length ? r.b() : 0;
   o.nudge = (r.i < r.a.length ? r.b() : 32) - 32;
-  if (o.flam > 1 || o.cond >= TC_NAMES.length || o.nudge > 31) throw new Error("Invalid step extras");
+  o.ties = r.i < r.a.length ? r.b() : 0;          /* ((2.0, #25, INFO 57 01 bit 6) bit k: note k goes on from the step before */
+  if (o.flam > 1 || o.cond >= TC_NAMES.length || o.nudge > 31 || o.ties > 15) throw new Error("Invalid step extras");
   return o;
 }
 
@@ -664,7 +683,9 @@ const parse = {
     o.menuCount = 0;                              /* (1.0.4, INFO 4E 01 count) the MENU settings MENU_DESC offers */
     o.kitLanes = 0;                               /* (Skiff W3, INFO 4B 01 8) KIT_GET / KIT_PUT: the DRUM-X kit's lanes */
     o.skiff = 0;                                  /* (Skiff W3, INFO 57 01 caps) bits: 0 TRANSPORT, 1 PROJ_NAME, 2 POOL, 3 LIST,
-                                                     4 PERFORM, (#21) 5 SMP_MIX */
+                                                     4 PERFORM, (#21) 5 SMP_MIX, (2.0, #25) 6 a step's ties */
+    o.song2 = 0;                                  /* (2.0, INFO 58 01 caps) bit 0: LIST2, NEW, COPY+, CHAIN, ONCE, the pool's
+                                                     EMPTY and CLEAR UNUSED */
     for (const p of [8, 11]) if (o.motionMax && trailer[p] === 0x46 && trailer[p + 1] === 1) {   /* for the editor's */
       o.fm6 = { factory: trailer[p + 2], bank: trailer[p + 3], caps: 0 };                         /* PRESET / G_ENGSEL */
       if (trailer[p + 4] === 0x53 && trailer[p + 5] === 1) o.syncCaps = trailer[p + 6] & 3;
@@ -681,11 +702,13 @@ const parse = {
       }
       if (trailer[r] === 0x43 && trailer[r + 1] === 1) { o.stepx = trailer[r + 2]; r += 3; }   /* (Skiff W1) FLAM COND NUDGE */
       if (trailer[r] === 0x4B && trailer[r + 1] === 1) { o.kitLanes = trailer[r + 2]; r += 3; }   /* (Skiff W3) the DRUM-X kit */
-      if (trailer[r] === 0x57 && trailer[r + 1] === 1) { o.skiff = trailer[r + 2] & 63; r += 3; }   /* (Skiff W3) TRANSPORT .. (#21) SMP_MIX */
+      if (trailer[r] === 0x57 && trailer[r + 1] === 1) { o.skiff = trailer[r + 2] & 127; r += 3; }   /* (Skiff W3) TRANSPORT .. (2.0) ties */
       if (trailer[r] === 0x49 && trailer[r + 1] === 1) {                                  /* (Skiff 1.3) wide ids: */
         o.pcount = trailer[r + 2] | trailer[r + 3] << 7;                                 /* P_COUNT and P_E0 whole */
         o.pe0 = trailer[r + 4] | trailer[r + 5] << 7;
+        r += 6;
       }
+      if (trailer[r] === 0x58 && trailer[r + 1] === 1) o.song2 = trailer[r + 2] & 127;   /* (2.0) the song's, last */
     }
     o.light = o.light || { tracks: 0, engines: 0 };   /* the tracks that may not play some engines, and those engines */
     return o;
@@ -778,16 +801,22 @@ const parse = {
   },
   /* (Skiff W3) LIST: op, rc (0 done, 1 empty, 2 without its automation, 3 playing, 4 PATTERNS FULL, 5 failed), SONG, each
      track: the entry it is on, the one staged (-1: none), its pattern (0..63, -1 none), its 16 entries (pattern 1..64,
-     (#28) PAT_REST a REST, 0 empty; REPS 1..16) */
-  [CMD.LIST](a) {
-    const r = new Reader(a), o = { op: r.b(), rc: r.b(), song: !!r.b(), tracks: [] }, n = (v) => (v === 127 ? -1 : v);
+     (#28) PAT_REST a REST, 0 empty; REPS 1..16). (2.0) LIST2 the same, SONG 0..2 (2 ONCE) and a REPS byte 16 an entry on
+     CHAIN (chain: its REPS 1); ((#30) snd: INFO 58 01 bit 1, each entry's sound after it, [0 none; 1..63 an engine + 1,
+     its preset; 64 + a user slot, 0]) */
+  [CMD.LIST](a, two = false, snd = false) {
+    const r = new Reader(a), o = { op: r.b(), rc: r.b(), song: two ? r.b() : +!!r.b(), tracks: [] }, n = (v) => (v === 127 ? -1 : v);
     while (r.i < a.length) {
       const x = { cur: n(r.b()), next: n(r.b()), pat: n(r.b()), ent: [] };
-      for (let e = 0; e < 16; e++) x.ent.push({ pat: r.b(), reps: r.b() + 1 });
+      for (let e = 0; e < 16; e++) {
+        const p = r.b(), v = r.b(), chain = two && v === 16;
+        x.ent.push({ pat: p, reps: chain ? 1 : (v & 15) + 1, chain, snd: snd ? [r.b(), r.b()] : [0, 0] });
+      }
       o.tracks.push(x);
     }
     return o;
   },
+  [CMD.LIST2](a, snd = false) { return parse[CMD.LIST](a, true, snd); },
   /* (Skiff W3) PERFORM: op, rc, LAUNCH (0 LOOP .. 3 NOW), the scene last recalled or stored (-1 none), the scenes kept
      (a bit each), each track: muted, its mute staged (0 none, 1 to unmute, 2 to mute) */
   [CMD.PERFORM](a) {
@@ -904,6 +933,8 @@ const parse = {
   },
   [CMD.FM6_ERASE](a) { return { index: a[0], rc: a[1] }; },
 };
+/* ((2.0, #30) a Song tab reply (request r) as device d sends it: LIST2's with each entry's sound when INFO 58 01 has bit 1) */
+const songReply = (d, r, a) => (r[0] === CMD.LIST2 ? parse[CMD.LIST2](a, !!(d.info.song2 & 2)) : parse[r[0]](a));
 
 /* a name the device accepts: printable ASCII, 1..12 characters */
 /* (Skiff W3) a project's name as the device keeps it: upper case, printable ASCII, 12 at most ("" = none) */
@@ -936,7 +967,8 @@ const req = {
       ...(st.chance == null ? [] : [Math.max(0, Math.min(100, st.chance | 0))]),
       ...(st.chance == null || st.ratchet == null ? [] : [Math.max(1, Math.min(4, st.ratchet | 0))]),   /* (only after the chance) */
       ...(st.chance == null || st.ratchet == null || st.cond == null ? [] :                           /* (Skiff W1) FLAM, COND, */
-        [st.flam ? 1 : 0, Math.max(0, Math.min(TC_NAMES.length - 1, st.cond | 0)), Math.max(0, Math.min(63, (st.nudge | 0) + 32))])]];   /* NUDGE */
+        [st.flam ? 1 : 0, Math.max(0, Math.min(TC_NAMES.length - 1, st.cond | 0)), Math.max(0, Math.min(63, (st.nudge | 0) + 32))]),   /* NUDGE, */
+      ...(st.chance == null || st.ratchet == null || st.cond == null || st.ties == null ? [] : [st.ties & 15])]];   /* ((2.0) the ties) */
   },
   preset: (e, p) => [CMD.PRESET, [e & 0x7F, p & 0x7F]],
   project: (op, slot) => { if (![0, 1, 2].includes(op)) throw new Error("bad PROJECT op"); return [CMD.PROJECT, [op, slot & 3]]; },   /* 0 load, 1 save, 2 query */
@@ -990,9 +1022,13 @@ const req = {
   kitGet: (lane) => [CMD.KIT_GET, [lane & 7]],
   kitPut: (k) => [CMD.KIT_PUT, [k.lane, k.wave, k.filt, +k.snap, k.pmod, +k.drive, ...k.a, ...k.b].map((x) => x & 0x7F)],
   transport: (op = 0) => [CMD.TRANSPORT, op ? [op] : []],            /* 1 PLAY, 2 STOP, 3 RESTART, 4 REC; none: the state */
-  pool: (id) => [CMD.POOL, id == null ? [] : [1, id & 63]],             /* id: CLEAR it; none: the pool */
-  /* 1 SET (v: pattern 1..64), 2 COPY, 3 PLAY, 4 CLEAR, 5 REPS (v: 1..16) entry e of track k; 6 SONG (k: on); none: the lists */
-  list: (op = 0, k = 0, e = 0, v = null) => [CMD.LIST, !op ? [] : op === 6 ? [6, k ? 1 : 0] : v == null ? [op, k, e] : [op, k, e, v]],
+  /* id: CLEAR it ((2.0, INFO 58 01) op 2: EMPTY it; 3, no id: CLEAR UNUSED); none: the pool */
+  pool: (id, op = 1) => [CMD.POOL, op === 3 ? [3] : id == null ? [] : [op === 2 ? 2 : 1, id & 63]],
+  /* 1 SET (v: pattern 1..64), 2 COPY, 3 PLAY, 4 CLEAR, 5 REPS (v: 1..16; (2.0) 0 CHAIN) entry e of track k, ((2.0) 7 NEW, 8
+     COPY+; (#30, LIST2's, INFO 58 01 bit 1) 9 SOUND, v: its two bytes); 6 SONG (k: 0 off, 1 on, (2.0) 2 ONCE); none: the
+     lists. two: (2.0, INFO 58 01) as LIST2 (82) */
+  list: (op = 0, k = 0, e = 0, v = null, two = false) => [two ? CMD.LIST2 : CMD.LIST,
+    !op ? [] : op === 6 ? [6, Math.max(0, Math.min(2, +k | 0))] : v == null ? [op, k, e] : [op, k, e, ...[v].flat().map((x) => x & 0x7F)]],
   perform: (op = 0, v = 0) => [CMD.PERFORM, !op ? [] : op === 4 ? [4] : [op, v]],   /* 1 STORE, 2 RECALL, 3 MUTE, 4 CANCEL, 5 LAUNCH */
   projName: (op = 0, slot = 0, name = "") => [CMD.PROJ_NAME, op ? [op, slot & 3, ...strEnc(cleanProjName(name))] : []],   /* 1 SAVE AS, 2 RENAME */
 };
@@ -1014,7 +1050,7 @@ function replyMatches(cmd, args, a) {
     case CMD.MENU_DESC: return a[0] === args[0];
     case CMD.MENU_SET: return a[1] === args[0];
     case CMD.KIT_GET: case CMD.KIT_PUT: return a[0] === args[0];
-    case CMD.PROJ_NAME: case CMD.POOL: case CMD.LIST: case CMD.PERFORM: return a[0] === (args[0] || 0);
+    case CMD.PROJ_NAME: case CMD.POOL: case CMD.LIST: case CMD.LIST2: case CMD.PERFORM: return a[0] === (args[0] || 0);
     case CMD.BACKUP_GET: return a[0] === args[0] && a.slice(2, 7).every((v, i) => v === args[i + 1]);
     case CMD.BACKUP_PUT: return a[0] === args[0] && a[1] === args[1];
     case CMD.UI_SET: return a[1] === args[0] && a[2] === args[1];
@@ -1038,6 +1074,20 @@ function replyMatches(cmd, args, a) {
 
 /* strict request/response: one frame in flight, the rest queued. Push frames (CHANGED, RELOAD,
    STEP_CHANGED) can come at any time, also between a request and its reply: they go to onPush. */
+/* (2.0.1, #50) the ports a unit may be on, as the installer finds them (fm1ota.js find): an input and an output of the
+   same name, connected, the name one a unit can have (macOS can give its port a generic name: the installer found the
+   unit, the editor looked for "Felucca" only). "Felucca" first; connect() takes the first pair that answers INFO */
+const UNIT_PORT = /fm-1|smk|elite|mke-p37|starry|felucca|composite|sinco|usb-midi/i;
+function portPairs(access) {
+  const outs = [...access.outputs.values()], pairs = [];
+  for (const i of access.inputs.values()) {
+    if (i.state === "disconnected" || !UNIT_PORT.test(i.name || "")) continue;
+    const o = outs.find((x) => x.name === i.name && x.state !== "disconnected");
+    if (o) pairs.push([i, o]);
+  }
+  return pairs.sort((a, b) => /felucca/i.test(b[0].name) - /felucca/i.test(a[0].name));
+}
+
 class Link {
   constructor(send, opts = {}) {
     this.sendRaw = send;
@@ -1127,13 +1177,19 @@ function parseNote(tok) {
   const n = base + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0) + (parseInt(m[3], 10) + 1) * 12;
   return n >= 0 && n <= 127 ? n : null;
 }
-/* "C4 E4 G4" -> [60, 64, 67]; null on a bad token or more than 4 notes */
+/* "C4 E4 G4" -> [60, 64, 67]; null on a bad token or more than 4 notes. (2.0, #25) "(C4)": a note going on from the step
+   before, its bit in the array's .ties */
 function parseNotes(s) {
   const t = s.trim().split(/[\s,]+/).filter(Boolean);
   if (t.length > 4) return null;
-  const out = t.map(parseNote);
+  const out = t.map((x) => parseNote(x.replace(/^\((.+)\)$/, "$1")));
+  out.ties = t.reduce((m, x, k) => m | (/^\(.+\)$/.test(x) ? 1 << k : 0), 0);
   return out.includes(null) ? null : out;
 }
+/* (2.0, #25) a step's ties (bit k: note k goes on), as the device keeps them: none on a step with hits; a NOTE whose
+   notes all go on is a tie, as a TIE (the device's step_tie) */
+const stepTies = (s) => (s.hit ? 0 : (s.ties | 0) & ((1 << s.n) - 1));
+const stepTie = (s) => !!s && (s.time === 1 || (s.time === 0 && s.n > 0 && stepTies(s) === (1 << s.n) - 1));
 
 /* close to the device's param_format (params.c), tables from tools/gen_tables.py */
 function fmtValue(d, v) {
@@ -1280,17 +1336,16 @@ function resample(x, sr, to) {
 }
 function pyRound(v) { const f = Math.floor(v), r = v - f; return r > 0.5 ? f + 1 : r < 0.5 ? f : (f % 2 ? f + 1 : f); }
 
-/* mono float -> int16, peak normalised to 30000 */
-function normalize(x) {
-  let pk = 1e-9;
-  for (const v of x) pk = Math.max(pk, Math.abs(v));
+/* mono float -> int16, peak (x's own, or pk: one gain for several) normalised to 30000 */
+function normalize(x, pk = 0) {
+  if (!pk) { pk = 1e-9; for (const v of x) pk = Math.max(pk, Math.abs(v)); }
   return Int16Array.from(x, (v) => Math.max(-32768, Math.min(32767, Math.trunc(v / pk * 30000))));
 }
 
 /* a trimmed sample: raw (mono float at SMP.RATE) from a to b, a fade of FADE samples at both cut ends
  * (no click where the sound was cut; none at the file's own start and end), normalised */
 const FADE = 44;                                     /* 2 ms at 22050 Hz */
-function takeSample(raw, a, b) {
+function cutFade(raw, a, b) {
   a = Math.max(0, Math.min(raw.length - 1, a | 0));
   b = Math.max(a + 1, Math.min(raw.length, b | 0));
   const x = Float64Array.from(raw.subarray ? raw.subarray(a, b) : raw.slice(a, b));
@@ -1300,7 +1355,18 @@ function takeSample(raw, a, b) {
     if (a > 0) x[i] *= g;
     if (b < raw.length) x[x.length - 1 - i] *= g;
   }
-  return normalize(x);
+  return x;
+}
+const takeSample = (raw, a, b) => normalize(cutFade(raw, a, b));
+
+/* (#35) a DRUM KIT for a user slot: rows by lane (LANES), each null or {raw, a, b, lvl 0..1} -> buildSlot's zones,
+ * each on its lane's key only (DRUM plays the zone holding its lane's note); one gain for the whole kit (its
+ * loudest at 30000), so the files keep their levels to each other, times lvl */
+function kitZones(rows) {
+  const xs = rows.map((r) => r && cutFade(r.raw, r.a, r.b).map((v) => v * r.lvl));
+  let pk = 1e-9;
+  for (const x of xs) if (x) for (const v of x) pk = Math.max(pk, Math.abs(v));
+  return xs.flatMap((x, i) => x ? [{ s: normalize(x, pk), root: LANE_NOTE[i], lo: LANE_NOTE[i], hi: LANE_NOTE[i] }] : []);
 }
 
 /* a trimming view [v0, v1) of n samples: zoomed by factor (< 1 in) around the fraction at of the
@@ -1452,12 +1518,14 @@ function tailParams(p, n, pe0) {
    4 tie, 8 | 16 the ratchet - 1 (core.h SF_RATCH) */
 const patNorm = (n, f) => (f & 4 ? [0, 4] : [n & 0x7F, n ? f & 27 : 0]);
 /* sequencer steps (STEP_GET objects) -> 16-step pattern, as the firmware's UP_STORE does (up_pat_from):
-   the first note of a NOTE step, flag 4 for a TIE step */
+   the first note of a NOTE step ((2.0, #25) the first starting there), flag 4 for a TIE step (or one whose notes all
+   go on) */
 function patternFromSteps(steps) {
   return Array.from({ length: UP.PAT }, (_, i) => {
     const s = steps[i];
     if (!s) return [0, 0];
-    return patNorm(s.time === 0 && s.n ? s.notes[0] : 0, s.time === 1 ? 4 : (s.flags & 3) | ((s.ratchet || 1) - 1) << 3);
+    const k = s.time === 0 ? s.notes.findIndex((_, x) => x < s.n && !(stepTies(s) >> x & 1)) : -1;
+    return patNorm(k >= 0 ? s.notes[k] : 0, stepTie(s) ? 4 : (s.flags & 3) | ((s.ratchet || 1) - 1) << 3);
   });
 }
 /* pattern -> 16 STEP_SET objects, as the firmware loads one (load_pat16; velocity 96); the ratchet is sent only with a
@@ -1630,6 +1698,8 @@ const P_LTUNE = Array.from({ length: 8 }, (_, i) => 101 + i), P_LDECAY = Array.f
 /* (Skiff 1.3, P_COUNT 135, P_E0 127: wide ids) core.h P_LSYNC P_LTRIG P_LPOL (LFO 2), P_SPRD (SPREAD), P_ITYPE P_IA P_IB P_IC
    P_IMIX (FX > INSERT), P_ESYNC (ENV SYNC): sound parameters, as the engine's */
 const P_LFO2 = [117, 118, 119], P_SPRD = 120, P_INSERT = [121, 122, 123, 124], P_IMIX = 125, P_ESYNC = 126;
+const P_LPAN = Array.from({ length: 8 }, (_, i) => 127 + i);   /* (2.0, #36, P_COUNT 143, P_E0 135) core.h P_LPAN0..7: the
+                                                   DRUM lanes' PAN, sound parameters as the lane levels */
 const trackOwn = (i, pe0) => TRACK_OWN.has(i) || (pe0 >= 83 && P_CHORD.includes(i)) || (pe0 >= 92 && i === P_DIR) ||
   (pe0 >= 95 && P_DUCK.includes(i));
 /* play a patch without writing flash, as UP_LOAD would load it: the sound only. SET the engine (G_ENGSEL:
@@ -2066,7 +2136,7 @@ function makeMockDevice(opt = {}) {
     E("MODE", ["OFF", "UP", "DN", "UPDN", "RND", "ORD", "REPEAT", "DNUP", "UP+8", "CONV", "DIVG", "PINKY", "THUMB", "WALK", "CHORD"], 0), E("RATE", NDIV, 2), D("OCTAVE", F.INT, 1, 4, 1), D("GATE", F.PCT, 1, 127, 64),
     D("SWING", F.PCT, 0, 100, 0), D("CHANCE", F.PCT, 0, 127, 127), E("HOLD", NONOFF, 0), E("ORDER", ["NOTE", "PLAYED"], 0),
     D("ROOT", F.NOTE, 0, 11, 0), E("SCALE", ["CHR", "MAJ", "MIN", "DOR", "MIX", "PEN", "MPEN", "HARM", "PHRY", "LYD", "LOC", "MEL", "BLUES", "WHOLE", "DIMHW", "DIMWH"], 0), E("QUANTIZE", ["OFF", "SNAP", "WHITE", "SEQ", "SEQ+T"], 0), D("TRANSP", F.SEMI, -24, 24, 0),
-    D("LENGTH", F.STEPS, 1, 64, 16), E("DIV", NDIV, 2), D("SWING", F.PCT, 0, 100, 0), D("GATE", F.PCT, 1, 127, 64),
+    D("LENGTH", F.STEPS, 1, 64, 16), E("DIV", NDIV, 2), D("SWING", F.PCT, 0, 100, 0), D("GATE", F.PCT, 1, 127, 127),   /* ((2.0) 1 STEP) */
     D("DIST", F.PCT, 0, 127, 0), D("CHORUS", F.PCT, 0, 127, 0), D("DELAY", F.PCT, 0, 127, 0), D("REVERB", F.PCT, 0, 127, 0),
     E("VOICE", ["POLY", "MONO", "LEG", "UNI"], 0), D("GLIDE", F.TIME, 0, 127, 0), D("PAN", F.BIPCT, -64, 63, 0), E("MUTE", NONOFF, 0),
     E("GL MODE", ["RATE", "TIME"], 0), E("PRIORITY", ["LAST", "LOW", "HIGH"], 0), E("ALLOC", ["ROT", "REUSE"], 0), D("DETUNE", F.INT, 0, 127, 40),
@@ -2206,7 +2276,8 @@ function makeMockDevice(opt = {}) {
         P("HARPSICHORD", [1, 44, 112, 76, 10, 127, 0, 24], [0, 100, 127, 50]),
         /* (Skiff phase 9) more for every engine (src/eng_*.c) */
         P("UPRIGHT", [1, 60, 60, 90, 20, 127, 0, 60], [0, 100, 127, 40], 1)] },
-    { name: "DRUM", titles: ["KIT", "HIT"], edit: [E("KIT", ["STD", "66", "10", "77", "80", "10", "66", "55", "77", "DEEP", "TIGHT", "PERC"], 0), D("PITCH", F.ST16, 0, 127, 64),
+    { name: "DRUM", titles: ["KIT", "HIT"], edit: [E("KIT", ["STD", "66", "10", "77", "80", "10", "66", "55", "77", "DEEP", "TIGHT", "PERC",
+        "USR1", "USR2", "USR3"], 0), D("PITCH", F.ST16, 0, 127, 64),   /* ((2.0, #35) USR1..3: a user sample slot as the kit) */
         D("TONE", F.PCT, 0, 127, 64), D("DECAY", F.PCT, 0, 127, 64), D("SNAP", F.PCT, 0, 127, 64), D("ACCENT", F.PCT, 0, 127, 100),
         E("KICK", ["PUNCH", "ROUND"], 0), D("DRIVE", F.PCT, 0, 127, 0)],
       presets: [P("DRUM KIT", [0, 64, 70, 64, 64, 100, 0, 0], [0, 100, 127, 100], 0, 12),
@@ -2306,7 +2377,7 @@ function makeMockDevice(opt = {}) {
   TP.push(E("DIR", ["FWD", "RVRS", "PING", "RAND"], 0));   /* 91: (Skiff) the play direction */
   TP.push(E("BY", ["OFF", "T1", "T2", "T3", "T4", "T5", "T6"], 0), D("DEPTH", F.PCT, 0, 127, 96), D("RELEASE", F.TIME, 0, 127, 73));   /* 92..94:
                                                      (Skiff) the ducking */
-  TP.push(E("TYPE", ["SOFT", "HARD", "FOLD", "BITS"], 0), D("TONE", F.BIPCT, -64, 63, 0));   /* 95, 96: (Skiff phase 9) DRIVE */
+  TP.push(E("TYPE", ["SOFT", "HARD", "FOLD", "CRUSH", "FUZZ"], 0), D("TONE", F.BIPCT, -64, 63, 0));   /* 95, 96: (Skiff phase 9) DRIVE */
   TP.push(D("ATTACK", F.TIME, 0, 127, 0), D("DECAY", F.TIME, 0, 127, 60), D("SUSTAIN", F.PCT, 0, 127, 0),
     D("RELEASE", F.TIME, 0, 127, 40));               /* 97..100: (Skiff phase 9) ENV 2 */
   for (let k = 0; k < 8; k++) TP.push(D("TUNE", F.ST16, 0, 127, 64));   /* 101..108: (phase 9) the DRUM lanes' TUNE, */
@@ -2316,8 +2387,9 @@ function makeMockDevice(opt = {}) {
   TP.push(D("SPREAD", F.PCT, 0, 127, 0));         /* 120: (1.3) SPREAD */
   TP.push(E("TYPE", ["OFF", "SOFT", "HARD", "FOLD", "FUZZ", "CRUSH", "PHASR", "FLANG", "CHOR"], 0),   /* 121..125: (1.3) the INSERT */
     D("A", F.PCT, 0, 127, 64), D("B", F.PCT, 0, 127, 96), D("C", F.PCT, 0, 127, 96), D("MIX", F.PCT, 0, 127, 127));
-  TP.push(E("SYNC", NONOFF, 0));                  /* 126: (1.3) ENV SYNC */
-  const P_COUNT = 135, G_COUNT = 27, NSTEP = 64, P_E0 = 127, G_ENGSEL = 20, P_SLCR = 45;
+  TP.push(E("ENV SYNC", NONOFF, 0));              /* 126: (1.3) ENV SYNC ((2.0) on LFO 2: its whole name) */
+  for (let k = 0; k < 8; k++) TP.push(D("PAN", F.BIPCT, -64, 63, 0));   /* 127..134: (2.0, #36) the DRUM lanes' PAN */
+  const P_COUNT = 143, G_COUNT = 27, NSTEP = 64, P_E0 = 135, G_ENGSEL = 20, P_SLCR = 45;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const enumOrig = (d, v) => d.fmt === F.ENUM && d.names ? aliasOf(d.names, v - d.min) + d.min : v;   /* params.c enum_orig */
   /* six tracks (firmware v3; Skiff phase 6), a synth part each; engine / preset / p / step below are the selected track's */
@@ -2336,6 +2408,8 @@ function makeMockDevice(opt = {}) {
        the scenes ({cur, mutes}), the last one, LAUNCH, the mutes staged (bank.c) */
     pool: [16, 16, 16, 8].concat(new Array(60).fill(0)),
     lists: Array.from({ length: NTRK }, (_, k) => Array.from({ length: 16 }, (_, e) => [k === 0 && e < 2 ? e + 1 : k === 3 && !e ? 3 : 0, 0])),
+    snds: Array.from({ length: NTRK }, () => Array.from({ length: 16 }, () => [0, 0])),   /* ((2.0, #30) the entries' sounds, as
+                                                     LIST2 says them: 0 none; an engine + 1, its preset; 64 + a user slot) */
     cur: new Array(NTRK).fill(0), pid: [1, 0, 0, 3, 0, 0], staged: new Array(NTRK).fill(127), song: 0,
     scenes: new Array(16).fill(null), sceneLast: -1, launch: 0, muteArm: new Array(NTRK).fill(0),
     smp: [0, 1, 2].map(() => ({ flash: new Uint8Array(SMP.SLOT_SIZE).fill(0xFF), zones: 0, name: "", len: 0, next: SMP.DATA_OFF,
@@ -2436,8 +2510,11 @@ function makeMockDevice(opt = {}) {
   const kitOn = () => stepxOn() && !opt.noKit;         /* (Skiff W3, INFO 4B 01 08) the DRUM-X kit */
   const projOn = () => kitOn() && !opt.noProj;         /* (Skiff W3, INFO 57 01 03) TRANSPORT, PROJ_NAME */
   const songOn = () => projOn() && !opt.noSong;        /* (Skiff W3, INFO 57 01 31) POOL, LIST, PERFORM */
+  const tiesOn = () => songOn() && !opt.noTies;        /* ((2.0, #25) INFO 57 01 bit 6) a step's ties after its NUDGE */
+  const song2On = () => songOn() && !opt.noSong2;      /* ((2.0) INFO 58 01: LIST2, NEW, COPY+, CHAIN, ONCE, the pool's 2 3) */
+  const sndM = () => song2On() && !opt.noSnd;         /* ((2.0, #30) INFO 58 01 bit 1: LIST2's entry sounds, its op 9) */
   const stepOut = (x, b) => { b(x.n); x.notes.forEach(b); b(x.time); b(x.flags); b(x.vel); hitsEnc(x.hit, x.acc).forEach(b); if (!opt.legacy && !opt.v3 && !opt.v5) b(x.chance ?? 100); if (ratchetOn()) b(x.ratchet ?? 1);
-    if (stepxOn()) { b(x.flam ? 1 : 0); b(x.cond | 0); b(((x.nudge | 0) + 32) & 63); } };
+    if (stepxOn()) { b(x.flam ? 1 : 0); b(x.cond | 0); b(((x.nudge | 0) + 32) & 63); } if (tiesOn()) b(x.ties | 0); };
   function stepIn(x, a) {                         /* editor.c ed_step_put: n, 4 notes, time, flags, vel [, hits (3) [, chance [, ratchet]]] */
     x.n = Math.min(4, a[0]); x.notes = a.slice(1, 5); x.time = Math.min(2, a[5]); x.flags = a[6] & 3; x.vel = a[7];
     if (a.length >= 11) { x.hit = a[8] | (a[10] & 1) << 7; x.acc = (a[9] | (a[10] & 2) << 6) & x.hit; }
@@ -2446,6 +2523,8 @@ function makeMockDevice(opt = {}) {
     if (a.length >= 16 && stepxOn()) {             /* (Skiff W1) FLAM (x1 only), COND, NUDGE (as the firmware: kept otherwise) */
       x.flam = a[13] && (x.ratchet ?? 1) === 1 ? 1 : 0; x.cond = a[14] < TC_NAMES.length ? a[14] : 0; x.nudge = Math.min(63, a[15]) - 32;
     }
+    if (tiesOn())                                  /* ((2.0) the ties, to its notes; none with hits, on a TIE or from an */
+      x.ties = a.length >= 17 && !x.hit && x.time !== 1 ? a[16] & ((1 << x.n) - 1) : 0;   /* editor of before) */
   }
   /* a few user presets to start with, each with its preset's suggested pattern stored (as UP_STORE would) */
   [[0, 0, 0, "MY LEAD"], [1, FM6_E, 1, "GLASS BELL"], [2, 2, 3, "PHASE RESO"], [5, 3, 2, "8BIT ARP"]].forEach(([slot, e, p, name]) => {
@@ -2475,6 +2554,39 @@ function makeMockDevice(opt = {}) {
     if (st.playing) st.staged[k] = e; else { st.cur[k] = e; st.pid[k] = p === PAT_REST ? 0 : p; st.staged[k] = 127; }
     return 0;
   };
+  /* ((2.0) bank.c song_put's COPY+) entry e's pattern (its chain: all of it) into the first empty entries in a row after
+     it, a copy of each (the first free number after its original's, pool_free_after), their REPS too; rc 1 no pattern
+     there or no room after, 4 the pool full */
+  const copyPlus = (k, e) => {
+    const L = st.lists[k], on = (j) => L[j][0] !== 0, link = (j) => j < 15 && L[j][1] === 16 && on(j) && on(j + 1);
+    let b0 = e, b1 = e, f, ids = [];
+    if (!on(e) || L[e][0] === PAT_REST) return 1;
+    while (b0 > 0 && link(b0 - 1)) b0--;
+    while (link(b1)) b1++;
+    for (f = b1 + 1; f + b1 - b0 < 16 && L.slice(f, f + b1 - b0 + 1).some((x) => x[0]); f++);
+    if (f + b1 - b0 >= 16) return 1;
+    for (let j = b0; j <= b1; j++) {
+      const n = L[j][0] === PAT_REST ? PAT_REST - 1
+        : st.pool.map((_, i) => (L[j][0] + i) % 64).find((i) => !st.pool[i] && !ids.includes(i + 1)) ?? -1;
+      if (n < 0) return 4;
+      ids.push(n + 1);
+    }
+    ids.forEach((id, i) => {
+      if (id !== PAT_REST) st.pool[id - 1] = st.pool[L[b0 + i][0] - 1];
+      L[f + i] = [id, L[b0 + i][1]];
+      st.snds[k][f + i] = [...st.snds[k][b0 + i]];   /* ((#30) its sound too) */
+    });
+    return 0;
+  };
+  /* ((2.0, #30) bank.c song_snd_put) entry e of track k gets sound s (LIST2's two bytes; 0 0 none): rc 1 on an empty entry
+     or for a sound it can't carry (no such engine or preset, a user slot not used, PHYS or GRAIN on a light track) */
+  const sndPut = (k, e, s) => {
+    const [s0, s1] = s, light = k >= 4 && ["GRAIN", "PHYS"].includes((ENG[s0 >= 64 ? (st.bank[s0 - 64] || {}).engine : s0 - 1] || {}).name);
+    if (s0 && (!st.lists[k][e][0] || light || (s0 < 64 ? !ENG[s0 - 1] || ENG[s0 - 1].name === "-" || s1 >= ENG[s0 - 1].presets.length
+      : s0 - 64 >= st.bank.length || !st.bank[s0 - 64]))) return 1;
+    st.snds[k][e] = [s0, s0 >= 64 ? 0 : s1];          /* (a user sound's second byte: 0, as kept) */
+    return 0;
+  };
   const muteTo = (k, m) => {
     const tp = st.tracks[k].p;
     st.muteArm[k] = 0;
@@ -2496,8 +2608,10 @@ function makeMockDevice(opt = {}) {
       [0x54, 1, 0x30, e, e >> 7, e >> 14].forEach(b);
       if (stepxOn()) [0x43, 1, TC_NAMES.length].forEach(b);   /* (Skiff W1) */
       if (kitOn()) [0x4B, 1, 8].forEach(b);                    /* (Skiff W3) */
-      if (projOn()) [0x57, 1, songOn() ? 63 : 3].forEach(b);   /* ((#21) 32: SMP_MIX, with the song's) */
+      if (projOn()) [0x57, 1, songOn() ? (tiesOn() ? 127 : 63) : 3].forEach(b);   /* ((#21) 32: SMP_MIX, with the song's; (2.0) 64 the ties) */
       if (projOn()) [0x49, 1, P_COUNT & 127, P_COUNT >> 7, P_E0 & 127, P_E0 >> 7].forEach(b);   /* ((Skiff 1.3) wide ids) */
+      if (song2On()) [0x58, 1, sndM() ? 3 : 1].forEach(b);     /* ((2.0) LIST2, NEW, COPY+, CHAIN, ONCE, EMPTY, UNUSED;
+                                                                   (#30) bit 1 the entries' sounds) */
     };
     const wid = (s, i) => (s === 2 ? [0, i + 128] : [s, i]);   /* ((1.3) scope 2: a track id from 128 on) */
     if (opt.legacy && cmd >= CMD.UP_LIST) return null;
@@ -2668,21 +2782,30 @@ function makeMockDevice(opt = {}) {
         for (let k = 0; k < 4; k++) { b(st.slots[k] ? 1 : 0); s(st.slots[k] ? st.slotNames[k] : ""); }
         break;
       }
-      case CMD.POOL: {                         /* (Skiff W3) editor_song.c */
-        if (!songOn() || (a.length && (a.length !== 2 || a[0] !== 1 || a[1] > 63))) return null;
+      case CMD.POOL: {                         /* (Skiff W3) editor_song.c; ((2.0) 2 EMPTY, 3 CLEAR UNUSED) */
+        const good = !a.length || (song2On() && a.length === 1 && a[0] === 3) ||
+          (a.length === 2 && (a[0] === 1 || (song2On() && a[0] === 2)) && a[1] <= 63);
+        if (!songOn() || !good) return null;
         let rc = 0;
-        if (a.length) {
+        if (a.length && a[0] === 3) {
+          const un = st.pool.map((x, i) => (x && !refsOf(i) ? i : -1)).filter((i) => i >= 0);
+          if (!un.length) rc = 1; else if (st.playing) rc = 3; else un.forEach((i) => { st.pool[i] = 0; });
+        } else if (a.length) {
           const id = a[1];
-          if (!st.pool[id]) rc = 1; else if (refsOf(id)) rc = 2; else if (st.playing) rc = 3; else st.pool[id] = 0;
+          if (!st.pool[id]) rc = 1; else if (a[0] === 1 && refsOf(id)) rc = 2; else if (st.playing) rc = 3;
+          else if (a[0] === 1) st.pool[id] = 0;        /* (EMPTY: its steps, which the mock doesn't keep; its LEN stays) */
         }
-        b(a.length ? 1 : 0); b(rc);
+        b(a.length ? a[0] : 0); b(rc);
         for (let i = 0; i < 64; i++) { b(st.pool[i]); b(Math.min(127, refsOf(i))); }
         break;
       }
-      case CMD.LIST: {                         /* (Skiff W3) editor_song.c */
-        const [op, k, e, v] = a, L = st.lists;
-        if (!songOn() || (a.length && !(op === 6 ? a.length === 2 && k <= 1 : a.length >= 3 && k < NTRK && e < 16 &&
-          (op === 1 || op === 5 ? a.length === 4 && v >= 1 && v <= (op === 1 ? PAT_REST : 16) : a.length === 3 && op >= 2 && op <= 4)))) return null;
+      case CMD.LIST: case CMD.LIST2: {         /* (Skiff W3) editor_song.c; ((2.0) LIST2: SONG 0..2, REPS bytes as kept) */
+        const [op, k, e, v] = a, L = st.lists, two = cmd === CMD.LIST2, s2 = song2On();
+        const good = !a.length || (op === 6 ? a.length === 2 && k <= (s2 ? 2 : 1) : a.length >= 3 && k < NTRK && e < 16 &&
+          (op === 1 || op === 5 ? a.length === 4 && v >= (op === 5 && s2 ? 0 : 1) && v <= (op === 1 ? PAT_REST : 16)
+            : op === 9 ? two && sndM() && a.length === 5   /* ((#30) SOUND: LIST2's) */
+            : a.length === 3 && ((op >= 2 && op <= 4) || (s2 && (op === 7 || op === 8)))));
+        if (!songOn() || (two && !s2) || !good) return null;
         let rc = 0;
         if (op === 1) { if (v !== PAT_REST && !st.pool[v - 1]) rc = 1; else { L[k][e][0] = v; if (st.cur[k] === e) rc = entryGo(k, e); } }
         else if (op === 2) {
@@ -2692,20 +2815,26 @@ function makeMockDevice(opt = {}) {
           else { st.pool[n] = st.pool[id]; L[k][e][0] = n + 1; if (st.cur[k] === e && st.pid[k] === id + 1) st.pid[k] = n + 1; }
         } else if (op === 3) rc = entryGo(k, e);
         else if (op === 4) {
-          if (L[k][e][0] === PAT_REST) L[k][e][0] = 0;  /* ((#28) a REST: at once, playing too) */
-          else if (st.playing) rc = 3;
+          if (L[k][e][0] === PAT_REST) { L[k][e][0] = 0; st.snds[k][e] = [0, 0]; }   /* ((#28) a REST: at once, playing too; */
+          else if (st.playing) rc = 3;                                                 /* (#30) its sound with it) */
           else {
             const id = L[k][e][0] - 1, on = st.cur[k] === e && st.pid[k] === id + 1;
             L[k][e] = [0, 0];
+            st.snds[k][e] = [0, 0];
             if (on) st.pid[k] = 0;
             if (id >= 0 && !refsOf(id)) st.pool[id] = 0;
           }
-        } else if (op === 5) { if (!L[k][e][0]) rc = 1; else L[k][e][1] = v - 1; }
-        else if (op === 6) st.song = k;
-        b(a.length ? op : 0); b(rc); b(st.song);
+        } else if (op === 9) rc = sndPut(k, e, a.slice(3));
+        else if (op === 5) { if (!L[k][e][0] || (!v && e === 15)) rc = 1; else L[k][e][1] = v ? v - 1 : 16; }   /* ((2.0) 0: */
+        else if (op === 6) st.song = k;                                                                       /* CHAIN) */
+        else if (op === 7) {                           /* ((2.0) NEW: the first free number) */
+          const n = st.pool.findIndex((x) => !x);
+          if (n < 0) rc = 4; else { st.pool[n] = st.tracks[k].p[29] || 16; L[k][e][0] = n + 1; if (st.cur[k] === e) rc = entryGo(k, e); }
+        } else if (op === 8) rc = copyPlus(k, e);
+        b(a.length ? op : 0); b(rc); b(two ? st.song : st.song ? 1 : 0);
         for (let t = 0; t < NTRK; t++) {
           b(bankCur(t)); b(st.staged[t]); b(st.pid[t] ? st.pid[t] - 1 : 127);
-          L[t].forEach(([p, r]) => { b(p); b(r); });
+          L[t].forEach(([p, r], j) => { b(p); b(two ? r : r & 15); if (two && sndM()) st.snds[t][j].forEach(b); });
         }
         break;
       }
@@ -3248,6 +3377,9 @@ const TEXT = {
     fm6NoFw: "このファームウェアには 6-OP FM（FM6）がありません。ファームウェアを更新すると使えます。",
     motion: "オートメーション", motionOn: "再生", motionClear: "オートメーションを消去", motionConfirm: "選択トラックのオートメーションを消しますか？", chance: "確率 %", ratchet: "ラチェット", flam: "フラム", cond: "条件", nudge: "ナッジ", motionStep: "ステップ", motionParam: "パラメーター", motionValue: "値", motionKind: "種類", motionLock: "ロック", motionAuto: "オート", motionRemoveConfirm: "%s を削除しますか？",
     backupTitle: "全体バックアップ", backupExport: "バックアップ保存", backupImport: "バックアップ復元", backupHelp: "現在の曲・A〜D・音色バンク・ユーザーサンプル・設定を、このパソコンへ保存。", backupOld: "全体バックアップには対応版への更新が必要です。", backupConfirm: "全体バックアップを復元しますか？ 現在の曲、保存データとサンプルを置き換えます。USBを抜かないでください。", backupWorking: "バックアップ処理中 ", backupDone: "バックアップを保存しました", backupRestored: "全体バックアップを復元しました",
+    backupConvert: "このバックアップには 2.0 より前のファームウェアのデータがあります。変換してから復元します:\n{list}", backupObjMusic: "現在の曲", backupObjSlot: "プロジェクト {n}", backupObjPresets: "ユーザー音色 {n}", backupObjFm6: "1.0 の FM6 バンク", backupObjPatches: "FM6 パッチ", backupObjPatterns: "パターン: 古いプロジェクトのステップ", backupRefused: "破損しているため変換できません。復元しません",
+    backupFull: "そのまま残します（本体では OLD FORMAT）: ステップを入れる空きパターンがありません。SAVE > PATTERNS で空けてからバックアップし、それを復元すると変換されます",
+    backupNote: "注記: ",
     deviceDisplay: "本体の画面",
     deviceDisplayHelp: "FM-1 の画面に反映し、保存します。再生中の変更は停止後に保存されます。",
     devicePresets: "本体のプリセット",
@@ -3296,13 +3428,18 @@ const TEXT = {
     projRefused: "本体が受け付けませんでした（空のスロット、またはパターンがいっぱい）", projFailed: "本体での保存に失敗しました",
     play: "再生", stop: "停止", playTitle: "再生（Shift+クリック: 頭から）", playing: "再生中", stopped: "停止中", countIn: "カウントイン",
     sgTab: "ソング", sgHelp: "各トラックはリスト（A〜P）のエントリーを演奏し、各エントリーはプールのパターンを指します（本体の SEQ › SONG）。シーンとミュートは PERFORM と同じです。エントリーをクリックで編集、ダブルクリックで再生。停止中はすぐに、再生中は LAUNCH のタイミングで切り替わります。",
-    sgLists: "リスト", sgSong: "SONG（各トラックがリストを順に進む）", sgLaunch: "LAUNCH", sgCancel: "予約を取り消す",
+    sgLists: "リスト", sgSong: "SONG（各トラックがリストを順に進む。ONCE: 一度だけ進んで停止）", sgLaunch: "LAUNCH", sgCancel: "予約を取り消す",
     sgPattern: "パターン", sgSet: "設定", sgCopy: "新しいパターンにコピー", sgPlay: "再生", sgClear: "クリア", sgEmptyEntry: "空",
+    sgNew: "新しい空のパターン", sgCopyPlus: "後ろの空きにコピー", sgEmptyIt: "空にする", sgClearUnused: "未使用の {n} 個をクリア",
+    sgSound: "サウンド", sgNoSound: "なし（今の音色のまま）", sgUserSounds: "ユーザープリセット",
+    sgSndRefused: "本体が受け付けませんでした（空のエントリー、またはこのトラックで鳴らせない音色）",
     sgScenes: "シーン", sgStore: "保存（次にクリックしたシーンに今のトラックを保存）",
     sgPool: "パターンプール", sgPoolHelp: "全プロジェクト共通の 64 パターン（本体の SAVE › PATTERNS）。どこからも使われていないパターンだけ、停止中にクリアできます。",
     sgUsedBy: "{n} か所で使用", sgUnused: "未使用（クリア可）", sgEmptyPat: "空",
     sgConfirmEntry: "エントリー {e} をクリアしますか？ {what} 元に戻せません。", sgGoesToo: "パターン {n} も消えます。", sgStays: "パターン {n} は残ります（ほかで使用中）。",
     sgConfirmPat: "パターン {n} をクリアしますか？ どこからも使われていません。元に戻せません。", sgConfirmScene: "シーン {n} に上書き保存しますか？",
+    sgConfirmEmpty: "パターン {n} を空にしますか？ ステップ、NUDGE、オートメーションが消えます。パターンとそれを使うエントリーは残ります。元に戻せません。",
+    sgConfirmUnused: "未使用のパターン {n} 個をクリアしますか？ どこからも使われていません。元に戻せません。",
     sgEmpty: "空です", sgAutoFull: "完了（オートメーションなし: AUTOMATION FULL）", sgStopClear: "停止してからクリアしてください",
     sgFull: "パターンがいっぱいです: プールで未使用のものをクリアしてください", sgFailed: "本体で失敗しました", sgNothing: "クリアするものがありません", sgInUse: "使用中です",
     sgNoFw: "このファームウェアにはソングのコマンドがありません。Skiff を更新してください。",
@@ -3317,6 +3454,8 @@ const TEXT = {
     file: "ファイル", root: "ルート", keys: "鍵盤", length: "長さ", remove: "外す",
     record: "録音", stopRec: "停止", recInput: "入力", recDenied: "録音できません", recFull: "スロットがいっぱいです", recSilent: "無音でした。入力を確かめてください",
     preview: "試聴", autoTrim: "自動トリム", trim: "切り取り",
+    drumKit: "ドラムキット", kitHelp: "レーンごとに WAV を1つ（行にドロップ、またはクリック）。音量の釣り合いはそのまま。DRUM の KIT を USR{n} にすると鳴ります。",
+    kitEmpty: "ここに WAV をドロップ（無音）", kitUpload: "USR{n} に書き込む", kitOf: "{a} 秒 / {b} 秒",
     smpSound: "音", smpLevel: "レベル %", smpRev: "リバーブ %", smpDly: "ディレイ %",
     smpMixHelp: "本体の音: レベル 100 % は読み込んだままの音量。リバーブとディレイはトラックのセンドに足されます。",
     smpMixTooLong: "設定しました。サンプルがスロットいっぱいのため、電源を切るまでの設定です。",
@@ -3377,6 +3516,9 @@ const TEXT = {
     fm6NoFw: "This firmware has no 6-OP FM (FM6). Update the firmware to use it.",
     motion: "Automation", motionOn: "Play automation", motionClear: "Clear automation", motionConfirm: "Clear this track's automation?", chance: "Chance %", ratchet: "Ratchet", flam: "Flam", cond: "Cond", nudge: "Nudge", motionStep: "Step", motionParam: "Parameter", motionValue: "Value", motionKind: "Kind", motionLock: "LOCK", motionAuto: "AUTO", motionRemoveConfirm: "Remove %s?",
     backupTitle: "Complete backup", backupExport: "Save backup", backupImport: "Restore backup", backupHelp: "Save the current music, A–D, sound banks, user samples and settings to this computer.", backupOld: "Complete backups need firmware with archive support.", backupConfirm: "Restore this complete backup? Current music, saved data and samples will be replaced. Keep USB connected.", backupWorking: "Backing up / restoring ", backupDone: "Backup saved", backupRestored: "Complete backup restored",
+    backupConvert: "This backup holds data from firmware before 2.0. It is converted first, then restored:\n{list}", backupObjMusic: "the music", backupObjSlot: "project {n}", backupObjPresets: "user sounds {n}", backupObjFm6: "FM6 bank of 1.0", backupObjPatches: "FM6 patches", backupObjPatterns: "patterns: the old projects' steps", backupRefused: "damaged, so not converted: left out of the restore",
+    backupFull: "kept as it was (OLD FORMAT on the unit): no pattern was free for its steps. Free some (SAVE > PATTERNS), take a backup and restore that to convert it",
+    backupNote: "noted: ",
     deviceDisplay: "Device display",
     deviceDisplayHelp: "Changes apply to the FM-1 screen and save. Changes made while playing save after STOP.",
     devicePresets: "Device presets",
@@ -3425,13 +3567,18 @@ const TEXT = {
     projRefused: "The device refused (an empty slot, or the patterns are full)", projFailed: "Saving failed on the device",
     play: "Play", stop: "Stop", playTitle: "Play (Shift+click: from the top)", playing: "Playing", stopped: "Stopped", countIn: "Count-in",
     sgTab: "Song", sgHelp: "Each track plays the entries of its list (A to P), each naming a pattern of the pool, as on SEQ › SONG; the scenes and mutes are PERFORM's. Click an entry to edit it, double-click to play it. Stopped, a change is at once; playing, at the LAUNCH point.",
-    sgLists: "Lists", sgSong: "SONG (each track moves through its list)", sgLaunch: "LAUNCH", sgCancel: "Cancel staged",
+    sgLists: "Lists", sgSong: "SONG (each track moves through its list; ONCE: once through, then stop)", sgLaunch: "LAUNCH", sgCancel: "Cancel staged",
     sgPattern: "Pattern", sgSet: "Set", sgCopy: "Copy to a new pattern", sgPlay: "Play", sgClear: "Clear", sgEmptyEntry: "empty",
+    sgNew: "New empty pattern", sgCopyPlus: "Copy into the next empty", sgEmptyIt: "Empty", sgClearUnused: "Clear {n} unused",
+    sgSound: "Sound", sgNoSound: "None (the sound as it is)", sgUserSounds: "User presets",
+    sgSndRefused: "The device refused the sound (an empty entry, or a sound this track can't play)",
     sgScenes: "Scenes", sgStore: "Store (the next scene clicked keeps the tracks as they are)",
     sgPool: "Pattern pool", sgPoolHelp: "The 64 patterns every project shares (SAVE › PATTERNS). Only a pattern nothing uses can be cleared, while stopped.",
     sgUsedBy: "used by {n}", sgUnused: "unused: can be cleared", sgEmptyPat: "empty",
     sgConfirmEntry: "Clear entry {e}? {what} It can't be undone.", sgGoesToo: "Its pattern {n} is erased too.", sgStays: "Pattern {n} stays: something else uses it.",
     sgConfirmPat: "Clear pattern {n}? Nothing uses it. It can't be undone.", sgConfirmScene: "Store over scene {n}?",
+    sgConfirmEmpty: "Empty pattern {n}? Its steps, NUDGEs and automation go; the pattern and the entries naming it stay. It can't be undone.",
+    sgConfirmUnused: "Clear the {n} unused patterns? Nothing uses them. It can't be undone.",
     sgEmpty: "Empty", sgAutoFull: "Done, without its automation (AUTOMATION FULL)", sgStopClear: "Stop to clear",
     sgFull: "Patterns full: clear unused ones in the pool", sgFailed: "Failed on the device", sgNothing: "Nothing to clear", sgInUse: "In use",
     sgNoFw: "This firmware has no song commands: update Skiff.",
@@ -3446,6 +3593,8 @@ const TEXT = {
     file: "File", root: "Root", keys: "Keys", length: "Length", remove: "Remove",
     record: "Record", stopRec: "Stop", recInput: "Input", recDenied: "Cannot record", recFull: "The slot is full", recSilent: "Silence: check the input",
     preview: "Play", autoTrim: "Auto trim", trim: "Trim",
+    drumKit: "Drum kit", kitHelp: "A WAV a lane (drop it on its row, or click the row). Their levels to each other stay as they are. DRUM plays it with KIT USR{n}.",
+    kitEmpty: "drop a WAV here (silent)", kitUpload: "Upload to USR{n}", kitOf: "{a} s of {b} s",
     smpSound: "Sound", smpLevel: "Level %", smpRev: "Reverb %", smpDly: "Delay %",
     smpMixHelp: "On the device: Level 100 % plays a sound as loaded; Reverb and Delay are added to the track's sends.",
     smpMixTooLong: "Set, but the sample fills the slot: these values last until the power goes off.",
@@ -3601,22 +3750,58 @@ $("tplay").addEventListener("click", (e) => transportOp(e.shiftKey ? 3 : 1));
    device's control does (it says so on its screen); no retries: a COPY sent twice would copy twice) */
 let sgPick = { k: 0, e: 0 }, poolPick = 0;
 const ENTS = "ABCDEFGHIJKLMNOP", pat2 = (n) => String(n).padStart(2, "0");
-const SG_RC = { list: [null, "sgEmpty", "sgAutoFull", "sgStopClear", "sgFull", "sgFailed"],
+const SG_RC = { list: [null, "sgEmpty", "sgAutoFull", "sgStopClear", "sgFull", "sgFailed"], snd: [null, "sgSndRefused"],
   pool: [null, "sgNothing", "sgInUse", "sgStopClear", "sgFailed"], perf: [null, "sgEmpty", "sgAutoFull", null, "sgFull"] };
 async function readSong(d = dev, pool = true, poll = false) {
   if (!d || !d.info || !(d.info.skiff & 28)) return;
   const o = poll ? { quiet: true, retries: 0 } : undefined, rqs = (r) => sessionRequest(d, r, o);
   if (poll && d.info.skiff & 1) { const x = parse[CMD.TRANSPORT](await rqs(req.transport())); if (d === dev) renderTransport(x); }
   const s = d.song = d.song || {};
-  if (d.info.skiff & 8) s.list = parse[CMD.LIST](await rqs(req.list()));
+  if (d.info.skiff & 8) {
+    const r = req.list(0, 0, 0, null, !!(d.info.song2 & 1));
+    s.list = songReply(d, r, await rqs(r));
+  }
   if (d.info.skiff & 16) s.perf = parse[CMD.PERFORM](await rqs(req.perform()));
   if (d.info.skiff & 4 && (pool || !s.pool)) s.pool = parse[CMD.POOL](await rqs(req.pool()));
   if (d === dev) renderSong();
 }
+/* (2.0, INFO 58 01) the device has LIST2 (SONG ONCE, the chains), NEW, COPY+ and the pool's EMPTY, CLEAR UNUSED; a LIST
+   request as LIST2 then */
+const song2 = () => !!(dev && dev.info && dev.info.song2 & 1);
+const lreq = (op, k, e, v) => req.list(op, k, e, v, song2());
+/* (2.0, #30, INFO 58 01 bit 1) an entry's sound (the wire's two bytes) by its name: a preset's, a user sound's ("" none);
+   the engines track k may play */
+const sndOn = () => !!(dev && dev.info && dev.info.song2 & 2);
+function sndName([s0, s1]) {
+  if (!s0) return "";
+  if (s0 >= 64) { const x = dev.bank && dev.bank.slots[s0 - 64]; return x && x.used ? x.name : slotName(s0 - 64); }
+  return (dev.names[s0 - 1] || [])[s1] || `${dev.info.engines[s0 - 1] || "?"} ${s1 + 1}`;
+}
+const trackEngineOk = (k, e) => !((dev.info.light.tracks >> k) & 1) || !((dev.info.light.engines >> e) & 1);
+/* (2.0) a list's chain (DESIGN.md "A chain"): entry j goes on into j + 1; the entries [b0, b1] of j's */
+const chainLink = (x, j) => j < 15 && x.ent[j].chain && !!x.ent[j].pat && !!x.ent[j + 1].pat;
+function chainOf(x, j) {
+  let b0 = j, b1 = j;
+  while (b0 > 0 && chainLink(x, b0 - 1)) b0--;
+  while (chainLink(x, b1)) b1++;
+  return [b0, b1];
+}
+/* .. its cells, a box behind them (cp: another chain ends just before it, cn: another starts just after it) */
+function chainCell(x, j) {
+  const a = chainLink(x, j), b = j > 0 && chainLink(x, j - 1);
+  if (!a && !b) return null;
+  return ["chain", !b && j > 1 && chainLink(x, j - 2) ? "cp" : "", !a && chainLink(x, j + 1) ? "cn" : ""].filter(Boolean).join(" ");
+}
+/* .. COPY+'s room: the first empty entries in a row after j's chain, as many as it has (-1 none) */
+function copyPlusAt(x, j) {
+  const [b0, b1] = chainOf(x, j), n = b1 - b0 + 1;
+  for (let f = b1 + 1; f + n <= 16; f++) if (x.ent.slice(f, f + n).every((en) => !en.pat)) return f;
+  return -1;
+}
 function songOp(r, kind) {
   const d = dev;
   op(async () => {
-    const x = parse[r[0]](await sessionRequest(d, r, { timeout: 4000, retries: 0 }));
+    const x = songReply(d, r, await sessionRequest(d, r, { timeout: 4000, retries: 0 }));
     await readSong(d, true);
     const k = !(kind === "perf" && x.op === 5) && SG_RC[kind][x.rc];
     if (k) sayK(k);
@@ -3638,19 +3823,23 @@ function renderSong() {
   const sig = JSON.stringify([s.list, s.perf, s.pool, sgPick, poolPick, lang]);
   if (sig === renderSong.sig) return;
   renderSong.sig = sig;
-  const L = s.list, P = s.perf, Q = s.pool;
+  const L = s.list, P = s.perf, Q = s.pool, two = song2();
   if (L) {
-    $("sgsong").checked = L.song;
+    $("sgsong").value = String(+L.song);
+    $("sgsong").options[2].disabled = !two;               /* ((2.0) ONCE) */
     $("sglaunch").disabled = $("sgcancel").disabled = !P;
     if (P) $("sglaunch").value = String(P.launch);
     keepFocus($("sglists"), () => $("sglists").replaceChildren(el("table", { class: "lists" },
       el("thead", {}, el("tr", {}, el("th"), ...[...ENTS].map((c) => el("th", { text: c })), ...(P ? [el("th", { text: "M" })] : []))),
       el("tbody", {}, ...L.tracks.map((x, k) => el("tr", {}, el("th", { text: `T${k + 1}` }),
-        ...x.ent.map((en, e) => el("td", {}, el("button", {
+        ...x.ent.map((en, e) => el("td", { class: chainCell(x, e) }, el("button", {
           type: "button", "data-key": `l${k}:${e}`, "aria-pressed": String(sgPick.k === k && sgPick.e === e),
-          class: [en.pat ? "" : "empty", x.cur === e ? "on" : "", x.next === e ? "next" : "", sgPick.k === k && sgPick.e === e ? "pick" : ""].filter(Boolean).join(" ") || null,
-          "aria-label": `T${k + 1} ${ENTS[e]}: ${en.pat === PAT_REST ? "REST" : en.pat ? pat2(en.pat) : t("sgEmptyEntry")}`,
-          onclick: () => { sgPick = { k, e }; renderSong(); }, ondblclick: () => songOp(req.list(3, k, e), "list"),
+          class: [en.pat ? "" : "empty", x.cur === e ? "on" : "", x.next === e ? "next" : "", sgPick.k === k && sgPick.e === e ? "pick" : "",
+            en.snd[0] ? "snd" : ""].filter(Boolean).join(" ") || null,   /* ((2.0, #30) a sound: the corner cut, as on the device) */
+          "aria-label": `T${k + 1} ${ENTS[e]}: ${en.pat === PAT_REST ? "REST" : en.pat ? pat2(en.pat) : t("sgEmptyEntry")}${chainLink(x, e) ? ", CHAIN" : ""}` +
+            (en.snd[0] ? `, ${t("sgSound")} ${sndName(en.snd)}` : ""),
+          title: en.snd[0] ? `${t("sgSound")}: ${sndName(en.snd)}` : null,
+          onclick: () => { sgPick = { k, e }; renderSong(); }, ondblclick: () => songOp(lreq(3, k, e), "list"),
         }, en.pat === PAT_REST ? "–" : en.pat ? pat2(en.pat) : "·", ...(en.pat && en.reps > 1 ? [el("sub", { text: "×" + en.reps })] : [])))),
         ...(P && P.tracks[k] ? [el("td", {}, el("button", { type: "button", "data-key": `m${k}`, class: P.tracks[k].staged ? "tog next" : "tog",
           "aria-pressed": String(P.tracks[k].muted), "aria-label": `MUTE T${k + 1}`, onclick: () => songOp(req.perform(3, k), "perf") }, "M"))] : [])))))));
@@ -3667,36 +3856,68 @@ function renderSong() {
       class: [p.len ? (p.refs ? "" : "unused") : "empty", poolPick === i ? "pick" : ""].filter(Boolean).join(" ") || null,
       "aria-label": `${pat2(i + 1)}: ${p.len ? `LEN ${p.len}` : t("sgEmptyPat")}`, onclick: () => { poolPick = i; renderSong(); },
     }, p.len ? pat2(i + 1) : "·"))));
-    const p = Q.pats[poolPick];
+    const p = Q.pats[poolPick], un = Q.pats.filter((x) => x.len && !x.refs).length;
     $("sgpoolpick").replaceChildren(el("strong", { text: pat2(poolPick + 1) }), " ",
       el("span", { class: "dim", text: p.len ? `LEN ${p.len} · ${p.refs ? t("sgUsedBy").replace("{n}", p.refs) : t("sgUnused")}` : t("sgEmptyPat") }), " ",
       el("button", { type: "button", disabled: !p.len || !!p.refs,
-        onclick: () => { if (confirm(t("sgConfirmPat").replace("{n}", pat2(poolPick + 1)))) songOp(req.pool(poolPick), "pool"); } }, t("sgClear")));
+        onclick: () => { if (confirm(t("sgConfirmPat").replace("{n}", pat2(poolPick + 1)))) songOp(req.pool(poolPick), "pool"); } }, t("sgClear")),
+      ...(two ? [el("button", { type: "button", disabled: !p.len,   /* ((2.0) EMPTY, a used one too; CLEAR UNUSED: all at once) */
+        onclick: () => { if (confirm(t("sgConfirmEmpty").replace("{n}", pat2(poolPick + 1)))) songOp(req.pool(poolPick, 2), "pool"); } }, t("sgEmptyIt")),
+      el("button", { type: "button", disabled: !un,
+        onclick: () => { if (confirm(t("sgConfirmUnused").replace("{n}", un))) songOp(req.pool(null, 3), "pool"); } }, t("sgClearUnused").replace("{n}", un))] : []));
   }
 }
-/* the entry picked: its pattern (REST, the kept ones: the device's KNOB 2 order), SET, COPY, PLAY, REPS, CLEAR (a REST's at
-   once: nothing goes with it); left alone while one of them has focus */
+/* the entry picked: its pattern (REST, the kept ones: the device's KNOB 2 order), SET, ((2.0) NEW), COPY, ((2.0) COPY+:
+   its chain's room shown), PLAY, REPS, CLEAR (a REST's at once: nothing goes with it); left alone while one of them has
+   focus */
 function renderEntry(L, Q) {
-  const box = $("sgentry"), { k, e } = sgPick, en = L.tracks[k] && L.tracks[k].ent[e];
+  const box = $("sgentry"), { k, e } = sgPick, x = L.tracks[k], en = x && x.ent[e], two = song2();
   if (!en || box.contains(document.activeElement)) return;
   const kept = Q ? Q.pats.map((p, i) => (p.len ? i + 1 : 0)).filter(Boolean) : [], rest = en.pat === PAT_REST;
   const sel = el("select", { "aria-label": t("sgPattern") }, el("option", { value: PAT_REST, text: "REST" }),
     ...kept.map((i) => el("option", { value: i, text: pat2(i) })));
   sel.value = String(en.pat || kept[0] || PAT_REST);   /* (an empty entry: the first kept pattern, as before) */
-  const reps = el("input", { type: "number", min: 1, max: 16, value: en.reps, "aria-label": "REPS", style: "width:4em" });   /* (1.2.1, #12: an empty entry's is a rest's length) */
-  reps.addEventListener("change", () => songOp(req.list(5, k, e, Math.max(1, Math.min(16, +reps.value | 0))), "list"));
+  const reps = el("select", { "aria-label": "REPS" },   /* ((1.2.1, #12) an empty entry's: a rest's length; (2.0) CHAIN below 1x as */
+    ...((two && en.pat && e < 15) || en.chain ? [el("option", { value: 0, text: "CHAIN" })] : []),   /* KNOB 3's: an entry with one after it) */
+    ...Array.from({ length: 16 }, (_, i) => el("option", { value: i + 1, text: `${i + 1}x` })));
+  reps.value = String(en.chain ? 0 : en.reps);
+  reps.addEventListener("change", () => songOp(lreq(5, k, e, +reps.value), "list"));
+  const f = en.pat && !rest ? copyPlusAt(x, e) : -1, [b0, b1] = chainOf(x, e);
   const what = () => {
     const r = Q && Q.pats[en.pat - 1];
     return t(r && r.refs > 1 ? "sgStays" : "sgGoesToo").replace("{n}", pat2(en.pat));
   };
+  /* ((2.0, #30) its sound, on an entry with a pattern or a REST: none, a preset of an engine the track may play, a
+     user sound; loaded as the track comes onto the entry) */
+  let snd = null;
+  if (sndOn()) {
+    const now = `${en.snd[0]},${en.snd[1]}`, groups = dev.info.engines.map((name, ei) => {
+      const ns = dev.names[ei] || [];
+      return name === "-" || !trackEngineOk(k, ei) || !ns.length ? null : el("optgroup", { label: name },
+        ...ns.map((pn, pi) => (aliasOf(ns, pi) === pi ? el("option", { value: `${ei + 1},${pi}`, text: pn }) : null)).filter(Boolean));
+    }).filter(Boolean);
+    const users = dev.bank ? dev.bank.slots.filter((u) => u.used && trackEngineOk(k, u.engine)) : [];
+    snd = el("select", { "aria-label": t("sgSound"), disabled: !en.pat },
+      el("option", { value: "0,0", text: t("sgNoSound") }), ...groups,
+      ...(users.length ? [el("optgroup", { label: t("sgUserSounds") },
+        ...users.map((u) => el("option", { value: `${64 + u.slot},0`, text: `${slotName(u.slot)} ${u.name}` })))] : []));
+    if (![...snd.options].some((o) => o.value === now))   /* (one not offered: a user sound not read yet) */
+      snd.append(el("option", { value: now, text: sndName(en.snd) }));
+    snd.value = now;
+    snd.addEventListener("change", () => songOp(lreq(9, k, e, snd.value.split(",").map(Number)), "snd"));
+  }
   box.replaceChildren(el("strong", { text: `T${k + 1} ${ENTS[e]}` }), " ",
     el("label", {}, el("span", { class: "dim", text: t("sgPattern") }), " ", sel),
-    el("button", { type: "button", onclick: () => songOp(req.list(1, k, e, +sel.value), "list") }, t("sgSet")),
-    el("button", { type: "button", disabled: !en.pat || rest, onclick: () => songOp(req.list(2, k, e), "list") }, t("sgCopy")),
-    el("button", { type: "button", disabled: !en.pat, onclick: () => songOp(req.list(3, k, e), "list") }, t("sgPlay")),
+    el("button", { type: "button", onclick: () => songOp(lreq(1, k, e, +sel.value), "list") }, t("sgSet")),
+    ...(two ? [el("button", { type: "button", disabled: !!Q && Q.pats.every((p) => p.len), onclick: () => songOp(lreq(7, k, e), "list") }, t("sgNew"))] : []),
+    el("button", { type: "button", disabled: !en.pat || rest, onclick: () => songOp(lreq(2, k, e), "list") }, t("sgCopy")),
+    ...(two ? [el("button", { type: "button", disabled: f < 0, onclick: () => songOp(lreq(8, k, e), "list") },
+      t("sgCopyPlus") + (f < 0 ? "" : ` → ${ENTS[f]}${b1 > b0 ? "-" + ENTS[f + b1 - b0] : ""}`))] : []),
+    el("button", { type: "button", disabled: !en.pat, onclick: () => songOp(lreq(3, k, e), "list") }, t("sgPlay")),
     el("label", {}, el("span", { class: "dim", text: "REPS" }), " ", reps),
+    ...(snd ? [el("label", {}, el("span", { class: "dim", text: t("sgSound") }), " ", snd)] : []),
     el("button", { type: "button", disabled: !en.pat, onclick: () => {
-      if (rest || confirm(t("sgConfirmEntry").replace("{e}", `T${k + 1} ${ENTS[e]}`).replace("{what}", what()))) songOp(req.list(4, k, e), "list");
+      if (rest || confirm(t("sgConfirmEntry").replace("{e}", `T${k + 1} ${ENTS[e]}`).replace("{what}", what()))) songOp(lreq(4, k, e), "list");
     } }, t("sgClear")));
 }
 function sceneClick(i, kept) {
@@ -3705,7 +3926,11 @@ function sceneClick(i, kept) {
   $("sgstore").checked = false;
   songOp(req.perform(1, i), "perf");
 }
-$("sgsong").addEventListener("change", () => songOp(req.list(6, $("sgsong").checked ? 1 : 0), "list"));
+$("sgsong").addEventListener("change", () => songOp(lreq(6, +$("sgsong").value), "list"));
+$("sgentry").addEventListener("focusout", (ev) => {   /* (the entry picked drawn again once its controls let go: REPS's */
+  const s = dev && dev.song;                            /* CHAIN changes COPY+'s room) */
+  if (s && s.list && !$("sgentry").contains(ev.relatedTarget)) renderEntry(s.list, s.pool);
+});
 $("sglaunch").addEventListener("change", () => songOp(req.perform(5, +$("sglaunch").value), "perf"));
 $("sgcancel").addEventListener("click", () => songOp(req.perform(4), "perf"));
 $("tstop").addEventListener("click", () => transportOp(2));
@@ -3768,7 +3993,7 @@ const EXPECT = { pcount: 91, gcount: 27, pe0: 83 };
 /* the same layout without the chord keys (P_COUNT 89, P_E0 81), the FM operator ENVs too (69, 61) or the matrix
    (firmware 1.0: 57, 49) */
 const knownLayout = (info) => info.gcount === EXPECT.gcount &&
-  [[135, 127], [125, 117], [103, 95], [100, 92], [99, 91], [91, 83], [89, 81], [69, 61], [57, 49]].some(([c, e]) => info.pcount === c && info.pe0 === e);
+  [[143, 135], [135, 127], [125, 117], [103, 95], [100, 92], [99, 91], [91, 83], [89, 81], [69, 61], [57, 49]].some(([c, e]) => info.pcount === c && info.pe0 === e);
 const P = { LEVEL: 0, SLEN: 29 };
 const LAYOUT = (pe0) => [
   { t: "ENV", pages: [["ENV", 0, [1, 2, 3, 4]], ["ENV DEST", 0, pe0 >= 127 ? [5, 6, 7, P_ESYNC] : [5, 6, 7]],   /* ((Skiff W5) P_ED_FX,
@@ -3778,6 +4003,7 @@ const LAYOUT = (pe0) => [
   ...(pe0 >= 61 ? [{ t: "MOD", mod: 49 }] : []),   /* the matrix: P_M1SRC 49 .. P_M4AMT 60, one row per slot */
   { t: "EDIT", engine: true, pages: [["EDIT 1", 0, [pe0, pe0 + 1, pe0 + 2, pe0 + 3]], ["EDIT 2", 0, [pe0 + 4, pe0 + 5, pe0 + 6, pe0 + 7]],
     ...(pe0 >= 91 && ["DRUM", "DRUM-X"].includes(engName()) ? [["LANES", 0, P_LANES.slice(0, 4)], ["LANES 2", 0, P_LANES.slice(4)]] : []),   /* lane levels 83..90 */
+    ...(pe0 >= 135 && ["DRUM", "DRUM-X"].includes(engName()) ? [["PAN", 0, P_LPAN.slice(0, 4)], ["PAN 2", 0, P_LPAN.slice(4)]] : []),   /* ((2.0, #36)) */
     ...(pe0 >= 117 && engName() === "DRUM" ? [["TUNE", 0, P_LTUNE.slice(0, 4)], ["TUNE 2", 0, P_LTUNE.slice(4)],   /* ((Skiff phase 9) */
       ["DECAY", 0, P_LDECAY.slice(0, 4)], ["DECAY 2", 0, P_LDECAY.slice(4)]] : [])] },
   ...(pe0 >= 81 && engName() === "DIGITAL" ? [{ t: "OP ENV", pages: [   /* P_FM1_ATK 61: ATK DEC SUS REL LVL per operator (a
@@ -3823,19 +4049,27 @@ async function connect() {
       }
       access.onstatechange = onState;
     }
-    const isF = (p) => /felucca/i.test(p.name || "") && p.state !== "disconnected";
-    const input = [...access.inputs.values()].find(isF);
-    const output = [...access.outputs.values()].find(isF);
-    if (!input || !output) { sayK("nodevice"); return; }
-    const link = new Link((d) => output.send(d), {
-      timeout: 300,
-      onUnknown: (f) => console.debug("ignored reply", f),
-      onTimeout: () => sayK("noreply"),
-      onPush: (f) => onPush(f),
-      onGap: () => { rewatch = true; },
-    });
-    input.onmidimessage = (e) => link.receive(e.data);
-    if (input.open) await input.open().catch(() => {});
+    const pairs = portPairs(access);
+    let input = null, output = null, link = null;
+    for (const [i, o] of pairs) {                   /* ((2.0.1, #50) one pair: as before (load asks INFO); more: the
+                                                     * first that answers INFO, as the installer's handshake) */
+      const l = new Link((d) => o.send(d), {
+        timeout: 300,
+        onUnknown: (f) => console.debug("ignored reply", f),
+        onTimeout: () => sayK("noreply"),
+        onPush: (f) => onPush(f),
+        onGap: () => { rewatch = true; },
+      });
+      i.onmidimessage = (e) => l.receive(e.data);
+      if (i.open) await i.open().catch(() => {});
+      if (pairs.length === 1 || await l.request(req.info(), { timeout: 500, retries: 2, quiet: true }).then(() => true, () => false)) {
+        [input, output, link] = [i, o, l];
+        break;
+      }
+      l.closed = true;
+      i.onmidimessage = null;
+    }
+    if (!link) { sayK("nodevice"); return; }
     dev = { link, input, output, info: null, pdesc: [], gdesc: [], names: [], dump: null, steps: [], slotUsed: [null, null, null, null],
       keys: null, watch: false, bank: null };
     connectedDevice = dev;
@@ -3877,7 +4111,7 @@ function disconnect(reasonKey = "disconnected") {
 
 function onState(e) {
   const p = e.port;
-  if (!p || !/felucca/i.test(p.name || "")) return;
+  if (!p || !UNIT_PORT.test(p.name || "")) return;   /* ((2.0.1, #50) the names connect() takes) */
   if (dev && p.state === "disconnected" && (p.id === dev.input.id || p.id === dev.output.id)) {
     disconnect("lost");
   } else if (!dev && wantConnected && p.state === "connected" && p.type === "output") {
@@ -4383,6 +4617,18 @@ function renderBackup() {
   $("backup-help").textContent = t(caps & 1 ? "backupHelp" : "backupOld");
 }
 const backupModule = () => import("./fm1backup.js");
+/* ((2.0, Tier B 10) web/conv/conv.js's report: a line for each object it changes (the pattern chunks counted) */
+function convLines(report) {
+  const name = (id) => id === 0 ? t("backupObjMusic") : id <= 5 ? t("backupObjSlot").replace("{n}", "ABCD"[id - 2])
+    : id <= 7 ? t("backupObjPresets").replace("{n}", id === 6 ? "1-16" : "17-32") : id === 8 ? t("backupObjFm6") : t("backupObjPatches");
+  const lines = [], pats = report.filter((x) => x.id >= 16 && x.id < 32 && x.what !== "kept").length;
+  for (const x of report)
+    if ((x.what !== "kept" || x.note) && x.id !== 1 && (x.id < 16 || x.id > 31))
+      lines.push(`${name(x.id)}: ${x.what.startsWith("refused") ? t("backupRefused") : x.what.startsWith("kept as")
+        ? t("backupFull") : x.what === "kept" ? x.was : `${x.was} -> ${x.now}`}${x.note ? `\n  ${t("backupNote")}${x.note}` : ""}`);
+  if (pats) lines.push(t("backupObjPatterns"));
+  return lines.join("\n");
+}
 const backupProgress = (done, total) => sayK("backupWorking", `${Math.round(done / Math.max(1, total) * 100)}%`);
 $("backup-export").addEventListener("click", () => op(async () => {
   const d = dev;
@@ -4401,9 +4647,20 @@ $("backup-file").addEventListener("change", () => {
   op(async () => {
     if (file.size > 600000) throw new Error("Backup file too large");
     const { readBackup, restoreBackup } = await backupModule();
-    const archive = readBackup(await file.text()); assertSession(d);
-    if (!confirm(t("backupConfirm"))) return;
-    await restoreBackup((r, o) => sessionRequest(d, r, o), archive, backupProgress);
+    let archive = readBackup(await file.text()), say = "", only = null; assertSession(d);
+    if (d.info.song2) {                              /* ((2.0, Tier B 10) a unit of 2.0: what it can't read, converted first */
+      const { loadConverter } = await import("./conv/conv.js");
+      const r = (await loadConverter(new URL("conv/conv.wasm", location.href).href)).convert(archive);
+      const bad = r.report.filter((x) => x.what.startsWith("refused")).map((x) => x.id);
+      assertSession(d);
+      if (r.writeBack.length || r.report.some((x) => x.what !== "kept" || x.note)) {
+        archive = r.archive; say = t("backupConvert").replace("{list}", convLines(r.report)) + "\n\n";
+      }
+      if (bad.length) only = archive.objects.map((o) => o.id).filter((id) => !bad.includes(id));   /* (a damaged one: the
+                                                     unit refuses it too, so it is left out, not the restore stopped) */
+    }
+    if (!confirm(say + t("backupConfirm"))) return;
+    await restoreBackup((r, o) => sessionRequest(d, r, o), archive, backupProgress, only);
     await load(d); sayK("backupRestored");
   });
 });
@@ -4468,9 +4725,10 @@ setInterval(async () => {
 const TIMES = ["NOTE", "TIE", "REST"];
 function renderStepHead() { if (dev && dev.steps.length) renderSteps(); }
 const stepLen = () => Math.max(1, Math.min(dev.info.nstep, dev.dump.p[pSlen()] || 16));
-/* a step's notes as text */
-const stepNotes = (s) => s.notes.slice(0, s.n).map(noteName).join(" ");
-const stepOn = (s) => !!s && s.time === 0 && (s.n > 0 || (s.hit | 0) > 0);
+/* a step's notes as text ((2.0, #25) a note going on from the step before in brackets: "(C4) E4") */
+const stepNotes = (s) => s.notes.slice(0, s.n).map((n, k) => (stepTies(s) >> k & 1 ? `(${noteName(n)})` : noteName(n))).join(" ");
+/* a note starts here (the device's step_on) */
+const stepOn = (s) => !!s && s.time === 0 && ((s.hit | 0) > 0 || (s.n > 0 && !stepTie(s)));
 function renderSteps() {
   if (!dev || !dev.steps.length) return;
   const len = stepLen();
@@ -4557,7 +4815,7 @@ function renderGrid() {
   }
   for (const b of box.children) {
     const i = +b.dataset.i, s = dev.steps[i];
-    const on = stepOn(s), tie = !!s && s.time === 1;
+    const on = stepOn(s), tie = stepTie(s);
     const txt = on ? [stepNotes(s), hitsText(s.hit | 0, s.acc | 0)].filter(Boolean).join(" ") : tie ? "—" : "";
     const marks = s && on ? (s.flags & 1 ? " >" : "") + (s.flags & 2 ? " ~" : "") + (s.ratchet > 1 ? " x" + s.ratchet : "") +
       (s.flam ? " f" : "") + (s.cond ? " " + TC_NAMES[s.cond] : "") + (s.nudge ? " " + (s.nudge > 0 ? "+" : "") + s.nudge : "") : "";
@@ -4589,6 +4847,7 @@ async function writeStep(i, tr) {
   if (c.chance) s.chance = Math.max(0, Math.min(100, Math.round(+c.chance.value || 0)));
   if (c.ratchet && c.chance) s.ratchet = Math.max(1, Math.min(4, +c.ratchet.value || 1));
   if (c.cond) { s.flam = c.flam.checked; s.cond = +c.cond.value || 0; s.nudge = Math.max(-32, Math.min(31, Math.round(+c.nudge.value || 0))); }
+  if (c.cond && dev.info.skiff & 64) s.ties = notes.ties;   /* ((2.0, #25) "(C4)") */
   if ((s.n || s.hit) && !s.vel) s.vel = 96;
   stepEdit.set(i, performance.now());
   try {
@@ -4618,7 +4877,7 @@ $("clearseq").addEventListener("click", async () => {
 });
 
 /* ---------------------------------------------------------- samples --- */
-const smpDraft = [0, 1, 2].map(() => ({ name: "", files: [] }));
+const smpDraft = [0, 1, 2].map(() => ({ name: "", files: [], asKit: false, kit: LANES.map(() => null) }));   /* ((#35) kit: a lane's file or null) */
 let smpBusy = false;
 const SMP_RC = { 1: "size", 2: "header", 3: "data CRC", 4: "flash", 5: "zones" };
 const kib = (n) => (n / 1024).toFixed(1);
@@ -4632,7 +4891,7 @@ function splitKeys(files) {
   });
   return out;
 }
-const draftBytes = (d) => d.files.reduce((a, f) => a + ((f.s.length + 1) >> 1), 0);
+const draftBytes = (d) => (d.asKit ? d.kit.filter(Boolean) : d.files).reduce((a, f) => a + ((f.s.length + 1) >> 1), 0);
 
 async function decodeFile(f) {
   const buf = await f.arrayBuffer();
@@ -4918,6 +5177,52 @@ async function addFiles(k, list) {
   renderSamples();
 }
 
+/* (#35) a kit lane's file, cut to where the sound is (silence before it would be a late hit) */
+async function kitFile(k, i, f) {
+  const d = smpDraft[k];
+  try {
+    const z = await decodeFile(f);
+    [z.a, z.b] = autoTrim(z.raw, 0.003);
+    z.s = takeSample(z.raw, z.a, z.b);
+    z.lvl = 1;
+    d.kit[i] = z;
+    if (!d.name) d.name = "KIT";
+  } catch (e) { sayK("smpDecodeFail", `${f.name} (${e.message})`); }
+  renderSamples();
+}
+
+/* (#35) SAMPLES › DRUM KIT: a row a lane (its file, a drop target, and its level), the slot's time, one upload */
+function kitPanel(k, d, tooBig, prog) {
+  const grid = el("div", { class: "kit" }), off = smpBusy || recActive();
+  d.kit.forEach((f, i) => {                         /* (the lanes as the unit names them) */
+    const file = el("input", { type: "file", accept: ".wav,audio/wav,audio/x-wav,audio/*", hidden: true });
+    file.addEventListener("change", () => { if (file.files[0]) kitFile(k, i, file.files[0]); file.value = ""; });
+    const btn = el("button", { class: f ? "kitf" : "kitf empty", text: f ? f.fname : t("kitEmpty"), title: t("chooseFiles"), disabled: off,
+      onclick: () => file.click() });
+    btn.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); btn.classList.add("over"); });
+    btn.addEventListener("dragleave", () => btn.classList.remove("over"));
+    btn.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.remove("over");
+      if (!off && e.dataTransfer.files.length) kitFile(k, i, e.dataTransfer.files[0]);
+    });
+    const lv = el("input", { type: "range", min: 0, max: 100, value: Math.round((f ? f.lvl : 1) * 100), title: t("smpLevel"), disabled: off || !f });
+    lv.addEventListener("input", () => { f.lvl = lv.value / 100; });
+    grid.append(el("b", { text: DX.lanes[i] }), btn, file, lv, el("span", {}, ...(f ? [
+      el("button", { ic: "control_play_f", title: t("preview"), onclick: () => preview(f) }),
+      el("button", { ic: "symbol_trash", title: t("remove"), disabled: off, onclick: () => { d.kit[i] = null; renderSamples(); } })] : [])));
+  });
+  const bytes = draftBytes(d), sec = (b) => (b * 2 / SMP.RATE).toFixed(1);
+  const go = el("button", { class: "go", ic: "symbol_upload", disabled: off || tooBig || !d.name || !d.kit.some(Boolean),
+    onclick: () => smpUpload(k, prog) }, `${t("kitUpload").replace("{n}", k + 1)}  ${d.name}`);
+  return [el("p", { class: "dim", text: t("kitHelp").replace("{n}", k + 1) }), grid,
+    el("div", { class: "kitlen" }, el("span", { class: tooBig ? "bad" : "dim",
+      text: t("kitOf").replace("{a}", sec(bytes)).replace("{b}", sec(SMP.MAX_DATA)) + (tooBig ? " " + t("smpTooBig") : "") }),
+      el("progress", { max: SMP.MAX_DATA, value: Math.min(bytes, SMP.MAX_DATA) })),
+    el("div", { class: "head" }, go, prog)];
+}
+
 /* a slot's recording row: Record / Stop, the input, the time and the level */
 function recRow(k) {
   const on = rec && rec.k === k;
@@ -4988,21 +5293,26 @@ function renderSamples() {
       if (v !== name.value) name.value = v;
       d.name = v;
     });
+    name.addEventListener("change", () => { if (d.asKit) renderSamples(); });   /* ((#35) the kit's Upload button names it) */
     const bytes = draftBytes(d), tooBig = bytes > max;
     const size = el("span", { class: tooBig ? "bad" : "dim",
       text: d.files.length ? `${kib(bytes)} / ${kib(max)} KiB` + (tooBig ? " " + t("smpTooBig") : "") : "" });
     const prog = el("progress", { max: 1, value: 0, hidden: true });
+    const kitTog = el("button", { class: "tog", "aria-pressed": String(d.asKit), disabled: smpBusy || recActive(),
+      onclick: () => { d.asKit = !d.asKit; renderSamples(); } }, t("drumKit"));   /* ((#35) the files stay in the draft meanwhile) */
     const blk = el("div", { class: "smp", "data-k": k },
       el("div", { class: "head" }, el("b", { text: `USR${k + 1}` }), el("span", { text: status }), bar,
         el("button", { ic: "symbol_trash", disabled: smpBusy || !u.zones, onclick: () => smpErase(k) }, t("erase"))),
+      d.asKit ? el("div", { class: "head" }, el("span", { text: t("smpName") }), name, kitTog) :
       el("div", { class: "head" }, el("span", { text: t("smpName") }), name,
         el("button", { ic: "symbol_folder_open", disabled: smpBusy || recActive(), onclick: () => file.click() }, t("chooseFiles")), file,
         el("button", { ic: "symbol_upload", disabled: smpBusy || recActive() || !d.files.length || tooBig || !d.name, onclick: () => smpUpload(k, prog) }, t("upload")),
         d.files.length ? el("button", { text: t("clearList"), disabled: smpBusy || recActive(), onclick: () => { d.files = []; renderSamples(); } }) : "",
-        size, prog),
-      recRow(k));
-    if (u.zones && u.mix) blk.append(mixTable(k, u));   /* ((#21) the sounds on the device) */
-    if (d.files.length) {
+        kitTog, size, prog),
+      d.asKit ? "" : recRow(k));
+    if (u.zones && u.mix && !d.asKit) blk.append(mixTable(k, u));   /* ((#21) the sounds on the device; (#35) DRUM's lanes have LANE MIX instead) */
+    if (d.asKit) blk.append(...kitPanel(k, d, tooBig, prog));
+    else if (d.files.length) {
       const keys = splitKeys(d.files);
       const mx = mixOn();                           /* ((#21) each file's LEVEL, REV, DLY, sent after the upload) */
       const tb = el("table", {}, el("tr", {}, el("th", { text: t("file") }), el("th", { text: t("root") }),
@@ -5038,7 +5348,7 @@ function renderSamples() {
     blk.addEventListener("drop", (e) => {
       e.preventDefault();
       blk.classList.remove("over");
-      if (!smpBusy && !recActive() && e.dataTransfer.files.length) addFiles(k, [...e.dataTransfer.files]);   /* (the recording sized itself to the slot) */
+      if (!smpBusy && !recActive() && !d.asKit && e.dataTransfer.files.length) addFiles(k, [...e.dataTransfer.files]);   /* (the recording sized itself to the slot; (#35) a kit's rows take their own) */
     });
     return blk;
   }));
@@ -5059,7 +5369,7 @@ async function smpInfo(d = dev) {
 async function smpUpload(k, prog) {
   const d = smpDraft[k];
   let built;
-  try { built = buildSlot(d.name, d.files.map((f) => ({ s: f.s, root: f.root, mix: f.mix || MIX0 }))); }
+  try { built = buildSlot(d.name, d.asKit ? kitZones(d.kit) : d.files.map((f) => ({ s: f.s, root: f.root, mix: f.mix || MIX0 }))); }
   catch (e) { sayK("smpFail", e.message); return; }
   if (!confirm(t("confirmUpload").replace("{n}", k + 1))) return;
   const { hdr, data } = built;
@@ -5693,7 +6003,7 @@ $("savefile").addEventListener("click", () => op(async () => {
     engine, preset, p: dev.dump.p.slice(), g: dev.dump.g.slice(),
     steps: dev.steps.map((s) => ({ n: s.n, notes: s.notes.slice(), time: s.time, flags: s.flags, vel: s.vel,   /* ((Skiff W1) */
       hit: s.hit | 0, acc: s.acc | 0, chance: s.chance ?? 100, ratchet: s.ratchet ?? 1, flam: s.flam | 0, cond: s.cond | 0,   /* whole) */
-      nudge: s.nudge | 0 })) };
+      nudge: s.nudge | 0, ties: s.ties | 0 })) };                                                                    /* ((2.0) */
   download(`skiff-${fileSlug(data.engineName || "patch")}-${fileSlug(data.presetName || preset)}.json`, data);
 }));
 $("loadfile").addEventListener("click", () => { $("file").value = ""; $("file").click(); });
@@ -5735,7 +6045,8 @@ $("file").addEventListener("change", async () => {
           n: s.n | 0, notes: Array.isArray(s.notes) ? s.notes : [0, 0, 0, 0], time: s.time ?? 2, flags: s.flags | 0, vel: s.vel | 0,
           ...(dev.info.chance ? { hit: s.hit | 0, acc: s.acc | 0, chance: s.chance ?? 100 } : {}),
           ...(dev.info.chance && dev.info.ratchet ? { ratchet: s.ratchet ?? 1 } : {}),
-          ...(dev.info.chance && dev.info.ratchet && dev.info.stepx ? { flam: s.flam | 0, cond: s.cond | 0, nudge: s.nudge | 0 } : {}) })));
+          ...(dev.info.chance && dev.info.ratchet && dev.info.stepx ? { flam: s.flam | 0, cond: s.cond | 0, nudge: s.nudge | 0,
+            ...(dev.info.skiff & 64 ? { ties: s.ties | 0 } : {}) } : {}) })));                /* ((2.0) the ties) */
       }
     }
     dev.dump = await getDump();

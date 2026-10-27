@@ -16,6 +16,7 @@
  *              preset's pattern keep it.
  * The editor protocol (STEP_SET / TRACK_STEP, INFO 52 01 04) is in tests/editor_test.c. Built and run by
  * tests/run_tests.sh. */
+#define FELUCCA_LEGACY 1                        /* ((2.0) its projects are SKF1 and older: the converter's build) */
 #define UI_TEST_NO_MAIN 1
 #include "ui_test.c"
 
@@ -296,17 +297,18 @@ static int screens(void)
     uint32_t x, y;
     ui_power_on();
     t = TSEL;
-    go_page(GR_CHANCE);
+    t->step[0] = (step_t){{60}, 1, ST_NOTE, 0, 100};   /* ((2.0) FEEL: a step with a note) */
+    go_page(GR_FEEL);
     ui.cursor = 0;
-    turn(EN_K3, 2);
+    turn(EN_K2, 2);
     ok = step_ratchet(&t->step[0]) == 3u && step_ratchet(&t->step[1]) == 1u;
-    turn(EN_K3, 1);
+    turn(EN_K2, 1);
     ok &= step_ratchet(&t->step[0]) == 4u && !(t->step[0].flags & SF_FLAM);
-    turn(EN_K3, 100);                                /* (Skiff) past x4: FLAM, on x1, the card says so */
+    turn(EN_K2, 100);                                /* (Skiff) past x4: FLAM, on x1, the card says so */
     frame();
-    ok &= step_rflam(&t->step[0]) == 5u && step_ratchet(&t->step[0]) == 1u && strstr(ui.col[2], "|FLAM|") != 0;
-    turn(EN_K3, -100);
-    bad += check("SEQ > CHANCE KNOB 3: RATCH of the cursor step, x1..x4, then (Skiff) FLAM", ok &&
+    ok &= step_rflam(&t->step[0]) == 5u && step_ratchet(&t->step[0]) == 1u && strstr(ui.col[1], "|FLAM|") != 0;
+    turn(EN_K2, -100);
+    bad += check("SEQ > FEEL KNOB 2: RATCH of the cursor step, x1..x4, then (Skiff) FLAM", ok &&
                  step_rflam(&t->step[0]) == 1u && step_chance(&t->step[0]) == 100u);
     {                                                /* RATCH dimmed where it does nothing: REST, TIE, empty */
         uint32_t dim[4], thm[4], k;
@@ -317,13 +319,13 @@ static int screens(void)
             step_set_ratchet(&t->step[0], 2);
             ui.hot_t = 0;                            /* ((U2) BLOCKS: a hot tile draws its value in INK) */
             memset(host_screen, 0, sizeof host_screen); ui.force = 1; ui_draw();
-            dim[k] = card_px(2, T_DIM); thm[k] = card_px(2, T_THEME);
+            dim[k] = card_px(1, T_DIM); thm[k] = card_px(1, T_THEME);
         }
         t->step[0] = kind[3]; t->step[0].hit = 1u;   /* a NOTE step of lane hits only: it plays */
         step_set_ratchet(&t->step[0], 2);
         ui.hot_t = 0;
         memset(host_screen, 0, sizeof host_screen); ui.force = 1; ui_draw();
-        ok = card_px(2, T_DIM) == dim[0] && card_px(2, T_THEME) == thm[0];
+        ok = card_px(1, T_DIM) == dim[0] && card_px(1, T_THEME) == thm[0];
         for (k = 1; k < 4u; k++)
             ok &= dim[k] > dim[0] && thm[k] < thm[0];
         bad += check("  RATCH shows dimmed on a REST, a TIE or an empty step (a note or a hit: not)", ok);
@@ -357,7 +359,7 @@ static int screens(void)
     t->step[1] = (step_t){{0}, 0, ST_NOTE, 0, 100, 1u};
     step_set_ratchet(&t->step[1], 3);
     ui.lane = 1;
-    go_page(GR_TILES); ui.cursor = 8; ui.bank = 0;   /* ((U3, N2) a drum track's grid: STEP, no ROLL) */
+    go_page(GR_ROLL); ui.cursor = 8; ui.bank = 0;   /* ((2.0) NOTES: a drum track's grid) */
     memset(host_screen, 0, sizeof host_screen); ui.force = 1; ui_draw();
     y = Y_GRAPH + (uint32_t)graph_pad() + 18u;      /* lane 0's hits: y 18 .. 21 of the grid, the grid the panel's pad
                                                        * down ((1.2.1, #10) on STEP as on CHANCE and PLAY) */
@@ -512,7 +514,8 @@ static int nudge(void)
     n = run(t, 4u * len / CTL, at, 8, 0);
     bad += check("  a TIE's nudge does nothing (the note before held on the grid)", n == 3u && at_ok(at[1], 2u * len, CTL));
     seq_stop();
-    {   /* the PLAY page: KNOB 2 the cursor step's nudge, KNOB 3 DIR; the card; the roll draws it where it plays */
+    {   /* (2.0) FEEL's KNOB 3 the cursor step's nudge, PATTERN's PRESETS DIR (PLAY's before); the card; the roll draws
+         * it where it plays */
         uint32_t x, y;
         ui_power_on();
         t = TSEL;
@@ -520,18 +523,20 @@ static int nudge(void)
         t->p[P_SLEN] = 16;
         t->step[1] = (step_t){{60}, 1, ST_NOTE, 0, 100};
         t->step[3] = t->step[1];
-        go_page(GR_PLAY);
+        go_page(GR_FEEL);
         ui.cursor = 1; ui.bank = 0;
-        turn(EN_K2, 3);
+        turn(EN_K3, 3);
         ok = t->step[1].nudge == 3;
-        turn(EN_K2, -100);
+        turn(EN_K3, -100);
         ok &= t->step[1].nudge == NUDGE_MIN;
-        turn(EN_K2, 100);
+        turn(EN_K3, 100);
         ok &= t->step[1].nudge == NUDGE_MAX && !t->step[3].nudge;
-        turn(EN_K3, 2);
         frame();
-        bad += check("SEQ > PLAY: KNOB 2 the cursor step's NUDGE (-32..31), KNOB 3 DIR; the card +31 /64", ok &&
-                     t->p[P_DIR] == DIR_PING && strstr(ui.col[1], "|+31|") != 0);
+        ok &= strstr(ui.col[2], "|+31|") != 0;
+        go_page(GR_STEPS);
+        turn(EN_PRESET, 2);
+        bad += check("SEQ > FEEL: KNOB 3 the cursor step's NUDGE (-32..31), the card +31 /64; PATTERN's PRESETS DIR",
+                     ok && t->p[P_DIR] == DIR_PING);
         t->step[1].nudge = NUDGE_MIN;
         t->p[P_DIR] = DIR_FWD;
         go_page(GR_ROLL); ui.cursor = 8;

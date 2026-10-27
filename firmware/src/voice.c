@@ -320,8 +320,9 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
         t->sp_alt ^= 1u;                                /* sounding voice keeps its side: no jump) */
     }                                                   /* sounding: the attack starts from the current level */
     e->note_on(t, v);
-    if (sounding && !e->sampled) {                     /* retrigger / steal: keep phases and filter */
-        v->ph[0] = ph0;                                 /* states (resetting them clicks) */
+    if (sounding && !e->sampled && !(t->engine == ENGI_DRUM && drum_user(t->p))) {   /* retrigger / steal: keep */
+        v->ph[0] = ph0;                                 /* phases and filter states (resetting them clicks); ((#35) a
+                                                         * DRUM user kit's sample starts again: its declick, drum_note_on) */
         v->ph[1] = ph1;
         v->ph[2] = ph2;
         if (keep & 0x01u)                               /* engine_t.keep: the slots the engines use */
@@ -679,6 +680,31 @@ static __attribute__((noinline)) void spread_sum(int32_t *out, const int32_t *sb
     for (i = 0; i < n; i++)
         out[i] += sb[i];
 }
+/* (2.0, #36) DRUM's and DRUM-X's lane pans (fx.c mix_spread), while t->lpan_on (a lane of the kit off C): a panned
+ * lane's voice (its lane in s[0], both engines) is rendered into a block of its own, added to out (every lane: the mono
+ * kit, as before) and, |PAN| / 64 of it, to the sum its channel's far side loses: a lane panned right to spread_buf
+ * (taken off the left), one panned left to lpan_buf (taken off the right). That is the track's PAN law lane by lane:
+ * the far side down, the near one as it is. A cost per panned lane's voice; the lanes at C as ever */
+static int32_t lpan_buf[C1_NP][CTL];
+#define LPAN_BUF(t) lpan_buf[C1_PI(t)]
+static int lanes_panned(const track_t *t)
+{
+    const int16_t *p = &t->p[P_LPAN0];
+    return (p[0] | p[1] | p[2] | p[3] | p[4] | p[5] | p[6] | p[7]) != 0;
+}
+static __attribute__((noinline)) void lpan_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+{
+    int32_t vb[CTL], pan = t->p[P_LPAN0 + ((uint32_t)v->s[0] & 7u)], w = pan < 0 ? -pan : pan;
+    int32_t *sd = pan > 0 ? SPREAD_BUF(t) : LPAN_BUF(t);
+    uint32_t i;
+    n = n > CTL ? CTL : n;
+    spread_clear(vb);
+    ENGINES[t->engine]->render(t, v, vb, n, m);
+    for (i = 0; i < n; i++) {                           /* (|vb| < 2^17, w <= 64: no overflow) */
+        out[i] += vb[i];
+        sd[i] += (vb[i] * w) >> 6;
+    }
+}
 /* (Skiff 1.3.2) LFO DEST PITCH: depth d (-64..63) squared, so its low values are a fine vibrato: at a full LFO
  * d|d| x 0.762 / 16 semitone, d 63 the +-11.8 semitones it always reached, 8 +-19 cents (1 up to 1.3.1: one step was
  * +-19 cents, a clear vibrato at "1 %"). In 1/4096 semitone, then whole 1/16 semitones and the rest as TUNE's fine
@@ -719,8 +745,10 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     int32_t *sb = SPREAD_BUF(t);
     for (i = 0; i < n; i++)
         out[i] = 0;
-    if (t->spread_on)
+    if (t->spread_on | t->lpan_on)
         spread_clear(sb);
+    if (t->lpan_on)
+        spread_clear(LPAN_BUF(t));
     if (fade)                                           /* engine switch: the old engine, its own values */
         for (i = 0; i < 8u; i++) {
             pe_new[i] = t->p[P_E0 + i];
@@ -790,7 +818,10 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
                 env2_tick(t, v);
             mod_voice(t, v, &m, v->fine + tune_fine + bend_fine);
         }
-        if (t->engine == ENGI_SAMPLE && v->s[4] >= 0x8000)   /* ((Skiff, #21) a user sample's sound: its LEVEL and
+        if (t->lpan_on && t->p[P_LPAN0 + ((uint32_t)v->s[0] & 7u)])   /* ((2.0, #36) a lane off C: its share of the
+                                                                      * sides (lpan_render) */
+            lpan_render(t, v, out, n, &m);
+        else if (t->engine == ENGI_SAMPLE && v->s[4] >= 0x8000)   /* ((Skiff, #21) a user sample's sound: its LEVEL and
                                                                 * sends, fx.c) */
             smx_render(t, v, ti, t->spread_on > v->side ? sb : out, n, &m);
         else

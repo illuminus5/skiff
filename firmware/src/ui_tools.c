@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Felucca 1.2: the SEQ TOOLS layer's actions (ui_layer.c: SEQ held on STEP / the DRUM grid, PATTERN, CHANCE,
+/* Felucca 1.2: the SEQ TOOLS layer's actions (ui_layer.c: SEQ held on NOTES / the DRUM grid, PATTERN, FEEL,
  * AUTOMATION). Included by ui_layer.c. (Skiff 1.3) EUCLID, DOUBLE and HALF from Felucca 1.5.5. The white keys from F3
  * (TL_*):
  *   F3 CLEAR  G3 REVERSE  A3 SHIFT <  B3 SHIFT >       the whole sequence
@@ -9,19 +9,18 @@
  *   D5 DOUBLE E5 HALF                                    LEN x2 / half (1.5.5, below)
  * Each works on the selected track's steps 1..LEN (the steps past LEN stay) and is one undo: SAVE held swaps back
  * the copy taken just before it (ui.c undo, UNDO_PAT; unlike a load the track's automation stays), so after a few
- * COOKs SAVE held takes back the last one only; the layer's OCT- puts back the track as the layer opened (tl_open).
+ * COOKs SAVE held takes back the last one only; the layer's OCT- puts back the track as the layer opened (tl_put_back:
+ * (2.0) from the undo copy its first change took, ui.c upin).
  * A step that held something and is empty after loses its locks (as EDIT's step clear); REVERSE and SHIFT move the
  * steps' automation and locks with them. RANDOM and COOK draw from libc.c rng(): no seed is kept, each press
  * differs. A sequence of ties reversed keeps its note first: N T T -> N T T at the mirrored place */
 enum { TL_CLEAR, TL_REV, TL_LEFT, TL_RIGHT, TL_RANDOM, TL_COOK, TL_BEAT, TL_EUCLID, TL_LCLR, TL_LREV, TL_LFILL, TL_LRND,
        TL_DOUBLE, TL_HALF, TL_N };
 
-/* the track as the layer opened (OCT-): in the pool (RAM's .bss is tight), taken by layer_opened */
-static struct { step_t step[NSTEP]; motion_store_t mo; } tl_open __attribute__((section(".pool")));
-
 static uint32_t tl_len(const track_t *t) { return (uint32_t)clamp(t->p[P_SLEN], 1, NSTEP); }
 static uint32_t tl_rnd(uint32_t n) { return n ? rng() % n : 0u; }
-static int tl_gate(const step_t *s) { return s->time == ST_NOTE && s->n; }
+static int tl_gate(const step_t *s) { return s->time == ST_NOTE && s->n && step_ties(s) != (1u << s->n) - 1u; }   /* ((2.0)
+                                                    * a note starts there: one whose notes all go on is a tie) */
 static uint32_t tl_lane(const step_t *s, uint32_t l) { return (step_lanes(s) >> l) & 1u; }
 /* place p's action is there for this track (the lane row and BEAT: DRUM only) */
 static int tl_cell(const track_t *t, uint32_t p)
@@ -49,6 +48,26 @@ static void tl_undo_take(track_t *t, const char *name)
     undo.fm6_slot = fm6_slot[i];
     undo.pid = trk_pid[i];
     motion_snapshot_track(t, &undo.motion_backup);
+}
+
+/* the layer's OCT- (SEQ TOOLS, REC): t's steps and automation as the undo copy of its first change holds them (the track
+ * as the layer opened; (2.0) no copy of its own: ui.c upin keeps that one in the ring), after a copy of now (PUT BACK:
+ * SAVE held, the tools again). 0: nothing (undone already); not into another pattern (as an undo: its message) */
+static int tl_put_back(track_t *t)
+{
+    int32_t s = undo_find(upin.pin);
+    if (s < 0)
+        return 0;
+    if (undo_ring[s].pid != trk_pid[trk_index(t)]) {
+        undo_other_pattern(undo_ring[s].pid);
+        return 0;
+    }
+    tl_undo_take(t, "PUT BACK");
+    s = undo_find(upin.pin);                            /* (it may have moved on in the ring) */
+    memcpy(t->step, undo_ring[s].step, sizeof t->step);
+    if (motion_replace_track(t, &undo_ring[s].motion_backup))
+        motion_full = 1;
+    return 1;
 }
 
 /* steps 1..len of t that are not empty (a REST); after the action the ones emptied lose their locks */
@@ -88,11 +107,85 @@ static void tl_order(track_t *t, uint32_t len, const uint8_t *src)
     motion_unguard(f);
 }
 
-/* REVERSE: the mirror order; a note's ties (after it) would come before it, so the note goes first again */
+/* (2.0, #25) REVERSE with notes that overlap: note by note on the edit copy (ui_input.c ed_open), each starting where
+ * it ended, its ties after it, with its step's values; a step's hits mirror. A step's locks and automation go where
+ * its first note starts now (a step without a start of its own: the mirrored one; two of one parameter meeting: the
+ * one following a note stays). The TIE of step 1 (the loop end's notes) goes. (Not inlined: its two copies, 1.7 KB,
+ * on the stack only while it runs, not in ui_input's frame) */
+static __attribute__((noinline)) void tl_reverse_notes(track_t *t, uint32_t len)
+{
+    step_t w[NSTEP], r[NSTEP];
+    uint8_t to[NSTEP];
+    uint64_t own = 0;
+    uint32_t i, j, k, e, n, x, y, had, f, tk = trk_index(t);
+    ed_open(w, t, len);
+    for (j = 0; j < len; j++) {
+        step_clear(&r[j]);
+        to[j] = (uint8_t)(len - 1u - j);
+    }
+    for (j = 0; j < len; j++)
+        if (w[j].hit) {
+            ed_vals(&r[to[j]], &w[j]);
+            r[to[j]].hit = w[j].hit;
+            r[to[j]].acc = w[j].acc;
+        }
+    for (i = 0; i < len; i++)
+        for (k = 0; w[i].time != ST_TIE && k < w[i].n; k++) {
+            if (step_tied(&w[i], k))
+                continue;
+            e = ed_end(w, len, i, w[i].note[k]);
+            n = len - 1u - e;
+            had = (uint32_t)step_starts(&r[n]);
+            if (!ed_add(&r[n], w[i].note[k], 0))
+                continue;
+            if (!had)
+                ed_vals(&r[n], &w[i]);
+            for (j = n + 1u; j <= len - 1u - i && ed_add(&r[j], w[i].note[k], 1); j++)
+                ;
+            if (!((own >> i) & 1u)) {
+                own |= (uint64_t)1 << i;
+                to[i] = (uint8_t)n;
+            }
+        }
+    f = motion_guard();
+    motion_restore(t);
+    for (x = 0; x < motion.count; x++) {
+        motion_event_t *a = &motion.event[x];
+        uint32_t pa = a->place & 63u;
+        for (y = 0; (a->place >> 6) == tk && pa < len && y < motion.count; y++) {
+            motion_event_t *b = &motion.event[y];
+            uint32_t pb = b->place & 63u, oa = (uint32_t)(own >> pa) & 1u, ob = (uint32_t)(own >> pb) & 1u;
+            if (y != x && (b->place >> 6) == tk && pb < len && pb != pa && to[pb] == to[pa] &&
+                MOTION_ID(b) == MOTION_ID(a) && (ob > oa || (ob == oa && y < x)))
+                a->place = 511u;
+        }
+    }
+    for (n = 0, x = 0; x < motion.count; x++) {
+        motion_event_t ev = motion.event[x];
+        if (ev.place == 511u)
+            continue;
+        if ((ev.place >> 6) == tk && (ev.place & 63u) < len)
+            ev.place = (uint16_t)(tk << 6 | to[ev.place & 63u]);
+        motion.event[n++] = ev;
+    }
+    memset(motion.event + n, 0, (MOTION_MAX - n) * sizeof motion.event[0]);
+    motion.count = (uint8_t)n;
+    motion_unguard(f);
+    ed_close(t, r, len, 0);
+}
+
+/* REVERSE: the mirror order; a note's ties (after it) would come before it, so the note goes first again. (2.0) With a
+ * per-note tie anywhere in LEN (notes that overlap): note by note (above) */
 static void tl_reverse(track_t *t, uint32_t len)
 {
     uint8_t src[NSTEP], h;
     uint32_t j, e, x;
+    for (j = 0; j < len && !step_ties(&t->step[j]); j++)
+        ;
+    if (j < len) {
+        tl_reverse_notes(t, len);
+        return;
+    }
     for (j = 0; j < len; j++)
         src[j] = (uint8_t)(len - 1u - j);
     for (j = 0; j < len; j++) {
@@ -252,15 +345,70 @@ static int32_t tl_neigh(const track_t *t, int32_t n, int32_t d)
     while (g-- && !tl_in_scale(t, n));
     return clamp(n, 0, 127);
 }
-/* RANDOM on a melodic track: the rhythm stays (the NOTE steps, their ties, accents and chance), the notes are new: a
- * walk through the track's scale (ROOT, SCL) 9 semitones either side of the pattern's middle (an empty pattern:
- * around the root near C4, on an 8th-note rhythm with some rests). A chord keeps its shape, each note snapped
- * down into the scale */
+/* (1.4.1, a YouTube report: "random notes only fill 16 notes on a 64-step sequence") a 16-step bar after the first, inside
+ * LEN, with nothing in it takes the rhythm of the bar before it, its steps whole, so RANDOM's notes fill the whole
+ * pattern, not only the bars a shorter one had (LEN turned up leaves the new ones empty) */
+static void tl_rhythm_fill(track_t *t, uint32_t len)
+{
+    uint32_t b, j, used;
+    for (b = 16u; b < len; b += 16u) {
+        for (used = 0, j = b; j < len && j < b + 16u; j++)
+            used |= t->step[j].time == ST_TIE || t->step[j].n || t->step[j].hit;
+        for (j = b; !used && j < len && j < b + 16u; j++)
+            t->step[j] = t->step[j - 16u];
+    }
+}
+/* RANDOM on a melodic track: the rhythm stays (the NOTE steps, their ties, accents and chance; (1.4.1) an empty bar takes
+ * the one before: tl_rhythm_fill), the notes are new: a walk through the track's scale (ROOT, SCL) 9 semitones either
+ * side of the pattern's middle (an empty pattern: around the root near C4, on an 8th-note rhythm with some rests). A
+ * chord keeps its shape, each note snapped down into the scale */
+/* (2.0, #25) the notes starting at step i (its untied ones, bit k of m) to the pitches q[k] at once, each with its
+ * per-note ties after it (a TIE holds whatever sounds); 0: two would meet on a step (nothing changed). Without
+ * overlaps that is step i alone, as RANDOM and COOK wrote it before 2.0 */
+static int tl_chord_to(track_t *t, uint32_t len, uint32_t i, const uint8_t *q)
+{
+    step_t *s = &t->step[i];
+    uint8_t p[4], at[4];
+    uint32_t m = ((1u << s->n) - 1u) & ~step_ties(s), pass, alive, mv, j, k, y;
+    int32_t x;
+    for (k = 0; k < s->n; k++) {
+        p[k] = s->note[k];
+        at[k] = (uint8_t)k;
+        for (y = 0; y < k; y++)                         /* (two onto one pitch) */
+            if (((m >> k) & (m >> y) & 1u) && q[k] == q[y])
+                return 0;
+    }
+    for (pass = 0; pass < 2u; pass++)
+        for (alive = m, j = i; alive && j < len; j++) {
+            step_t *u = &t->step[j];
+            if (j > i && u->time == ST_TIE)
+                continue;
+            for (mv = 0, k = 0; k < s->n; k++)         /* (each one's place here, before any is changed) */
+                if ((alive >> k) & 1u) {
+                    if (j > i && ((x = note_at(u, p[k])) < 0 || !step_tied(u, (uint32_t)x)))
+                        alive &= ~(1u << k);
+                    else
+                        mv |= 1u << (at[k] = (uint8_t)(j > i ? x : (int32_t)k));
+                }
+            for (k = 0; k < s->n; k++) {
+                if (!((alive >> k) & 1u))
+                    continue;
+                for (y = 0; !pass && y < u->n; y++)    /* (onto a note staying here) */
+                    if (!((mv >> y) & 1u) && u->note[y] == q[k])
+                        return 0;
+                if (pass)
+                    u->note[at[k]] = q[k];
+            }
+        }
+    return 1;
+}
+
 static void tl_random_notes(track_t *t, uint32_t len)
 {
     uint8_t deg[20];
     int32_t c = 0, lo, d, x;
     uint32_t i, k, g = 0, nd = 0, at;
+    tl_rhythm_fill(t, len);
     for (i = 0; i < len; i++)
         if (tl_gate(&t->step[i])) {
             c += t->step[i].note[0];
@@ -289,17 +437,21 @@ static void tl_random_notes(track_t *t, uint32_t len)
     at = at >= 2u ? at - 2u : 0u;
     for (i = 0; i < len; i++) {
         step_t *s = &t->step[i];
+        uint8_t q[4];
+        uint32_t k0;
         if (!tl_gate(s))
             continue;
         at = at >= nd ? nd - 1u : at;
-        d = (int32_t)deg[at] - s->note[0];
-        s->note[0] = deg[at];
-        for (k = 1; k < s->n && k < 4u; k++) {
+        for (k0 = 0; step_tied(s, k0); k0++)            /* ((2.0) the chord's root: its first note starting here) */
+            ;
+        d = (int32_t)deg[at] - s->note[k0];
+        for (k = 0; k < s->n && k < 4u; k++) {
             x = clamp(s->note[k] + d, 1, 127);
             while (!tl_in_scale(t, x) && x > 1)
                 x--;
-            s->note[k] = (uint8_t)x;
+            q[k] = (uint8_t)(k == k0 ? deg[at] : (uint32_t)x);
         }
+        (void)tl_chord_to(t, len, i, q);                /* ((2.0) its ties along; two meeting: as it was) */
         if (!tl_rnd(6)) {                               /* a leap now and then, else a step or two */
             at = tl_rnd(nd);
         } else {
@@ -327,11 +479,13 @@ static void tl_cook_notes(track_t *t, uint32_t len, uint32_t g)
             step_set_chance(s, step_chance(s) < 100u ? 100u : tl_rnd(2) ? 75u : 50u);
         } else {
             int32_t d = tl_rnd(2) ? 1 : -1, o = r == 5u ? d * 12 : 0;
+            uint8_t q[4];
             for (k = 0; k < s->n && k < 4u; k++)       /* (an octave out of 24 .. 108: a scale step instead) */
                 if (s->note[k] + o < 24 || s->note[k] + o > 108)
                     o = 0;
             for (k = 0; k < s->n && k < 4u; k++)
-                s->note[k] = (uint8_t)(o ? s->note[k] + o : tl_neigh(t, s->note[k], d));
+                q[k] = (uint8_t)(o ? s->note[k] + o : tl_neigh(t, s->note[k], d));
+            (void)tl_chord_to(t, len, i % NSTEP, q);    /* ((2.0) its ties along) */
         }
     }
 }
@@ -386,9 +540,11 @@ static void eu_render(track_t *t)                       /* (t: ignored, EUCLID's
                     memcpy(s->note, o->note, sizeof s->note), s->n = o->n;
                 else
                     s->note[0] = (uint8_t)(r > 66 ? r - 12 : r), s->n = 1;
+            } else if (step_tie(s) && !s->hit) {
+                s->acc = 0;                           /* ((2.0, #25) notes only going on there: they start there now) */
             }
-        } else if (!(s->time == ST_TIE && i && (t->step[i - 1u].time == ST_TIE || (t->step[i - 1u].time == ST_NOTE &&
-                                                                                    t->step[i - 1u].n)))) {
+        } else if (!(step_tie(s) && i && (step_tie(&t->step[i - 1u]) || (t->step[i - 1u].time == ST_NOTE &&
+                                                                          t->step[i - 1u].n)))) {
             step_clear(s);
         }
     }
@@ -404,17 +560,12 @@ static void eu_fit(const track_t *t)                    /* the values inside LEN
 }
 static void eu_say(void)                               /* "EUCLID 5/16" ("+2": turned) */
 {
-    char b[24], n[4];
+    char b[24];
     str_cpy(b, "EUCLID ", sizeof b);
-    fmt_int(n, eu.hits);
-    str_cpy(b + str_len(b), n, sizeof b - str_len(b));
-    str_cpy(b + str_len(b), "/", sizeof b - str_len(b));
-    fmt_int(n, eu.steps);
-    str_cpy(b + str_len(b), n, sizeof b - str_len(b));
+    fmt_kn(b + 7, eu.hits, eu.steps);
     if (eu.rot) {
         str_cpy(b + str_len(b), " +", sizeof b - str_len(b));
-        fmt_int(n, eu.rot);
-        str_cpy(b + str_len(b), n, sizeof b - str_len(b));
+        fmt_int(b + str_len(b), eu.rot);
     }
     ui_message(b);
 }
@@ -477,40 +628,41 @@ static void eu_close(track_t *t, int apply)
  * of the second half cleared with their automation and locks (a note tied into it ends at the new LEN). Both one undo
  * (SAVE held: the steps, LEN and the automation back). DOUBLE at 64 steps and HALF at 1 do nothing (said why); DOUBLE
  * with too few of the 128 records left for the copies: AUTOMATION FULL, nothing done */
-static motion_store_t tl_mo __attribute__((section(".pool")));   /* the track's records as they will be */
-/* tl_mo = track t's records with steps lo..hi-1 dropped, those of steps 0..cn-1 copied by `by` steps (cn 0: none);
- * 0 = they do not fit the MOTION_MAX */
-static int tl_motion_plan(track_t *t, uint32_t lo, uint32_t hi, uint32_t cn, uint32_t by)
+/* *m = track t's records with steps lo..hi-1 dropped, those of steps 0..cn-1 copied by `by` steps (cn 0: none): the
+ * track's records as they will be ((2.0) the caller's, on the stack: was 260 B of the pool); 0 = they do not fit the
+ * MOTION_MAX */
+static int tl_motion_plan(motion_store_t *m, track_t *t, uint32_t lo, uint32_t hi, uint32_t cn, uint32_t by)
 {
     uint32_t k = trk_index(t), i, f, n = 0, ok = 1;
     f = motion_guard();
-    memset(&tl_mo, 0, sizeof tl_mo);
-    tl_mo.on = motion.on & (uint8_t)(1u << k);
+    memset(m, 0, sizeof *m);
+    m->on = motion.on & (uint8_t)(1u << k);
     for (i = 0; i < motion.count; i++) {
         const motion_event_t *e = &motion.event[i];
         uint32_t s = e->place & 63u;
         if ((e->place >> 6) != k || (s >= lo && s < hi))
             continue;
-        if (n < MOTION_MAX) tl_mo.event[n] = *e;
+        if (n < MOTION_MAX) m->event[n] = *e;
         n++;
         if (s < cn) {
             if (n < MOTION_MAX) {
-                tl_mo.event[n] = *e;
-                tl_mo.event[n].place = (uint16_t)(k << 6 | (s + by));   /* ((Skiff) six tracks: 9 bits) */
+                m->event[n] = *e;
+                m->event[n].place = (uint16_t)(k << 6 | (s + by));   /* ((Skiff) six tracks: 9 bits) */
             }
             n++;
         }
     }
     if (motion.count - motion_count(t) + n > MOTION_MAX)
         ok = 0;
-    tl_mo.count = (uint8_t)(n < MOTION_MAX ? n : MOTION_MAX);
+    m->count = (uint8_t)(n < MOTION_MAX ? n : MOTION_MAX);
     motion_unguard(f);
     return ok;
 }
 static uint32_t tl_nl(uint32_t len) { return 2u * len < NSTEP ? 2u * len : NSTEP; }   /* DOUBLE's LEN */
 /* 0 = it cannot (said why): before the undo copy is taken */
-static int tl_resize_ok(track_t *t, uint32_t p, uint32_t len)
+static __attribute__((noinline)) int tl_resize_ok(track_t *t, uint32_t p, uint32_t len)
 {
+    motion_store_t m;
     if (p == TL_DOUBLE && len >= NSTEP) {
         ui_message("64 STEPS: NO ROOM");
         return 0;
@@ -519,29 +671,31 @@ static int tl_resize_ok(track_t *t, uint32_t p, uint32_t len)
         ui_message("1 STEP: NO HALF");
         return 0;
     }
-    if (p == TL_DOUBLE && !tl_motion_plan(t, len, tl_nl(len), tl_nl(len) - len, len)) {
+    if (p == TL_DOUBLE && !tl_motion_plan(&m, t, len, tl_nl(len), tl_nl(len) - len, len)) {
         ui_message("AUTOMATION FULL");
         return 0;
     }
     return 1;
 }
-static uint32_t tl_double(track_t *t, uint32_t len)      /* the new LEN */
+static __attribute__((noinline)) uint32_t tl_double(track_t *t, uint32_t len)   /* the new LEN */
 {
+    motion_store_t m;
     uint32_t nl = tl_nl(len), i;
     for (i = len; i < nl; i++)
         t->step[i] = t->step[i - len];
-    (void)tl_motion_plan(t, len, nl, nl - len, len);
-    (void)motion_replace_track(t, &tl_mo);
+    (void)tl_motion_plan(&m, t, len, nl, nl - len, len);
+    (void)motion_replace_track(t, &m);
     t->p[P_SLEN] = (int16_t)nl;
     return nl;
 }
-static uint32_t tl_half(track_t *t, uint32_t len)
+static __attribute__((noinline)) uint32_t tl_half(track_t *t, uint32_t len)
 {
+    motion_store_t m;
     uint32_t h = len / 2u, i;
     for (i = h; i < len; i++)
         step_clear(&t->step[i]);
-    (void)tl_motion_plan(t, h, len, 0, 0);
-    (void)motion_replace_track(t, &tl_mo);
+    (void)tl_motion_plan(&m, t, h, len, 0, 0);
+    (void)motion_replace_track(t, &m);
     t->p[P_SLEN] = (int16_t)h;
     return h;
 }

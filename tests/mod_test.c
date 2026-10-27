@@ -92,7 +92,7 @@ static void fresh(uint32_t e, uint32_t pi)        /* the boot state (no FX tails
     host_tracks_init();
     for (k = 0; k < NPART; k++)
         host_preset(&trk[k], k ? 0u : e, k ? 0u : pi);
-    song.sel = 0;
+    sel_set(0);
     hash = 0xCBF29CE484222325ull;
 }
 
@@ -400,7 +400,7 @@ static void test_midi(void)
     static const uint8_t TRS[] = {0xB0, 1, 0x40, 1, 0x7F, 0xF8, 11, 0x20, 0xD2, 0x33, 0x34, 0x90, 60, 0, 0xB4, 1, 9};
     uint32_t i;
     fresh(0, 0);
-    song.sel = 1;
+    sel_set(1);
     pkt(0xB0, 1, 100);                           /* ch 1 CC1 */
     pkt(0xB2, 11, 40);                           /* ch 3 CC11 */
     pkt(0xD3, 77, 0);                            /* ch 4 aftertouch */
@@ -419,7 +419,7 @@ static void test_midi(void)
     blocks(1);
     check("CC121 resets MODW / AT / EXPR of the channel's track", trk[0].mw == 0 && trk[1].mw == 55);
     fresh(0, 0);
-    song.sel = 1;
+    sel_set(1);
     for (i = 0; i < sizeof TRS; i++)
         um_byte(TRS[i]);
     blocks(1);

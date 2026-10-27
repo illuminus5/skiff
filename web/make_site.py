@@ -7,7 +7,8 @@
   firmware/skiff-VER.fwsc     the package (+ LICENSE, LICENSING.md, LICENSES/: the package holds
                               JieLi SDK files under Apache-2.0, see LICENSING.md)
   webapp/installer/index.html index_pkg.html, self-contained (fm1pkg.js, fm1ota.js, metadata inlined)
-  webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt)
+  webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt; (2.0) conv/: conv.js and build/conv/conv.wasm,
+                              the converter its Restore and the installer use)
   learn/                      Learn Skiff, the manual in chapters (web/learn, without its local/ review videos)
   try/                        the browser emulator (build/emu from web/emu/build.sh, EMU_PREVIEW=0)
   panel.js, fonts/            the panel's drawing and the fonts the Learn page shares, at the paths it has in web/
@@ -70,7 +71,11 @@ def main(pkg, version, out, *more):
     html = (HERE / "index_pkg.html").read_text(encoding="utf-8")
     lib = strip_module((HERE / "fm1pkg.js").read_text(encoding="utf-8")) + "\n" + \
         strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8")) + "\n" + \
-        strip_module((HERE / "fm1backup.js").read_text(encoding="utf-8"))
+        strip_module((HERE / "fm1backup.js").read_text(encoding="utf-8")) + "\n" + \
+        strip_module((HERE / "conv" / "conv.js").read_text(encoding="utf-8"))   # ((2.0) its wasm: webapp/editor/conv/
+    conv = HERE.parent / "build" / "conv" / "conv.wasm"   # ((2.0, Tier B 10) the converter: web/conv/build.sh's)
+    if not conv.exists():
+        raise SystemExit(f"{conv}: no converter build (sh web/conv/build.sh, after the release build)")
     meta = json.dumps({"version": version, "product": product, "pkg": "../../firmware/" + name,
                        "packages": [{"product": p, "pkg": "../../firmware/" + n} for p, _, n in pkgs]})
     for mark in ("/*LIB*/", "/*META*/"):
@@ -101,6 +106,9 @@ def main(pkg, version, out, *more):
     for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt", "fm1backup.js"):
         if (HERE / f).exists():
             shutil.copy(HERE / f, ed / f)
+    (ed / "conv").mkdir(exist_ok=True)              # ((2.0) the converter: the editor's Restore, the installer's write-back)
+    shutil.copy(HERE / "conv" / "conv.js", ed / "conv" / "conv.js")
+    shutil.copy(conv, ed / "conv" / "conv.wasm")
     if (HERE / "fonts").is_dir():                   # ((Skiff 1.0) the editor's Barlow Condensed, its OFL beside it)
         shutil.copytree(HERE / "fonts", ed / "fonts", dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns("InterTight*"))   # (the Learn page's, not the editor's)

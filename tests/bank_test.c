@@ -80,6 +80,7 @@ static void fresh(void)                           /* a new unit: flash erased, t
     memset(nor, 0xFF, sizeof nor);
     memset(erases, 0, sizeof erases);
     memset(&song, 0, sizeof song);
+    sel_set(0);
     memset(trk, 0, sizeof trk);
     memset(&ui, 0, sizeof ui);
     memset(&motion, 0, sizeof motion);
@@ -461,7 +462,7 @@ static int last_track(void)
     simple(k, 40, 64, DIR_FWD);
     ok = motion_put(&trk[k], 3, P_E5, 20, MOTION_LOCK) == 0 && keep_all() == 0 && trk_pid[k] != 0u;
     id = trk_pid[k] - 1u;
-    ok &= !pat_read(id, r) && r[1] == PROJ_NP && r[BK_MOT + 1u] == ((P_E5 - PROJ_NX) | MOTION_LOCK) &&
+    ok &= !pat_read(id, r) && r[1] == PROJ_NP && r[BK_MOT + 1u] == ((P_E5 - PROJ_ESHIFT) | MOTION_LOCK) &&
           !pat_decode(&trk[k], id, st, v, &ms) && ms.count == 1u && (ms.event[0].id == P_E5 && ms.event[0].lock);
     ok &= r[0] == BK_VER;
     bad += check("  (phase 9) a lock on E5: the record of 103 parameters (E5 at 100), back at today's P_E5", ok);
@@ -641,7 +642,7 @@ static int live(void)
     transport_req = 2;
     events_block(1);
     ok &= ent_go(0, W_ENT) == 0 && t->p[P_SLEN] == 12 && t->step[0].note[0] == 40 && motion_count(t) == 2 &&
-          motion_count(&trk[2]) == 1 && t->p[P_SGATE] == TP[P_SGATE].def;   /* (W's GATE, not its last step's lock) */
+          motion_count(&trk[2]) == 1 && t->p[P_SGATE] == 64;   /* (W's GATE as made (wipe), not its last step's lock) */
     ok &= ent_go(0, 2) == 0;
     snap(&b, 0);
     bad += check("  what went out kept as W's pattern (its edit since: GATE not a lock's), no undo copy; P: W, C: C",
@@ -851,9 +852,7 @@ static int scenes(void)
     memset(lists.scene, 0, sizeof lists.scene);   /* (another project's: none) */
     ok &= !scene_used(2) && !project_restore_runtime(&got) && scene_used(2) && scene_slot(2, 1) == 1u &&
           scene_bits(2) >> 20 == 8u && scene_now() == 0xFFu;
-    for (i = 0; i < PROJ_SC2; i++)
-        ok &= !SCENE_OLD(i);
-    bad += check("  kept with the project (SKF2): a load brings them (none lit yet); the settings' old bytes free", ok);
+    bad += check("  kept with the project (SKF2): a load brings them (none lit yet)", ok);
     transport_req = 2;
     events_block(1);
     return bad;
@@ -890,12 +889,14 @@ static int scenes_six(void)
     ok &= pool_refs(id) == 1u;
     pool_clear(id);
     ok &= str_eq(ui.msg, "IN USE") && pool_used(id);
+#if FELUCCA_LEGACY                                /* ((2.0) an SKF2: the converter's) */
     memset(proj_slot, 0, sizeof proj_slot);
     project_capture(&pj);
     pj.ent[0][0][0] = (uint8_t)(id + 1u);         /* (T1's entry A naming it, in an SKF2) */
     ok &= proj_pack2(&proj_slot[2], &pj, &PROJ_SKF2) && pool_refs(id) == 1u;
     pool_clear(id);
     ok &= str_eq(ui.msg, "IN USE") && pool_used(id);
+#endif
     bad += check("  a pattern a saved project names (the last track's list in its format; T1's in an SKF2): IN USE", ok);
     return bad;
 }
@@ -1056,6 +1057,119 @@ static int song_test(void)
     return bad;
 }
 
+/* (2.0, #30) a song entry's sound (lists.snd; bank.c esnd_make, launch.c esnd_put): in at the switch, the entry's
+ * first step on it (staged with the entry), stopped at once; an entry without one leaves the sound; the track's own
+ * values (LEVEL PAN) kept; no undo step; MOMENTARY's held values not put back over it; FM6 its preset's patch, the
+ * engine switched by the fade; a user sound (#20's name), none once its slot is erased; saved and loaded with the
+ * project (SKF4), COPY+ copies it, CLEAR clears it */
+static int32_t ss_buf[2 * CTL];
+static int ss_mixed;                                  /* a block after a swap rendered T1's old engine on the new one's */
+static void ss_mix(uint32_t blocks)                   /* blocks rendered (mix_block), the main loop's frame each 8 */
+{
+    while (blocks--) {
+        if (!(blocks & 7u))
+            sg_frame();
+        mix_block(ss_buf, CTL);
+        ss_mixed |= launch_q[0].done && trk[0].eng_req != trk[0].engine && !trk[0].xf_on;   /* (values: engine_block) */
+    }
+}
+static int same_preset(const track_t *t, uint32_t e, uint32_t pi)   /* t's values preset pi of engine e's */
+{
+    const preset_t *p = &ENGINES[e]->presets[pi];
+    uint32_t i;
+    int ok = t->eng_req == e && t->preset == pi && t->p[P_ATK] == p->env[0] && t->p[P_DEC] == p->env[1] &&
+             t->p[P_SUS] == p->env[2] && t->p[P_REL] == p->env[3];
+    for (i = 0; i < 8u; i++)
+        ok &= t->p[P_E0 + i] == (int16_t)p->e[i];
+    return ok;
+}
+static int song_sound(void)
+{
+    int bad = 0, ok;
+    uint32_t u0, i, e0;
+    track_t *t = &trk[0];
+    uint8_t v[FP_SIZE + 1u];
+    fresh();
+    ui_launch = LAUNCH_LOOP;
+    e0 = t->eng_req;
+    simple(0, 30, 2, DIR_FWD);                        /* A: 2 steps (30..), B: 2 steps (50..) */
+    bank_put(0, 0, 0);
+    simple(0, 50, 2, DIR_FWD);
+    motion_set_event(t, 1, P_DEC, 5);                 /* (B's second step: DECAY 5, its automation) */
+    bank_put(0, 1, 0);
+    ent_go(0, 0);
+    t->p[P_LEVEL] = 77;
+    t->p[P_PAN] = -20;
+    lists.snd[0][1][0] = (uint8_t)(e0 + 1u);          /* B: the track's engine, its preset 3 */
+    lists.snd[0][1][1] = 2;
+    u0 = undo_n;
+    lists.song = 1;
+    sg_play();
+    sg_steps(1);                                      /* A's last step: B staged, its sound made */
+    ok = heard(0, 31) && launch_q[0].armed && launch_q[0].snd && !same_preset(t, e0, 2);
+    (void)mom_hold(&t->p[P_ATK], 0);                  /* (LFO held, a knob turned: held to come back) */
+    t->p[P_ATK] = 99;
+    sg_steps(1);                                      /* B's first step */
+    ok &= heard(0, 50) && same_preset(t, e0, 2) && t->p[P_LEVEL] == 77 && t->p[P_PAN] == -20 && undo_n == u0 &&
+          motion_base_value(t, P_E0) == t->p[P_E0];
+    sg_frame();
+    ok &= !mom.n && t->p[P_ATK] == ENGINES[e0]->presets[2].env[0];
+    bad += check("SOUND: B's (its engine's preset 3) in at the switch, B's first step on it; LEVEL PAN kept; no undo "
+                 "step; MOMENTARY's held value not back over it", ok);
+    sg_steps(1);                                      /* B's last (its DECAY 5), then A (no sound): B's stays */
+    ok = t->p[P_DEC] == 5 && ENGINES[e0]->presets[2].env[1] != ENGINES[e0]->presets[4].env[1];
+    sg_steps(1);
+    ok &= heard(0, 30) && same_preset(t, e0, 2) && !launch_q[0].snd;
+    bad += check("  A, without a sound: the sound as it was (B's automation back to B's sound's value)", ok);
+    lists.snd[0][1][0] = ENGI_FM6 + 1u;               /* B: FM6's preset 2, the engine changes */
+    lists.snd[0][1][1] = 1;
+    ss_mix(420);                                      /* (A's two steps, B in: rendered, the fade between engines) */
+    fm6_unpack(FM6_FACTORY[t->p[P_E7] % FM6_NFACTORY], v);
+    ok = lists.cur[0] == 1u && same_preset(t, ENGI_FM6, 1) && t->engine == ENGI_FM6 && !t->xf_on &&
+         !memcmp(fm6_patch[0], v, FP_SIZE) && t->p[P_LEVEL] == 77;
+    for (i = 0; i < NVOICE && !(t->v[i].active && t->v[i].gate); i++)
+        ;
+    bad += check("  FM6's preset 2 (another engine): its patch, the engine switched by the fade (from the swap's own "
+                 "block), B's note on it", ok && i < NVOICE && !ss_mixed);
+    sg_stop();
+    lists.snd[0][0][0] = (uint8_t)(e0 + 1u);          /* stopped: onto A (preset 5) at once */
+    lists.snd[0][0][1] = 4;
+    ok = bank_switch(0, 0) == 0 && lists.cur[0] == 0u && same_preset(t, e0, 4) && t->p[P_LEVEL] == 77 && undo_n == u0;
+    bad += check("  stopped: A's sound (preset 5) at once, LEVEL kept, no undo step", ok);
+    up_store(3, "ENTRY U4");                          /* (the sound now, A's: a user preset, slot 4) */
+    apply_preset_to(t, 0);
+    lists.snd[0][1][0] = 0x80u | 3u;                  /* B: user slot 4 */
+    lists.snd[0][1][1] = 0;
+    ok = bank_switch(0, 1) == 0 && t->eng_req == e0 && t->user == 4u && !t->preset &&
+         t->p[P_E0] == ENGINES[e0]->presets[4].e[0];
+    up_put(3, 0);                                     /* (the slot erased since) */
+    apply_preset_to(t, 1);
+    ok &= bank_switch(0, 0) == 0 && bank_switch(0, 1) == 0 && same_preset(t, e0, 4);   /* (A's, then none at B) */
+    bad += check("  a user sound (slot 4): its values, the slot named (#20); its slot erased since: none, as it was", ok);
+    lists.snd[0][1][0] = ENGI_FM6 + 1u;
+    lists.snd[0][1][1] = 1;
+    project_save(2);
+    memset(lists.snd, 0, sizeof lists.snd);
+    project_load(2);
+    ok = lists.snd[0][0][0] == e0 + 1u && lists.snd[0][0][1] == 4u && lists.snd[0][1][0] == ENGI_FM6 + 1u &&
+         same_preset(t, e0, 4);
+    bad += check("  saved and loaded with the project (SKF4); a load plays the tracks' sounds as saved", ok);
+    ok = song_put(0, 1, SPICK_COPYP) == 0 && lists.ent[0][2][0] && !memcmp(lists.snd[0][2], lists.snd[0][1], 2);
+    ok &= song_clear_at(0, 2) == 0 && !lists.ent[0][2][0] && !lists.snd[0][2][0] && !lists.snd[0][2][1];
+    bad += check("  COPY+ copies it with the entry, CLEAR clears it", ok);
+    sg_stop();                                        /* ((the unit, 2026-10-24) the track on A (preset 5), another */
+    ok = bank_switch(0, 0) == 0 && same_preset(t, e0, 4);   /* sound put on it stopped (for another entry's) */
+    apply_preset_to(t, 1);
+    chain_top();                                      /* (PLAY: ui_input.c play_press) */
+    ok &= same_preset(t, e0, 4) && t->p[P_LEVEL] == 77;
+    t->p[P_ATK] = (int16_t)(t->p[P_ATK] + 3);         /* (A's sound, a knob turned) */
+    chain_top();
+    ok &= t->eng_req == e0 && t->preset == 4u && t->p[P_ATK] == ENGINES[e0]->presets[4].env[0] + 3;
+    bad += check("  PLAY from stopped: the entry's sound, not one put on the track since; the same sound tweaked: kept", ok);
+    lists.song = 0;
+    return bad;
+}
+
 /* (#29) a song where every track has a list (T6 DRUM, its lane hits), all of one length, so all move on together, and
  * a pattern waiting to be written (an edit kept, stopped, that the autosave's quiet stop has not written yet): every
  * track on to its next entry at its pass end, the last one too, round and round */
@@ -1173,6 +1287,9 @@ static uint32_t pool_count(void)
 }
 static int migrate(void)
 {
+#if !FELUCCA_LEGACY
+    return 0;                                     /* ((2.0) the converter's: run_tests.sh's FELUCCA_LEGACY build runs it) */
+#else
     int bad = 0, ok, n;
     uint32_t k, cuts = 0;
     static uint8_t before[sizeof nor];
@@ -1189,12 +1306,10 @@ static int migrate(void)
     project_capture(&pj);
     ok = proj_pack(&w, &pj) && !st_save(OBJ_PROJECT0, &w, sizeof w) && !st_save(OBJ_PROJECT0 + 2u, &w, sizeof w) &&
          !st_save(OBJ_AUTOSAVE, &w, sizeof w);    /* (SKF1: slots A and C, the autosave) */
-    SCENE_OLD(0) = 7;                             /* (an old scene in the settings; (phase 6) the favorites after) */
-    SCENE_OLD(PROJ_SC2) = 9;
     memcpy(before, nor, sizeof nor);
-    ok &= proj_migrate(0) == 0 && !pool_count() && SCENE_OLD(0) == 7;
+    ok &= proj_migrate(0) == 0 && !pool_count();
     bad += check("migrate: not after a crash, a hang or a failed boot (nothing written)", ok);
-    ok = proj_migrate(1) == 1 && pool_count() == 2u && !SCENE_OLD(0) && SCENE_OLD(PROJ_SC2) == 9;
+    ok = proj_migrate(1) == 1 && pool_count() == 2u;
     for (k = 0; k < 5u; k++) {
         uint32_t obj = k < 4u ? OBJ_PROJECT0 + k : OBJ_AUTOSAVE;
         n = st_load(obj, &w, sizeof w);
@@ -1206,12 +1321,12 @@ static int migrate(void)
               !got.ent[2][0][0] && got.ent[3][0][0] && got.ent[3][0][0] != got.ent[0][0][0] && !got.cur[0] && !got.ent[0][1][0];
     }
     ok &= proj_migrate(1) == 0;                   /* (again: all SKF2 (SKF3 with six tracks), nothing to do) */
-    bad += check("  slots A C and the autosave: SKF2 (SKF3), each track's entry A its pattern (T1 T2 one, shared), T3 none; "
-                 "the settings' old scenes freed (their 50 bytes: the favorites after stay)", ok);
-    favorite_set(ENGI_DRUMX, 0, 1);               /* ((Skiff phase 7) row 14 is DRUM-X's favourites: freed once only) */
-    ok = proj_migrate(1) == 0 && favorite_has(ENGI_DRUMX, 0) && SCENE_FREED == SCENE_FREED_V;
+    bad += check("  slots A C and the autosave: SKF2 (SKF3), each track's entry A its pattern (T1 T2 one, shared), T3 none",
+                 ok);
+    favorite_set(ENGI_DRUMX, 0, 1);               /* ((Skiff phase 7) row 14 is DRUM-X's favourites) */
+    ok = proj_migrate(1) == 0 && favorite_has(ENGI_DRUMX, 0);
     favorite_set(ENGI_DRUMX, 0, 0);
-    bad += check("  the old scenes freed once: a DRUM-X favourite (row 14) stays", ok);
+    bad += check("  a DRUM-X favourite (row 14) stays", ok);
     for (k = 0; k < NTRK; k++)
         detach(k);
     project_load(0);
@@ -1257,6 +1372,7 @@ static int migrate(void)
     }
     bad += check("  the pool full: the projects as they were (SKF1), loading with their own steps", ok);
     return bad;
+#endif
 }
 
 /* ---- (Skiff phase 7) the DRUM-X kit is the project's: saved with it (SKF3), back when loaded, the factory's for a project
@@ -1283,11 +1399,168 @@ static int dx_kit_project(void)
     return bad;
 }
 
+/* ---- (2.0, #47) SONG ONCE (bank.c song_poll): each track its list once, its last entry's REPS too, then silent; the
+ * transport stops when the last track's end comes in, each on its first entry again; a full list ends on its last;
+ * a launch of its own goes on from there ---- */
+static int song_once(void)
+{
+    int bad = 0, ok;
+    uint32_t e;
+    fresh();
+    ui_launch = LAUNCH_LOOP;
+    simple(0, 30, 2, DIR_FWD);                    /* T1: A 2 steps (30..) x2, B 2 (50..); T2: X 3 (90..), one entry */
+    bank_put(0, 0, 0);
+    lists.ent[0][0][1] = 1;
+    simple(0, 50, 2, DIR_FWD);
+    bank_put(0, 1, 0);
+    simple(1, 90, 3, DIR_FWD);
+    bank_put(1, 0, 0);
+    lists.song = SONG_ONCE;
+    song_top();                                   /* PLAY (ui_input.c play_press): from every track's first entry */
+    events_block(1);
+    ok = song.playing && heard(0, 30) && heard(1, 90) && bank_cur(0) == 0u;
+    sg_steps(2);
+    ok &= heard(0, 30) && heard(1, 92) && bank_next(0) == 1u && bank_next(1) == 1u;   /* (T2's end: its empty B) */
+    sg_steps(1);
+    ok &= heard(0, 31) && !trk[1].seq_n && song.playing;
+    sg_steps(2);
+    ok &= heard(0, 51) && bank_next(0) == 2u && song.playing;
+    sg_steps(1);
+    ok &= !trk[0].seq_n && song.playing;          /* (T1's end came in: its frame stops the song) */
+    sg_frame();
+    ok &= !song.playing && lists.cur[0] == 0u && lists.cur[1] == 0u && bank_cur(0) == 0u && bank_cur(1) == 0u &&
+          trk[0].step[0].note[0] == 30u && trk[1].step[0].note[0] == 90u;
+    bad += check("(2.0, #47) SONG ONCE: each list once (A x2, B; X), silent at its end; stopped after the last, on the "
+                 "first entries", ok);
+    for (e = 1; e < NENT; e++)                    /* T2: X in all 16 entries: its end on the last one */
+        lists.ent[1][e][0] = lists.ent[1][0][0];
+    song_top();
+    events_block(1);
+    sg_steps(3u * NENT - 1u);
+    ok = heard(1, 92) && lists.cur[1] == NENT - 1u && song.playing;
+    sg_steps(1);
+    ok &= !trk[1].seq_n && lists.cur[1] == NENT - 1u && song.playing;
+    sg_frame();
+    ok &= !song.playing && lists.cur[1] == 0u && trk[1].step[0].note[0] == 90u;
+    bad += check("  a full list: its end a rest on its last entry; then stopped, on the first", ok);
+    for (e = 1; e < NENT; e++)
+        lists.ent[1][e][0] = 0;
+    song_top();
+    events_block(1);
+    sg_steps(4);                                  /* (T2 ended at 3; T1 on B) */
+    ok = !trk[1].seq_n && heard(0, 50) && bank_switch(1, 0) == 0;   /* (a launch of T2's own: X at its rest's end) */
+    sg_steps(2);
+    ok &= song.playing && !trk[0].seq_n && heard(1, 90);   /* (T1's end in, T2's X too) */
+    sg_steps(3);
+    ok &= !trk[1].seq_n && song.playing;
+    sg_frame();
+    ok &= !song.playing;
+    bad += check("  a launch after a track's end: it plays, then its end again; the song stops after that", ok);
+    song_top();
+    events_block(1);
+    sg_steps(4);
+    sg_stop();                                    /* STOP mid-song: T1 on B, T2 on its end */
+    ok = !song.playing && lists.cur[0] == 1u && lists.cur[1] == 1u;
+    song_top();                                   /* PLAY: from the top, the whole song again */
+    events_block(1);
+    ok &= song.playing && heard(0, 30) && heard(1, 90);
+    sg_steps(6);
+    sg_frame();
+    ok &= !song.playing && lists.cur[0] == 0u;
+    bad += check("  STOP mid-song, PLAY: from the top, to its end again", ok);
+    ok = project_save_as(1, 0) == 0;              /* (a project with SONG ONCE: saved, loaded, ONCE again) */
+    lists.song = 0;
+    project_load(1);
+    ok &= lists.song == SONG_ONCE;
+    bad += check("  a project saved with SONG ONCE loads with it", ok);
+    lists.song = 0;
+    return bad;
+}
+
+/* ---- (2.0, #44, the user's pick 3A and the join sheet's A) a chain: entries on CHAIN into the next play as one
+ * pattern: SONG off it loops; a LOOP launch waits for its end; SONG on, its last entry's REPS repeat it; ONCE ends
+ * after it; a launch onto any part starts it from its first, PLAY too; COPY+ copies all of it; a project keeps it ---- */
+static int song_chain(void)
+{
+    int bad = 0, ok;
+    uint32_t a, b;
+    static uint8_t r1[BK_REC], r2[BK_REC];
+    fresh();
+    ui_launch = LAUNCH_LOOP;
+    simple(0, 30, 2, DIR_FWD);                    /* T1: A 2 steps (30..) on CHAIN into B 3 (50..); C 2 (70..) */
+    bank_put(0, 0, 0);
+    simple(0, 50, 3, DIR_FWD);
+    bank_put(0, 1, 0);
+    simple(0, 70, 2, DIR_FWD);
+    bank_put(0, 2, 0);
+    lists.ent[0][0][1] = REPS_CHAIN;
+    (void)ent_go(0, 0);
+    sg_play();                                    /* SONG off: A B A .. */
+    ok = heard(0, 30);
+    sg_steps(2);
+    ok &= heard(0, 50);
+    sg_steps(3);
+    ok &= heard(0, 30);
+    bad += check("(2.0, #44) a chain, SONG off: A on CHAIN into B, one pattern looping (A B A ..)", ok);
+    sg_steps(1);                                  /* (on A, B staged) */
+    ok = bank_switch(0, 2) == 0 && chain_go[0] == 3u && bank_next(0) == 2u && launch_q[0].armed &&
+         launch_q[0].slot == 1u;
+    sg_steps(1);
+    ok &= heard(0, 50);
+    sg_steps(3);
+    ok &= heard(0, 70) && !chain_go[0];
+    bad += check("  a LOOP launch on its first part waits for the chain's end (B first, then C)", ok);
+    sg_stop();
+    lists.song = SONG_ON;
+    lists.ent[0][1][1] = 1;                       /* (B x2: the chain twice, then C) */
+    (void)ent_go(0, 0);
+    sg_play();
+    sg_steps(5);
+    ok = heard(0, 30);
+    sg_steps(5);
+    ok &= heard(0, 70);
+    sg_steps(2);
+    ok &= heard(0, 30) && !chain_rep[0];
+    bad += check("  SONG on: the chain's last entry's REPS repeat it (A B A B, C, A ..)", ok);
+    sg_stop();
+    lists.song = SONG_ONCE;
+    lists.ent[0][2][0] = 0;                       /* (C out: the chain the list's end) */
+    song_top();
+    events_block(1);
+    sg_steps(9);
+    ok = heard(0, 52) && song.playing;
+    sg_steps(1);
+    ok &= !trk[0].seq_n && song.playing;
+    sg_frame();
+    ok &= !song.playing && lists.cur[0] == 0u;
+    bad += check("  SONG ONCE: the chain its REPS times (A B A B), then the end", ok);
+    lists.song = SONG_OFF;
+    (void)ent_go(0, 1);
+    ok = lists.cur[0] == 1u && bank_switch(0, 1) == 0 && lists.cur[0] == 0u && trk[0].step[0].note[0] == 30u;
+    (void)ent_go(0, 1);
+    chain_top();
+    ok &= lists.cur[0] == 0u;
+    bad += check("  a launch onto a chain's part plays it from its first; PLAY too (chain_top)", ok);
+    a = ent_pat(0, 0);
+    b = ent_pat(0, 1);
+    ok = song_put(0, 1, SPICK_COPYP) == 0 && str_eq(ui.msg, "COPIED A-B TO C-D") && ent_pat(0, 2) == 3u &&
+         ent_pat(0, 3) == 4u && lists.ent[0][2][1] == REPS_CHAIN && lists.ent[0][3][1] == 1u && ent_pat(0, 0) == a &&
+         ent_pat(0, 1) == b && !pat_read(a, r1) && !pat_read(3u, r2) && !memcmp(r1, r2, BK_REC) &&
+         !pat_read(b, r1) && !pat_read(4u, r2) && !memcmp(r1, r2, BK_REC);
+    bad += check("  COPY+ on a chain: every part copied (04, 05: 03 kept), a chain again at C-D, its REPS too", ok);
+    ok = project_save_as(1, 0) == 0;
+    lists.ent[0][0][1] = 0;
+    project_load(1);
+    ok &= lists.ent[0][0][1] == REPS_CHAIN && lists.ent[0][2][1] == REPS_CHAIN;
+    bad += check("  a project with chains saves and loads with them", ok);
+    return bad;
+}
+
 int main(void)
 {
     int bad = layout() + fidelity() + keep() + entries() + staged_all() + last_track() + torn() + wear_and_wrap() +
-              playing() + live() + scenes() + scenes_six() + song_test() + song_six() + song_rest() + migrate() +
-              dx_kit_project();
+              playing() + live() + scenes() + scenes_six() + song_test() + song_six() + song_rest() + song_once() +
+              song_chain() + song_sound() + migrate() + dx_kit_project();
     printf("%s\n", bad ? "BANK TEST FAILED" : "pattern bank tests passed");
     return bad != 0;
 }

@@ -8,7 +8,8 @@
  *     1 refused: playing, patterns full, an empty slot; 2 failed), the music's slot (127 none), changed since, its
  *     name, then each slot: used, its name. A save or a rename stops the transport first (ed_flash_stop) */
 enum { ED_TRANSPORT = 76, ED_PROJ_NAME };
-#define ED_SKIFF_CAPS 63u                       /* TRANSPORT, PROJ_NAME, POOL, LIST, PERFORM, (#21) SMP_MIX (editor.c) */
+#define ED_SKIFF_CAPS 127u                      /* TRANSPORT, PROJ_NAME, POOL, LIST, PERFORM, (#21) SMP_MIX (editor.c),
+                                                 * (2.0, #25) a step's ties (editor.c ed_step_put) */
 
 /* a name from the editor -> b (PROJ_NAME_LEN + 1), upper case; 0: refused (too long, a byte outside 32..126) */
 static int ed_proj_name_in(const uint8_t *a, uint32_t n, char *b)
@@ -41,8 +42,12 @@ static int ed_project_handle(uint32_t cmd, const uint8_t *a, uint32_t n)
     if (cmd == ED_TRANSPORT) {
         if (n && a[0] == 4u)
             rec_tap();
-        else if (n && a[0] == 1u && !song.playing && !seq_counting())
+        else if (n && a[0] == 1u && !song.playing && !seq_counting() && lists.song == SONG_ONCE)
+            song_top();                                /* ((2.0) as the panel's PLAY: SONG ONCE from the top, */
+        else if (n && a[0] == 1u && !song.playing && !seq_counting()) {
+            chain_top();                               /* a chain from its first part) */
             transport_req = 1;
+        }
         else if (n && a[0] >= 2u && a[0] <= 3u)
             transport_req = (uint8_t)a[0];
         ed_b(0);

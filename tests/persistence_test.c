@@ -116,7 +116,7 @@ static int check(const char *what, int ok)
 static void reset(void)
 {
     memset(nor, 0xFF, sizeof nor);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     memset(trk, 0, sizeof trk);
     memset(proj_slot, 0, sizeof proj_slot);
     memset(up_bank, 0, sizeof up_bank);
@@ -196,6 +196,18 @@ static int mig_ok(void)
 
 static int mig_test(void)
 {
+#if !FELUCCA_LEGACY
+    int bad = 0;
+    uint32_t before;
+    uint8_t pk[FM6_PACKED];
+    reset();
+    mig_setup();
+    before = erases;
+    mig_boot();
+    bad += check("(2.0) 1.0's FM6 bank at boot: not read (the converter moves an archive's), nothing written",
+                 upf_valid(&upf) && upf_get(0, pk) && erases == before);
+    return bad;
+#else
     int bad = 0, ok = 1;
     uint32_t cut, before, cuts = 0;
     uint8_t pk[FM6_PACKED];
@@ -263,10 +275,12 @@ static int mig_test(void)
     mig_boot();
     bad += check("no bank: nothing to move, nothing written", erases == before && upf_valid(&upf));
     return bad;
+#endif
 }
 
-/* ---- 1.2, Discussion #130: the autosave (project.c): written only when the music changed, stopped and idle 10 s, at
- * most one a minute; restored at power-on (RESTORE LAST ON, a clean boot); a damaged one ignored ---- */
+/* ---- 1.2, Discussion #130: the autosave (project.c): written only when the music changed, stopped and idle 2 s, at
+ * most one every 20 s ((2.0) 1.2: 10 s, a minute); restored at power-on (RESTORE LAST ON, a clean boot); a damaged one
+ * ignored ---- */
 static void as_run(uint32_t ms)                          /* the main loop for ms (autosave_poll checks every 250 ms) */
 {
     uint32_t end = fm1_ms + ms;
@@ -314,16 +328,16 @@ static int autosave_test(void)
     as_run(120000u);
     bad += check("autosave: power-on with none: nothing restored; 2 min unchanged: no write", ok && !as.writes && !as_erases);
     as_edit(0);
-    as_run(9000u);
+    as_run(AS_IDLE_MS - 1000u);
     ok = !as.writes;
     as_run(1500u);
-    bad += check("autosave: a change: no write within 10 s, one once idle 10 s (one erase)",
+    bad += check("autosave: a change: no write within 2 s, one once idle 2 s (one erase)",
                  ok && as.writes == 1u && as_erases == 1u && st_load(OBJ_AUTOSAVE, &raw, sizeof raw) == (int)PROJ_SKF->size &&
                  pool_erases == 1u && bank_used(0, 0));   /* (phase 5: T1's steps a pattern first, then the project) */
     as_run(600000u);
     bad += check("autosave: 10 min unchanged after it: no more writes", as.writes == 1u && as_erases == 1u);
     song.g[G_SLOT] = 3;                                  /* (the PROJECT page's pick, the selected track: not the music) */
-    song.sel = 2;
+    sel_set(2);
     as_run(120000u);
     bad += check("autosave: the selected track / PROJECT's slot pick alone: no write", as.writes == 1u);
     song.g[G_BPM] = 133;
@@ -331,10 +345,10 @@ static int autosave_test(void)
     as_run(300000u);
     ok = as.writes == 1u;
     song.playing = 0;
-    as_run(9000u);
+    as_run(AS_IDLE_MS - 1000u);
     ok &= as.writes == 1u;
     as_run(1500u);
-    bad += check("autosave: changed while playing: no write until stopped and idle 10 s, then one", ok && as.writes == 2u);
+    bad += check("autosave: changed while playing: no write until stopped and idle 2 s, then one", ok && as.writes == 2u);
     as_edit(1);
     fm1_in.notes = 1u << 7;                              /* a key held (playing the sound, stopped) */
     as_run(60000u);
@@ -344,23 +358,23 @@ static int autosave_test(void)
     as_run(20000u);
     ok &= as.writes == 2u;
     trk[1].v[0].active = 0;
-    as_run(9000u);
+    as_run(AS_IDLE_MS - 1000u);
     ok &= as.writes == 2u;
     as_run(1500u);
-    bad += check("autosave: a key held, a voice sounding: no write (an erase stops the audio); after, idle 10 s: one",
+    bad += check("autosave: a key held, a voice sounding: no write (an erase stops the audio); after, idle 2 s: one",
                  ok && as.writes == 3u);
     as_run(60000u);
-    as_edit(2);                                          /* written 10 s on; then edits 15 s apart: a minute's gap */
-    as_run(11000u);
+    as_edit(2);                                          /* written 2 s on; then edits 5 s apart: the 20 s gap */
+    as_run(AS_IDLE_MS + 1000u);
     w = as.writes;
     as_edit(3);
-    as_run(15000u);
+    as_run(5000u);
     ok = as.writes == w;
     as_edit(4);
-    as_run(15000u);
+    as_run(5000u);
     ok &= as.writes == w;
-    as_run(40000u);
-    bad += check("autosave: two writes at least 60 s apart", ok && as.writes == w + 1u);
+    as_run(AS_GAP_MS);
+    bad += check("autosave: two writes at least 20 s apart", ok && as.writes == w + 1u);
     as_run(60000u);
     w = as.writes;
     as_edit(5);
@@ -428,7 +442,7 @@ static int autosave_test(void)
         bad += check("autosave: a record that is no project: ignored", autosave_boot(1) == 0 && song.g[G_BPM] != 97);
     }
     {   /* (phase 6) an autosave of four tracks (SKF2: the firmware before): restored, the last track as at power-on;
-         * the next write the format of now (SKF3 with six tracks) */
+         * the next write the format of now (SKF3 with six tracks). ((2.0) Ignored: the converter's) */
         static project_t pj;
         static project_store_t w;
         uint32_t k = NTRK - 1u;
@@ -440,11 +454,15 @@ static int autosave_test(void)
         as_power_on();
         song.g[G_BPM] = 120;
         trk[k].eng_req = ENGI_FM6;
+#if !FELUCCA_LEGACY
+        bad += check("(2.0) autosave: an SKF2 one (before 2.0): ignored", ok && autosave_boot(1) == 0 && song.g[G_BPM] == 120);
+#else
         ok &= autosave_boot(1) == 1 && song.g[G_BPM] == 123 && trk[k].eng_req == trk_def_engine(k);
         as_edit(9);
         as_run(11000u);
         ok &= st_load(OBJ_AUTOSAVE, &w, sizeof w) == (int)PROJ_SKF->size && *(const uint32_t *)w.raw == PROJ_SKF->magic;
         bad += check("autosave: an SKF2 one restored (the last track as at power-on); written again as SKF2 / SKF3", ok);
+#endif
     }
     /* a power cut in the middle of a write: the copy before stays in charge */
     memset(nor + T_AS, 0xFF, 0x2000u);
@@ -480,17 +498,19 @@ static int autosave_test(void)
     song.playing = 0;
     as_run(20000u);
     printf("persist:   a 4-hour session (3 h editing and playing, 1 h idle): %u autosave writes\n", (unsigned)as_erases);
-    bad += check("autosave wear: a session's writes stay far below one a minute", as_erases > 0u && as_erases <= 60u);
+    bad += check("autosave wear: a session's writes at most three a minute of its editing (none playing, none idle)",
+                 as_erases > 0u && as_erases <= 180u * 60000u / AS_GAP_MS);
     {   /* worst case: a change, then just enough idle, over and over, for 8 hours */
         uint32_t i;
         as_erases = pool_erases = 0;
-        for (i = 0; i < 8u * 3600u / 11u; i++) {
+        for (i = 0; i < 8u * 3600u * 1000u / (AS_IDLE_MS + 1000u); i++) {
             as_edit(i);
-            as_run(11000u);
+            as_run(AS_IDLE_MS + 1000u);
         }
-        printf("persist:   worst case, 8 h of a change every 11 s: %u writes (%u per sector)\n", (unsigned)as_erases,
+        printf("persist:   worst case, 8 h of a change every 3 s: %u writes (%u per sector)\n", (unsigned)as_erases,
                (unsigned)(as_erases / 2u));
-        bad += check("autosave wear, worst case: at most one write a minute (480 in 8 h)", as_erases <= 8u * 60u + 1u);
+        bad += check("autosave wear, worst case: at most one write every 20 s (1,440 in 8 h)",
+                     as_erases <= 8u * 3600u * 1000u / AS_GAP_MS + 1u);
         {   /* (phase 5) the tracks' patterns: their chunks each written once a round, round their sectors + 4 spare */
             uint32_t k, c, n = 0, seen = 0;
             for (k = 0; k < NTRK; k++)
@@ -500,9 +520,157 @@ static int autosave_test(void)
                 }
             printf("persist:   .. and %u pattern pool erases, the tracks' in %u chunks (about %u per sector)\n",
                    (unsigned)pool_erases, (unsigned)n, (unsigned)(pool_erases / (n + 4u)));
-            bad += check("  (phase 5) the patterns too: a round a minute, each chunk changed one write a round",
+            bad += check("  (phase 5) the patterns too: a round every 20 s at most, each chunk changed one write a round",
                          n && pool_erases > 0u && pool_erases <= as_erases * n);
         }
+    }
+    return bad;
+}
+
+/* (2.0, the unit 2026-10-24: a sound made on T1, SAVE > USER, the unit switched off at once: T1 came back as ACID, the
+ * autosave of before; the sound itself in U01) a save brings the autosave up to date within a second, the 20 s gap or
+ * not, and the track is on the slot it saved to (#20: its name on HOME, the autosave's user byte) */
+static int autosave_save_test(void)
+{
+    int bad = 0, ok;
+    uint32_t w, k;
+    int16_t rel;
+    reset();
+    as_power_on();
+    as_erases = pool_erases = 0;
+    (void)autosave_boot(1);
+    sel_set(0);
+    as_edit(0);
+    as_run(AS_IDLE_MS + 1000u);                          /* (an autosave: the 20 s gap from it) */
+    w = as.writes;
+    trk[0].p[P_REL] = (int16_t)(trk[0].p[P_REL] + 9);    /* the sound turned, 5 s later saved */
+    as_run(5000u);
+    ok = as.writes == w && up_store(0, "MINE") == 0 && trk[0].user == 1u;
+    as_run(1500u);
+    rel = trk[0].p[P_REL];
+    bad += check("(2.0) SAVE > USER: the track on the slot (U01); the autosave written within a second (no gap)",
+                 ok && w == 1u && as.writes == w + 1u);
+    as_power_on();
+    ok = autosave_boot(1) == 1 && trk[0].p[P_REL] == rel && trk[0].user == 1u;
+    bad += check("  .. switched off at once, on: T1 its sound, on U01 (named on HOME)", ok);
+    as_run(70000u);
+    w = as.writes;
+    trk[0].p[P_REL] = (int16_t)(trk[0].p[P_REL] + 3);
+    as_run(11000u);
+    ok = as.writes == w + 1u && up_store(1, "MINE 2") == 0 && trk[0].user == 2u;   /* (the sound already written) */
+    as_run(1500u);
+    bad += check("  .. saved after the autosave had the sound: the slot alone written (the signature holds it)",
+                 ok && as.writes == w + 2u);
+    sel_set(2);
+    ok = up_store(1, "MINE 3") == 0 && trk[2].user == 2u && trk[0].user == 0u;
+    sel_set(0);
+    bad += check("  .. another track's sound stored over U02: that track on it, T1 off it (it plays what it had)", ok);
+    as_run(70000u);
+    w = as.writes;
+    as_edit(1);
+    as_run(1000u);
+    ok = as.writes == w && project_save(2) == 0;
+    as_run(1500u);
+    bad += check("  SAVE > PROJECT: the autosave written within a second too", ok && as.writes == w + 1u);
+    as_run(70000u);
+    w = as.writes;
+    autosave_soon();                                     /* (a load of the music as it is: nothing new) */
+    as_run(1500u);
+    ok = as.writes == w;
+    trk[2].p[P_REL] = (int16_t)(trk[2].p[P_REL] + 5);    /* (a sound's change: no pattern to keep, a round of one poll) */
+    as_run(1600u);                                       /* (past AS_SOON_MS, short of AS_IDLE_MS) */
+    ok &= as.writes == w;
+    as_run(1500u);
+    bad += check("  a save with nothing new for it: no write; the next change waits its 2 s again", ok && as.writes == w + 1u);
+    as_run(70000u);
+    w = as.writes;
+    as_edit(3);
+    autosave_soon();
+    for (k = 0; k < 10u; k++) {                          /* an editor transfer going on: holds it */
+        as_run(500u);
+        autosave_hold();
+    }
+    ok = as.writes == w;
+    as_run(1500u);
+    ok &= as.round;                                      /* (begun a second after it: T4's pattern first, an erase a poll) */
+    as_run(9000u);
+    bad += check("  .. none during an editor transfer; a second after it, the round (a pattern, then the project)",
+                 ok && as.writes == w + 1u);
+    return bad;
+}
+
+/* Settings another firmware saved, at Skiff's first boot (main.c's order). Felucca 1.4+ keeps its FX key map in
+ * [15][14..23] (white key p's code in 5 bits from bit 5p, 1 = none), 1.2's flags in [24], LEDS INV in [25], 1.3's
+ * HOME view in [26], 1.5.5's AUTO SELECT in bit 7 of [28]; JIANT its SCOPE, SKIN, USB STEMS, USB LEVEL in [19..22],
+ * its palette mark 0x4A in [23], MIDI OUT, its revision, LOAD in [24..26]. Skiff's: CLOCK MIDI IN TUNE, LIST, HINTS,
+ * the one-time changes, its mark, PERFORM KEYS, LAUNCH, FEEL. (YouTube, 2026-10-20: Felucca to Skiff, PLAY and REC
+ * dead till RESET SETTINGS, no external clock: keys 7 and 15 NONE read as CLOCK TRS) */
+static persist_t per4_now(void)                  /* ((2.0) the PER4 a unit of before kept of these settings */
+{
+    persist_t f;
+    memset(&f, 0, sizeof f);
+    f.magic = PERSIST_MAGIC; f.palette = palette_to_stored(settings.palette); f.lowcut = settings.lowcut;
+    f.zoom = leds_to_stored(settings.zoom, settings_leds); f.bold = hold_to_stored(0, settings_hold); f.panel = panel;
+    memcpy(&f.favorites, &favorites, sizeof favorites);
+    return f;
+}
+static int other_fw_test(void)
+{
+    static const uint8_t REC[3][11] = {          /* [15][18..28]: Felucca 1.6, JIANT 0.9.10, Skiff's own */
+        {1u << 3, 0, 0, 0, 0, 1u << 3, 0x01, 1, 1, 0, 0x80},
+        {0, 1, 3, 1, 2, 0x4A, 1, 2, 1, 0, 0},
+        {1, 1, (uint8_t)-4, 3, 1, 2, 0xA5, 1, 3, 0, 0x80},   /* (CLOCK USB: the SMK has no TRS clock) */
+    };
+    int bad = 0, i;
+    for (i = 0; i < 4; i++) {                    /* (i 3: (2.0) Skiff's own as 2.0 saves them, SKS1) */
+        union { persist_t per; sks_t sks; } f;
+        int ok;
+        reset();
+        settings_init();
+        f.per = per4_now();
+        memcpy(&f.per.favorites.factory[15][18], REC[i < 3 ? i : 2], sizeof REC[0]);
+        if (i == 3) {
+            memcpy(&favorites.factory[15][18], REC[2], sizeof REC[2]);
+            memset(&f.sks, 0, sizeof f.sks);
+            settings_export(&f.sks);
+        }
+        st_save(OBJ_SETTINGS, &f, i < 3 ? sizeof f.per : sizeof f.sks);
+        memset(&favorites, 0, sizeof favorites);
+        memset(&song, 0, sizeof song); sel_set(0);
+        if (settings_import(&f, st_load(OBJ_SETTINGS, &f, sizeof f))) {   /* (project.c persist_boot's; then main.c's */
+            if (f.sks.magic != SKS_MAGIC)                                 /* order) */
+                memset(&f.sks, 0, sizeof f.sks);
+            persist_saved = f.sks;
+            settings_export(&persist_saved);
+        }
+        settings_init();
+        if (ui_set_rev < 1u) {
+            ui_prefs |= PREF_BPM_LOCK;
+            ui_set_rev = 1;
+            settings_save();
+        }
+#if FELUCCA_LEGACY
+        proj_migrate(1);
+#endif
+        unit_g_adopt = ui_set_rev < 2u;
+        autosave_boot(1);
+        unit_g_boot();
+        printf("persist:   %s: CLOCK %d MIDI IN %d TUNE %d, LIST %u HINTS OFF %u LAUNCH %u KEYS %u FEEL %u BPM LOCK %u\n",
+               i == 0 ? "Felucca 1.6" : i == 1 ? "JIANT" : i == 2 ? "Skiff" : "Skiff SKS1", song.g[G_CLOCK],
+               song.g[G_ROUTE], song.g[G_TUNE],
+               ui_ptag, ui_hints_off, (unsigned)launch_mode(), (unsigned)perf_scenes(), (ui_rec_prefs & REC_FEEL) != 0u,
+               (ui_prefs & PREF_BPM_LOCK) != 0u);
+        if (i < 2)
+            ok = !song.g[G_CLOCK] && !song.g[G_ROUTE] && !song.g[G_TUNE] && !ui_ptag && !ui_hints_off &&
+                 launch_mode() == LAUNCH_LOOP && !perf_scenes() && !(ui_rec_prefs & REC_FEEL) && (ui_prefs & PREF_BPM_LOCK) &&
+                 ui_set_rev == 2u;
+        else
+            ok = song.g[G_CLOCK] == 1 && song.g[G_ROUTE] == 1 && song.g[G_TUNE] == -4 && ui_ptag == 3u && ui_hints_off &&
+                 launch_mode() == LAUNCH_NOW && perf_scenes() && (ui_rec_prefs & REC_FEEL) && !(ui_prefs & PREF_BPM_LOCK);
+        bad += check(i == 0 ? "Felucca 1.4+ settings: its FX keys etc. are not Skiff's CLOCK MIDI IN TUNE ..: the defaults"
+                     : i == 1 ? "JIANT settings: its SKIN, USB, LOAD .. are not Skiff's: the defaults"
+                     : i == 2 ? "  .. Skiff's own (its mark): every one as saved"
+                              : "  .. (2.0) Skiff's SKS1: every one as saved", ok);
     }
     return bad;
 }
@@ -511,9 +679,11 @@ int main(void)
 {
     int bad = 0, ok;
     uint32_t before;
-    persist_t p;
+    sks_t p;
     project_store_t old, got;
+#if FELUCCA_LEGACY
     project_v5_t v5;
+#endif
     up_bank_t bank;
     up_rec_t r;
     reset();
@@ -557,14 +727,13 @@ int main(void)
             for (k = 0; k < 7u && i + k < 22u; k++) { g[0] |= (uint8_t)(raw[i + k] >> 7 << k); g[1 + k] = raw[i + k] & 127u; }
         }
         bg = (uint16_t)(raw[0] | raw[1] << 8);
-        favorites.factory[15][24] = 0xA5u;                 /* (SCENE_FREED: every unit since phase 5) */
         song.playing = 1;
         ok = ed_colors(a, sizeof a) == 4 && cpal_on() && T_BG == bg && ux.quark && persist_pending == 1;
         song.playing = 0;
         settings_poll();
         ok &= !persist_pending && persist_saved.palette == palette_to_stored(UI_QUARK_INDEX) &&
-              persist_saved.favorites.factory[15][14] == (3u | UI_QUARK_INDEX << 2) &&
-              !memcmp(&persist_saved.favorites.factory[14][8], raw, sizeof raw) && !memcmp(CPAL_COLS, raw, sizeof raw);
+              persist_saved.s.cpal == (3u | UI_QUARK_INDEX << 2) &&
+              !memcmp(persist_saved.cpal_cols, raw, sizeof raw) && !memcmp(CPAL_COLS, raw, sizeof raw);
         memset(&favorites, 0, sizeof favorites); memset(&settings, 0, sizeof settings);   /* (a power cycle) */
         memset(&persist_saved, 0, sizeof persist_saved);
         ux_cpal = 0; palette_set(0);
@@ -574,7 +743,7 @@ int main(void)
         persist_saved = p;
         before = erases;
         ok &= ed_colors(rm, 1) == 0 && erases > before && !cpal_stored() && T_BG == UI_PALETTES[UI_QUARK_INDEX].bg &&
-              persist_saved.favorites.factory[15][14] == 0u && persist_saved.palette == palette_to_stored(UI_QUARK_INDEX);
+              persist_saved.s.cpal == 0u && persist_saved.palette == palette_to_stored(UI_QUARK_INDEX);
         bad += check("(#27) COLORS: stored while playing, written at STOP, in use after a power cycle; REMOVE written", ok);
     }
 #if BOARD_SMK37
@@ -589,7 +758,7 @@ int main(void)
 #else
     {   /* MENU_SET (editor_menu.c): the same settings record, the same deferral, retry and idempotence */
         const uint8_t leds_off[] = {4, 0, 64}, large_on[] = {2, 1, 64}, hold_06[] = {5, 3, 64}, eq_bass[] = {9, 2, 64};
-        persist_t q;
+        sks_t q;
         reset();
         settings_init();
         song.playing = 1;
@@ -607,7 +776,7 @@ int main(void)
         ok &= ed_rep[0] == 0 && settings_hold == 3u;
         ed_repn = 0; ed_menu_handle(ED_MENU_SET, eq_bass, 3);
         ok &= ed_rep[0] == 0 && st_load(OBJ_SETTINGS, &q, sizeof q) == (int)sizeof q && q.lowcut == 2u &&
-              hold_from_stored(q.bold) == 3u && (q.favorites.factory[15][30] & PREF_LARGE) && leds_from_stored(q.zoom) == LEDS_OFF;
+              hold_from_stored(q.bold) == 3u && (q.s.prefs & PREF_LARGE) && leds_from_stored(q.zoom) == LEDS_OFF;
         bad += check("MENU_SET stopped: rc 0, saved at once (LARGE, HOLD, SPEAKER EQ), the others kept", ok);
         before = erases;
         ed_repn = 0; ed_menu_handle(ED_MENU_SET, hold_06, 3);
@@ -649,7 +818,7 @@ int main(void)
     bad += check("STOP: latest settings saved and request cleared", !persist_pending && erases == 1u &&
                   st_load(OBJ_SETTINGS, &p, sizeof p) == (int)sizeof p && p.palette == palette_to_stored(2) &&
                   p.lowcut == 2u && p.zoom == 1u && p.bold == 1u &&
-                  p.favorites.factory[8][0] == 1 && p.favorites.user == (1u << 31) &&
+                  p.fav[8][0] == 1 && p.fav_user == (1u << 31) &&
                   !memcmp(&p.panel, &panel, sizeof panel));
     settings_save();
     bad += check("unchanged settings do not erase", !persist_pending && erases == 1u);
@@ -740,14 +909,22 @@ int main(void)
                       !memcmp(proj_scratch.ent, lists.ent, sizeof lists.ent) && proj_scratch.ent[0][lists.cur[0]][0] &&
                       st0.note[0] == trk[0].step[0].note[0]);
     }
-    {   /* FUN7 itself refuses a step outside its fields: a damaged slot is empty, the tracks stay */
+    {   /* FUN7 itself refuses a step outside its fields: a damaged slot is empty, the tracks stay ((2.0) SKF4 a REPS) */
         step_t keep = trk[0].step[0];
         old = proj_slot[0];
+#if FELUCCA_LEGACY
         project_capture(&proj_scratch);                           /* (an SKF1 slot: the format before phase 5's) */
         proj_pack(&proj_slot[0], &proj_scratch);
         proj_slot[0].raw[68 + PROJ_NP + 2 + 4] = 7;               /* track 1 step 1: n = 7 */
         bad += check("damaged FUN7 slot (hash ok, n > 4) is refused", (memcpy(proj_slot[0].raw + PROJ_STORE_SIZE - 4,
                       &(uint32_t){proj_hash(proj_slot[0].raw, PROJ_STORE_SIZE - 4)}, 4), !project_used(0)));
+#else
+        project_capture(&proj_scratch);
+        proj_pack2(&proj_slot[0], &proj_scratch, PROJ_SKF);
+        proj_slot[0].raw[PROJ_ENT4 + 1u] = 40;                    /* track 1 entry A: REPS 41 */
+        bad += check("(2.0) damaged SKF4 slot (hash ok, REPS past 16) is refused", (memcpy(proj_slot[0].raw + PROJ_STORE4 - 4,
+                      &(uint32_t){proj_hash(proj_slot[0].raw, PROJ_STORE4 - 4)}, 4), !project_used(0)));
+#endif
         st_save(OBJ_PROJECT0, &proj_slot[0], sizeof proj_slot[0]);
         ui.msg[0] = 0;
         project_load(0);
@@ -756,8 +933,22 @@ int main(void)
         proj_slot[0] = old;
         st_save(OBJ_PROJECT0, &proj_slot[0], sizeof proj_slot[0]);
     }
-    {   /* an older format (FUN5) with values FUN7 cannot pack still loads, bounded */
+    {   /* an older format (FUN5) with values FUN7 cannot pack still loads, bounded ((2.0) the converter's; 2.0: OLD FORMAT) */
         uint32_t i;
+#if !FELUCCA_LEGACY
+        static uint8_t v5[3352];                                   /* (FUN5's size) */
+        step_t keep = trk[0].step[0];
+        memset(v5, 0, sizeof v5);
+        ((uint32_t *)v5)[0] = 0x46554E35u;
+        ((uint32_t *)v5)[1] = sizeof v5;
+        ((uint32_t *)v5)[sizeof v5 / 4u - 1u] = proj_hash(v5, sizeof v5 - 4u);
+        st_save(OBJ_PROJECT0 + 3u, v5, sizeof v5);
+        memset(proj_slot[3].raw, 0, 4);
+        ui.msg[0] = 0;
+        project_load(3);
+        bad += check("(2.0) a FUN5 slot: OLD FORMAT (used, so SAVE asks), not loaded, the tracks as they were",
+                     !strcmp(ui.msg, "OLD FORMAT") && project_used(3) && !memcmp(&trk[0].step[0], &keep, sizeof keep));
+#else
         memset(&v5, 0, sizeof v5);
         v5.magic = PROJ_MAGIC_V5;
         v5.size = sizeof v5;
@@ -777,6 +968,7 @@ int main(void)
                       trk[0].step[0].time == ST_REST && trk[0].step[0].note[0] == 127u &&
                       !trk[0].step[0].note[1] && trk[0].step[0].acc == 5u && project_used(3));
         bad += check("FUN5 load clamps a parameter into its range", trk[0].p[P_LEVEL] == TP[P_LEVEL].max);
+#endif
         for (i = 0; i < P_COUNT; i++) {
             uint32_t e;
             for (e = 0; e < NENGINES; e++)
@@ -841,6 +1033,8 @@ int main(void)
                   irq_races == 3u && song.playing && !transport_req && persist_pending && erases == before);
     bad += mig_test();
     bad += autosave_test();
+    bad += autosave_save_test();
+    bad += other_fw_test();
     printf("%s\n", bad ? "PERSISTENCE TEST FAILED" : "persistence test passed");
     return bad != 0;
 }

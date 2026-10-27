@@ -10,7 +10,8 @@
  *   MOMENTARY    LFO held: KNOB 1..4 on HOME, the sound / FX pages and MIXER change their values, LFO let go puts them
  *                back; OCT+ keeps; no automation; a load puts them back first; STEP and a layer as ever; 8 at most
  *   LANE MUTES   DRUM and DRUM-X: the EDIT layer's black keys 1..8 mute the lanes (the hit unheard, the others as
- *                ever); OCT- puts them back as the layer opened; a sound or project load clears them
+ *                ever); OCT- puts them back as the layer opened; (2.0.1, #54) OCT+ every lane on at once; a sound or
+ *                project load clears them
  *   PREVIEW      MENU > CONTROL > STEP PREVIEW ON: KNOB 1 on ROLL, stopped, sounds the step the cursor lands on; OFF,
  *                or playing, silent; the MIDI tab holds CLOCK and MIDI IN
  *   PROGRAM      MIDI Program Change: the channel's track loads its n-th preset (PRESETS order, aliases skipped);
@@ -26,6 +27,8 @@
  *                a ratcheted step on time); none of them: as before
  *   SPREAD       VOICE 2's KNOB 3: a POLY part's voices left and right of PAN in turn (127: the first hard left, the
  *                next hard right); 0, or MONO: every voice on PAN, as before
+ *   LANE PANS    (2.0, #36) DRUM and DRUM-X: a lane panned hard left silent on the right (and the other way), half way
+ *                at half; the lanes at C as before, the track's PAN over them; all at C: mix_part's own loop
  *   ENV SYNC     ENV DEST's KNOB 4: ATK DEC REL as note values (1/4 at 120 BPM: an attack of 22050 samples, a release
  *                99 % down after it), a knob step a note value; OFF: the tables, bit for bit
  *   CHANNELS     MENU > MIDI > T1..T6 CHANNEL: a track heard on its channel, its own one let go (its held notes too);
@@ -131,7 +134,7 @@ static track_t *melody(uint32_t on)                     /* T1, LEN 16 at 1/16, 1
     track_t *t;
     uint32_t i;
     ui_power_on();
-    song.sel = 0;
+    sel_set(0);
     t = &trk[0];
     track_defaults_steps(t);
     motion_clear(t);
@@ -219,7 +222,7 @@ static int euclid(void)
     ok &= !eu.on && eu_rest_but(t, 16, 4, 16, 2) && !ui.layer;
     bad += check("  the layer let go with it open: applied", ok);
     ui_power_on();                                     /* DRUM: the selected lane only */
-    song.sel = 3;
+    sel_set(3);
     set_engine_of(TSEL, ENGI_DRUM);
     TSEL->engine = TSEL->eng_req;
     track_defaults_steps(TSEL);
@@ -347,7 +350,7 @@ static track_t *pattern(uint32_t len, uint32_t cur, uint32_t idx, uint32_t graph
     track_t *t;
     uint32_t i;
     ui_power_on();
-    song.sel = 0;
+    sel_set(0);
     t = &trk[0];
     track_defaults_steps(t);
     t->p[P_SLEN] = (int16_t)len;
@@ -376,7 +379,7 @@ static int follow_play(void)
     ok &= ui.bank == 2u;
     at(t, 5);
     ok &= ui.bank == 0u && ui.cursor == 0u && t->p[P_SLEN] == 40 && !memcmp(ref, t->step, sizeof ref);
-    t = pattern(40, 0, 0, GR_TILES);
+    t = pattern(40, 0, 0, GR_FEEL);
     at(t, 39);
     ok &= ui.bank == 2u;
     bad += check("FOLLOW: ROLL and STEP, 40 steps, playing: the bank is the playhead's (0 1 2 0; the last 8 too); the "
@@ -406,18 +409,18 @@ static int follow_play(void)
     t = pattern(40, 0, 0, GR_ROLL);
     at(t, 20);
     ok = ui.bank == 1u;
-    kt(EN_K1, 1);                                      /* the cursor to step 2: its bank (0) */
+    kt(EN_PRESET, 1);                                  /* the cursor to step 2: its bank (0) */
     ok &= ui.cursor == 1u && ui.bank == 0u;
     at(t, 36);
     ok &= ui.bank == 0u;
     fm1_ms += 3100u;
     frame();
     ok &= ui.bank == 2u;
-    kt(EN_K2, 1);                                      /* an edit of the cursor's step: back to it */
+    kt(EN_K4, 1);                                      /* an edit of the cursor's step ((2.0) VELOCITY): back to it */
     ok &= ui.bank == 0u;
     at(t, 0); at(t, 20); at(t, 39); at(t, 1); at(t, 20);   /* (once round the pattern: following again) */
     ok &= ui.bank == 1u;
-    bad += check("  KNOB 1 (the cursor) or an edit holds the cursor's bank; 3 s, or one pass round, follows again", ok);
+    bad += check("  PRESETS (the cursor) or an edit holds the cursor's bank; 3 s, or one pass round, follows again", ok);
     song.playing = 0;
     return bad;
 }
@@ -429,6 +432,7 @@ static int momentary(void)
     int16_t *p0, *p1, v0, v1, g0;
     uint32_t k;
     ui_power_on();
+    ret_set(RET_SNAP);                                 /* ((2.0, D 2A) back at once, as 1.3's: ui_test.c's way back) */
     go_home();
     (void)home_param(0, &p0);
     (void)home_param(1, &p1);
@@ -484,6 +488,7 @@ static int momentary(void)
     ok &= *p0 == v0;
     bad += check("  a sound load with LFO held: the values back first (SAVE held: the sound as it was)", ok);
     ui_power_on();
+    ret_set(RET_SNAP);
     go_page(GR_ROLL); frame();
     btn_down(B_LFO); frame();
     kt(EN_K2, 1);
@@ -515,11 +520,8 @@ static int momentary(void)
     bad += check("  with a layer's button held the knobs are the layer's", ok);
     go_home(); frames(400);
     btn_down(B_LFO); frame();
-    for (k = 0; k < MOM_N; k++) {
-        mom.vp[k] = &trk[k % NTRK].p[P_LEVEL + k / NTRK];
-        mom.v[k] = *mom.vp[k];
-    }
-    mom.n = MOM_N;
+    for (k = 0; k < MOM_LFO; k++)
+        (void)mom_hold(&trk[k % NTRK].p[P_LEVEL + k / NTRK], 0);
     v0 = *p0;
     ui.msg_t = 0;
     kt(EN_K1, -3);
@@ -554,7 +556,7 @@ static int lane_mutes(void)
         track_t *t;
         int32_t k0, s0;
         ui_power_on();
-        song.sel = 3;
+        sel_set(3);
         t = TSEL;
         set_engine_of(t, e ? ENGI_DRUMX : ENGI_DRUM);
         t->engine = t->eng_req;
@@ -574,8 +576,16 @@ static int lane_mutes(void)
         key_down(black(1)); frame(); key_up(black(1)); frame();
         btn_up(B_EDIT); frame();
         ok &= drum_mute[3] == 2u;
+        btn_down(B_EDIT); frames(500);                  /* ((2.0.1, #54) the layer again: two more muted, OCT+ all on) */
+        key_down(black(0)); frame(); key_up(black(0)); frame();
+        key_down(black(2)); frame(); key_up(black(2)); frame();
+        ok &= drum_mute[3] == 7u && hit_level(t, 0) == 0;
+        oct_fwd();
+        ok &= !drum_mute[3] && hit_level(t, 0) > 0 && ui.layer == LAYER_EDIT;
+        btn_up(B_EDIT); frame();
+        ok &= !drum_mute[3];
         bad += check(e ? "  DRUM-X the same" : "LANE MUTES: DRUM, EDIT layer black key 1: the kick unheard, the snare as ever; "
-                     "again: back; OCT- as the layer opened; kept when let go", ok);
+                     "again: back; OCT- as the layer opened; kept when let go; OCT+ every lane on", ok);
     }
     apply_preset_to(TSEL, 0);                          /* (the engine's first preset: a sound load) */
     bad += check("  a sound load clears the track's mutes", !drum_mute[3]);
@@ -602,24 +612,24 @@ static int step_preview(void)
     ui.cursor = 2;
     favorites.factory[15][24] = 0xA5u;                  /* (a migrated unit's settings: the byte is free) */
     menu_put(MI_PREVIEW, 0);
-    kt(EN_K1, 1);                                      /* OFF: the cursor to step 4, silent */
+    kt(EN_PRESET, 1);                                      /* OFF: the cursor to step 4, silent */
     events_block(CTL);
     ok = ui.cursor == 3u && !aud_req && !gates_on(t, 63);
     menu_put(MI_PREVIEW, 1);
     ok &= menu_get(MI_PREVIEW) == 1u && str_eq(menu_vname(MI_PREVIEW, 1), "ON") && MI_TAB[MI_PREVIEW] == MTAB_CONTROL;
-    kt(EN_K1, 1);                                      /* ON: step 5 sounds once */
+    kt(EN_PRESET, 1);                                      /* ON: step 5 sounds once */
     ok &= aud_req == (4u << 8 | 1u);
     events_block(CTL);
     ok &= !aud_req && gates_on(t, 64) == 1u && !song.playing;
     events_block(div_samples(2));                      /* (a 1/16 at the track's GATE: let go) */
     ok &= !gates_on(t, 64);
     seq_start();
-    kt(EN_K1, -1);                                     /* playing: no preview */
+    kt(EN_PRESET, -1);                                     /* playing: no preview */
     ok &= !aud_req;
     seq_stop();
     menu_put(MI_PREVIEW, 0);
     ok &= MI_TAB[MI_CLOCK] == MTAB_MIDI && MI_TAB[MI_ROUTE] == MTAB_MIDI;
-    bad += check("STEP PREVIEW: ON, KNOB 1 on ROLL (stopped) sounds the step it lands on, a 1/16; OFF or playing, "
+    bad += check("STEP PREVIEW: ON, PRESETS on NOTES (stopped) sounds the step it lands on, a 1/16; OFF or playing, "
                  "silent; MIDI tab: CLOCK, MIDI IN", ok);
     return bad;
 }
@@ -644,7 +654,7 @@ static int program_change(void)
     frame();
     ok &= trk[1].preset == k && !ui.mpc[1];
     song.g[G_ROUTE] = 1;                               /* SEL: any channel, the selected track */
-    song.sel = 2;
+    sel_set(2);
     e = trk[2].eng_req % NENGINES;
     midi_event(0xC0u, 9, 1, 0);
     frame();
@@ -801,6 +811,55 @@ static int spread(void)
     return bad;
 }
 
+/* ------------------------------------------------- (2.0, #36) LANE PANS --- */
+static void lp_hit(uint32_t eng, uint32_t lane, int32_t kick, int32_t snare, int32_t pan, int64_t *l, int64_t *r)
+{
+    uint64_t h = 0;
+    track_t *t = &trk[0];
+    uint32_t k;
+    ui_power_on();
+    stop_transport();
+    song.master_q12 = MASTER_FULL;
+    for (k = 1; k < NTRK; k++)
+        trk[k].p[P_LEVEL] = 0;
+    set_engine_of(t, eng);
+    t->engine = t->eng_req;
+    t->p[P_CHOR] = t->p[P_DLY] = t->p[P_REV] = t->p[P_DIST] = 0;
+    t->p[P_LPAN0] = (int16_t)kick;
+    t->p[P_LPAN0 + 1u] = (int16_t)snare;
+    t->p[P_PAN] = (int16_t)pan;
+    memset(t->v, 0, sizeof t->v);
+    lc_l1 = lc_l2 = lc_r1 = lc_r2 = dc_l = dc_r = dce_l = dce_r = 0;
+    trk_note_on(t, DRUM_LANE_NOTE[lane], 100);
+    sp_run(40, l, r, &h);
+    trk_note_off(t, DRUM_LANE_NOTE[lane]);
+}
+static int lane_pans(void)
+{
+    int bad = 0, ok;
+    int64_t l, r;
+    lp_hit(ENGI_DRUM, 0, 0, 0, 0, &l, &r);
+    ok = l > 0 && l == r && !trk[0].lpan_on;
+    lp_hit(ENGI_DRUM, 0, -64, 0, 0, &l, &r);
+    ok &= l > 0 && r == 0 && trk[0].lpan_on;
+    lp_hit(ENGI_DRUM, 0, 63, 0, 0, &l, &r);
+    ok &= r > 0 && l < r / 60;                          /* (63: 1/64 left on the far side) */
+    lp_hit(ENGI_DRUM, 0, -32, 0, 0, &l, &r);
+    ok &= r > l * 45 / 100 && r < l * 55 / 100;
+    bad += check("LANE PANS: all at C, the kit as before (mix_part's own loop); the KICK hard left: the right silent; "
+                 "right: the left; half left: the right at half", ok);
+    lp_hit(ENGI_DRUM, 1, -64, 0, 0, &l, &r);            /* (the snare, at C, beside the kick hard left) */
+    ok = l > 0 && l == r && trk[0].lpan_on;
+    lp_hit(ENGI_DRUM, 1, -64, 63, 0, &l, &r);           /* (the snare right, the kick left: its own pan) */
+    ok &= r > 0 && l < r / 60;
+    lp_hit(ENGI_DRUM, 0, 0, 63, -64, &l, &r);           /* (the kick at C, the snare right, the track's PAN hard left) */
+    ok &= l > 0 && r == 0 && trk[0].lpan_on;
+    lp_hit(ENGI_DRUMX, 0, -64, 0, 0, &l, &r);           /* (DRUM-X: its voices' lane in s[0] as DRUM's) */
+    ok &= l > 0 && r == 0 && trk[0].lpan_on;
+    bad += check("  a lane at C beside them: both sides the same; the track's PAN over the lanes; DRUM-X the same", ok);
+    return bad;
+}
+
 /* ---------------------------------------------------------- ENV SYNC --- */
 static int env_sync(void)
 {
@@ -844,10 +903,10 @@ static int env_sync(void)
     ok &= t->esync_k[0] * 2u >= ((1u << 24) * CTL / 44100u) * 2u - 2u && t->esync_k[0] <= (1u << 24) * CTL / 44100u + 1u;
     t->p[P_ESYNC] = 0;
     song.g[G_BPM] = 120;
-    go_title("ENV DEST");
-    ok &= cur_page()->id[3] == P_ESYNC;
+    go_title("LFO 2");                                  /* ((2.0, D 1A) ENV DEST went into MOD: its SYNC on LFO 2) */
+    ok &= cur_page()->id[3] == P_ESYNC && str_eq(TP[P_ESYNC].label, "ENV SYNC");
     bad += check("ENV SYNC: ATK / REL 1/4 at 120 BPM: a beat (22050 samples); a step a note value (1/4 -> 1/2T); twice "
-                 "at half the tempo; OFF the tables; ENV DEST's KNOB 4", ok);
+                 "at half the tempo; OFF the tables; LFO 2's KNOB 4", ok);
     return bad;
 }
 
@@ -864,7 +923,7 @@ static int midi_learn_channels(void)
     memset(&favorites.factory[15][6], 0, 6);
     memset(favorites.factory[ENGI_DIGITAL], 0, sizeof favorites.factory[ENGI_DIGITAL]);
     song.g[G_ROUTE] = 0;
-    song.sel = 0;
+    sel_set(0);
     hold(B_HOME);                                       /* MENU > MIDI > MIDI LEARN: OCT+, the MENU closes */
     ui.menu_sel = MI_LEARN;
     press(B_OCTUP);
@@ -936,16 +995,22 @@ static int midi_learn_channels(void)
     ok &= ml_learn(50, 0, P_PAN) == 0u && ml_count() == ML_N;
     ok &= ml_learn(40, 5, P_PAN) == 1u && ml_count() == ML_N;   /* (a CC learned again: in place of its old one) */
     {   /* kept with the settings: engine 1's row, its byte 0 still DIGITAL's stars (moved to FM6's) */
-        persist_t p;
+        sks_t p;
         uint8_t row[32];
         memcpy(row, favorites.factory[ENGI_DIGITAL], 32);
-        settings_export(&p);
-        p.favorites.factory[ENGI_DIGITAL][0] = 1u;
+        settings_export(&p);                            /* ((2.0) SKS1: the map by name, ml) */
+        p.fav[ENGI_DIGITAL][0] = 1u;
         memset(favorites.factory[ENGI_DIGITAL], 0, 32);
         favorites.factory[ENGI_FM6][FM4_TO_FM6[0] / 8u] &= (uint8_t)~(1u << (FM4_TO_FM6[0] % 8u));
         settings_import(&p, (int)sizeof p);
+#if FELUCCA_LEGACY
         ok &= !memcmp(favorites.factory[ENGI_DIGITAL] + 1, row + 1, 31) && !favorites.factory[ENGI_DIGITAL][0] &&
               ((favorites.factory[ENGI_FM6][FM4_TO_FM6[0] / 8u] >> (FM4_TO_FM6[0] % 8u)) & 1u) && ml_count() == ML_N;
+#else                                                   /* ((2.0) DIGITAL's stars as they are: no list shows engine 1) */
+        ok &= !memcmp(favorites.factory[ENGI_DIGITAL] + 1, row + 1, 31) && favorites.factory[ENGI_DIGITAL][0] == 1u &&
+              !((favorites.factory[ENGI_FM6][FM4_TO_FM6[0] / 8u] >> (FM4_TO_FM6[0] % 8u)) & 1u) && ml_count() == ML_N;
+        favorites.factory[ENGI_DIGITAL][0] = 0;
+#endif
         favorites.factory[ENGI_FM6][FM4_TO_FM6[0] / 8u] &= (uint8_t)~(1u << (FM4_TO_FM6[0] % 8u));
     }
     hold(B_HOME);                                       /* LEARN CLEAR */
@@ -1011,6 +1076,7 @@ int main(void)
     bad += program_change();
     bad += mod_more();
     bad += spread();
+    bad += lane_pans();
     bad += env_sync();
     bad += midi_learn_channels();
     printf(bad ? "feat13: %d failed\n" : "feat13: all ok\n", bad);

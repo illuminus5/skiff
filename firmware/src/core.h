@@ -51,6 +51,12 @@ _Static_assert(NTRK <= 8 && NPART < NVOICE, "a track mask is a uint8_t; each par
 #define FELUCCA_FM4 0            /* the DIGITAL engine (eng_digital.c, four-operator FM): kept in the tree, not built
                                   * by default; replaced by FM6, its sounds convert (fm4_convert.c) */
 #endif
+#ifndef FELUCCA_LEGACY
+#define FELUCCA_LEGACY 0         /* (2.0, Tier B: design/TIER_B.md 10) the formats of before and their conversions: projects
+                                  * FUN1..FUN9, SKF1, SKF2 (project.c, bank.c proj_migrate), user presets 1..3 and DIGITAL
+                                  * sounds (fm4_convert.c), settings PER1..PER3, 1.0's FM6 bank. Only the converter
+                                  * (web/conv) and its tests build them; 2.0 keeps such a record's bytes (OLD FORMAT) */
+#endif
 #define NENGINES 15u             /* (Skiff) DRUM-X (14) after SLICE (13): the other engines keep their numbers */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
 #define ENGI_SLICE 13u           /* reserved without FELUCCA_SLICE, as DIGITAL is without FELUCCA_FM4 */
@@ -65,13 +71,17 @@ enum {
     F_ONOFF, F_OCT, F_STEPS, F_ST16   /* (Skiff U1) F_ST16: 0..127, 64 = 0, 3/16 semitone a step (DRUM's TUNE) */
 };
 
+/* (Skiff 2.0) 16 bytes, its fields in this order (the initializers' too): a unit is one of the few a descriptor names
+ * (PD_UNIT_OF; every other unit comes from the format, params.c param_format) */
 typedef struct {
     const char *label;
-    uint8_t fmt;
-    int16_t min, max, def;
     const char *const *names;   /* F_ENUM */
-    const char *unit;           /* F_INT / F_ENUM optional unit */
+    int16_t min, max, def;
+    uint8_t fmt;
+    uint8_t unit;               /* F_INT / F_ENUM optional unit: U_CT, U_ST, U_HZ, 0 none */
 } param_desc_t;
+enum { U_NONE, U_CT, U_ST, U_HZ };
+#define PD_UNIT_OF(d) ((d)->unit == U_CT ? "ct" : (d)->unit == U_ST ? "st" : (d)->unit == U_HZ ? "Hz" : (const char *)0)
 
 enum {                          /* per-track parameters */
     P_LEVEL,
@@ -108,6 +118,8 @@ enum {                          /* per-track parameters */
     P_SPRD,                                    /* (1.3, from Felucca) SPREAD: a POLY / UNISON track's voices around PAN */
     P_ITYPE, P_IA, P_IB, P_IC, P_IMIX,         /* (1.3, from Felucca 1.5) the INSERT, its TYPE, three values and MIX (fx.c) */
     P_ESYNC,                                   /* (1.3, from Felucca 1.5) ENV SYNC: ATK DEC REL as note values of the tempo */
+    P_LPAN0, P_LPAN1, P_LPAN2, P_LPAN3, P_LPAN4, P_LPAN5, P_LPAN6, P_LPAN7,   /* (2.0, #36) the drum lanes' PAN (voice.c
+                                                * lpan_render): stored ids 135..142, after the engine values' (sid_p) */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
     P_COUNT
 };
@@ -142,6 +154,76 @@ static void params_by_count(int16_t *out, const int16_t *in, uint32_t np, const 
         out[i] = i < nc ? in[i] : def[i];
     for (i = 0; i < 8u; i++)
         out[P_E0 + i] = in[nc + i];
+}
+
+/* (Skiff 2.0, Tier B: design/TIER_B.md 4) stored parameter ids (SID): a parameter's number in a record, fixed for good.
+ * One added later takes the next free number wherever it goes in the enum; one removed keeps its own, retired; 0..254.
+ * 2.0's first records had the P_* positions (P_LEVEL 0 .. P_E7 134). (#36) The lane pans came before P_E0 (P_LPAN0 127):
+ * their SIDs are the next free, 135..142, and the engine values keep 127..134, so sid_p swaps those two blocks of
+ * eight (its own inverse: p_sid). The globals likewise (GSID: today's G_*) */
+#define SID_COUNT ((uint32_t)P_COUNT)          /* the SIDs this firmware knows: 0 .. SID_COUNT - 1 */
+#define GSID_COUNT ((uint32_t)G_COUNT)
+#define SID_E0 127u                            /* the engine values' first SID (P_E0 before #36): frozen */
+_Static_assert(P_LPAN0 == SID_E0 && P_E0 == SID_E0 + 8u && P_COUNT == P_E0 + 8u, "sid_p: the lane pans, then E0..E7");
+static uint32_t sid_p(uint32_t sid)            /* P_COUNT: not one of ours */
+{
+    return sid < SID_E0 ? sid : sid < SID_E0 + 8u ? sid + 8u : sid < SID_COUNT ? sid - 8u : P_COUNT;
+}
+#define p_sid(p) sid_p(p)                      /* (a swap: its own inverse) */
+static uint32_t gsid_g(uint32_t sid) { return sid < GSID_COUNT ? sid : G_COUNT; }
+/* a track's parameters p into b by SID: their count, then each value + 64. How many bytes; 0 for a value no record
+ * holds (below -64, above 127) */
+static uint32_t sid_put(uint8_t *b, const int16_t *p)
+{
+    uint32_t s;
+    b[0] = (uint8_t)SID_COUNT;
+    for (s = 0; s < SID_COUNT; s++) {
+        int32_t v = p[sid_p(s)];
+        if (v < -64 || v > 127)
+            return 0;
+        b[1u + s] = (uint8_t)(v + 64);
+    }
+    return 1u + SID_COUNT;
+}
+/* .. back from b (max bytes there): the SIDs this firmware knows into p, the others passed over (a newer firmware's),
+ * the ones b lacks left as p holds them (the caller's defaults: an older record's). How many bytes it took; 0 for a
+ * record shorter than its count says or holding a byte past 191 (a value no record holds, as SKF3's reader refuses it).
+ * The values are as stored: the caller bounds them to their parameters (project.c proj_bound) */
+static uint32_t sid_get(int16_t *p, const uint8_t *b, uint32_t max)
+{
+    uint32_t n = max ? b[0] : 0u, s;
+    if (!max || 1u + n > max)
+        return 0;
+    for (s = 0; s < n; s++) {
+        if (b[1u + s] > 191u)
+            return 0;
+        if (sid_p(s) < P_COUNT)
+            p[sid_p(s)] = (int16_t)((int32_t)b[1u + s] - 64);
+    }
+    return 1u + n;
+}
+/* the globals g into b by GSID: their count, then each value (16 bits, little-endian). How many bytes */
+static uint32_t gsid_put(uint8_t *b, const int16_t *g)
+{
+    uint32_t s;
+    b[0] = (uint8_t)GSID_COUNT;
+    for (s = 0; s < GSID_COUNT; s++) {
+        uint16_t v = (uint16_t)g[gsid_g(s)];
+        b[1u + 2u * s] = (uint8_t)v;
+        b[2u + 2u * s] = (uint8_t)(v >> 8);
+    }
+    return 1u + 2u * GSID_COUNT;
+}
+/* .. back, as sid_get */
+static uint32_t gsid_get(int16_t *g, const uint8_t *b, uint32_t max)
+{
+    uint32_t n = max ? b[0] : 0u, s;
+    if (!max || 1u + 2u * n > max)
+        return 0;
+    for (s = 0; s < n; s++)
+        if (gsid_g(s) < G_COUNT)
+            g[gsid_g(s)] = (int16_t)(b[1u + 2u * s] | (uint16_t)b[2u + 2u * s] << 8);
+    return 1u + 2u * n;
 }
 
 /* engine indices the stores name (engines.c ENGINES[]: append-only) */
@@ -291,6 +373,10 @@ typedef struct {                 /* acid-style step: up to 4 notes (POLY), time,
 } step_t;
 #define NUDGE_MIN (-32)
 #define NUDGE_MAX 31
+/* (Skiff 2.0, #25) per-note ties: bit k, note[k] goes on from the step before (seq.c: no note-on, no release; a tie never
+ * starts a note). In acc on a step without lane hits (acc is the hits' accents; without hits it was always 0), so
+ * step_t keeps its 13 bytes; a step with hits has none (design/TIER_B.md). A TIE step still holds everything */
+static uint32_t step_ties(const step_t *s) { return s->hit ? 0u : s->acc & 15u & ((1u << (s->n & 7u)) - 1u); }
 /* (Skiff) n steps' NUDGE as a stored plane: 6 bits each, two's complement (a plane of 0s: every step on the grid), 4
  * steps in 3 bytes (n a multiple of 4). Projects (project.c SKF1) and user patterns (upreset.c) */
 static void nudge_pack(uint8_t *b, const step_t *s, uint32_t n)
@@ -363,6 +449,10 @@ typedef struct { uint8_t slot, repeat; } chain_row_t;
 #define NENT 16u
 #define PAT_NONE 0xFFu                 /* no pattern (an entry stores id + 1, 0 = empty: ui.c lists) */
 #define PAT_REST (NPAT + 1u)           /* (#28) what an entry stores for a REST (no pattern: ent_pat says PAT_NONE) */
+enum { SONG_OFF, SONG_ON, SONG_ONCE };   /* ui.c lists.song ((2.0, #47, the user's pick 4A) ONCE: bank.c song_poll; a
+                                          * project holding it: firmware before refuses it, as a REST) */
+#define REPS_CHAIN 16u                 /* (2.0, #44, 3A) an entry's REPS byte (0..15: 1x..16x): on CHAIN into the next
+                                        * (bank.c ent_block); firmware before refuses a project holding one */
 #define PROJ_SCENES 82u                /* the 16 scenes as bank.c keeps them: 3 bytes each, then a used mask, then
                                         * (Skiff phase 6) 2 bytes each for T5 and T6 */
 typedef struct {
@@ -442,6 +532,7 @@ typedef struct track {
     int16_t pe_old[8];           /* P_E0..P_E7 of the sounding engine: the fade renders with these */
     uint32_t esync_k[3];         /* (1.3) ATK's step, DEC's and REL's coefficient (Q16) this block (voice.c esync_coef) */
     uint8_t spread_on;           /* (1.3) SPREAD this block (fx.c mix_part, voice.c track_render) */
+    uint8_t lpan_on;             /* (2.0, #36) a drum kit with a lane panned, this block (the same, voice.c lpan_render) */
     uint8_t sp_alt;              /* (1.3) SPREAD: the side the next voice starts on (alternating, voice.c voice_start) */
     uint8_t xp_n, xp_note[4], xp_vel[4];   /* note-ons during the fade, played on the new engine */
     /* modulation matrix (mod.c): MIDI performance controllers of the track's channel, 0..127 */
@@ -469,7 +560,15 @@ typedef struct {
 
 static track_t trk[NTRK];        /* the instrument: six parts */
 static song_t song;
-#define TSEL (&trk[song.sel])    /* the selected track */
+/* the selected track. (Skiff 2.0) A pointer kept with song.sel, so a use is a load, not song.sel times the track's
+ * size: song.sel is only ever set through sel_set (the tests too) */
+static track_t *tsel = trk;
+#define TSEL tsel
+static void sel_set(uint32_t k)
+{
+    song.sel = (uint8_t)k;
+    tsel = &trk[k];
+}
 
 /* SWING of a track's step clock: the track's own plus the global one, at most 100 (#31). The sequencer
  * (seq.c step_samples) and the SLICER (slicer.c sl_enter) both time steps with it. At 100 the even

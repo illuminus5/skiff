@@ -12,7 +12,9 @@
  * Nothing is committed before the host's "success"; a failure after the
  * staging began erases the staging area, and Felucca carries on. A package
  * whose flash.bin is not exactly this board's size (OTA_FL_LEN: another
- * board's package) is refused in step 1, before anything is erased.
+ * board's package; (2.0.2, #64) on the FM-1 also M-VAVE's V16, OTA_FL_V16,
+ * with the official loader only) is refused in step 1 or 2, before anything
+ * is erased.
  *
  * Portable core: the firmware (felucca.c) and the Mac test (ota_test.c)
  * supply these hooks:
@@ -36,6 +38,7 @@
 #define SMK_MODEL "SMK-37 Pro"                   /* (fm1_cc.h) */
 #endif
 #define OTA_PARM_ID "ota-" SMK_MODEL "_016"       /* the stock app's record identity (Pro 18 B, Elite 20 B) */
+#define OTA_FL_V16 OTA_FL_LEN                    /* (no other official size here) */
 _Static_assert(OTA_AREA + OTA_AREA_LEN <= 0xC0000u && OTA_AREA >= 0x9D000u, "SMK: OTA area outside the VM");
 #else
 #define OTA_AREA 0x000E0000u                     /* staged loader, 5 x 4 KiB */
@@ -44,6 +47,8 @@ _Static_assert(OTA_AREA + OTA_AREA_LEN <= 0xC0000u && OTA_AREA >= 0x9D000u, "SMK
 #define OTA_FL_LEN 0x93000u                      /* flash.bin = [0, the PRCT end): the head and this board's app area,
                                                   * the size the update loader writes (ldr_core.c LDR_APP_HI) */
 #define OTA_PARM_ID "ota-FM-1_015"
+#define OTA_FL_V16 0xA9000u                      /* ((2.0.2, #64) M-VAVE's V16, FM-1_016: its PRCT reaches 0xA9000 (DX7.bin
+                                                  * in it); the same official loader as V15's writes it */
 #endif
 #define OTA_LDR_HCRC 0xEBAAu                     /* official update loader (usb_hid_ota.bin) */
 #define OTA_LDR_DCRC 0x5881u
@@ -326,8 +331,10 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
         return rc;
     if (!fl_off || !ota_off)
         return -3;
-    if (fl_len != OTA_FL_LEN)
-        return -15;                                         /* another board's package: nothing staged, nothing erased */
+    if (fl_len != OTA_FL_LEN && fl_len != OTA_FL_V16)
+        return -15;                                         /* another board's package: nothing staged, nothing erased
+                                                             * ((2.0.2) after the header's 2 reads: web/fm1ota.js
+                                                             * stockRefusal tells a Skiff too old for V16 by it) */
     /* 2. which loader: the official one (known CRCs; it rewrites the whole flash.bin
      *    including the head) or Felucca's own (app area only, checks the chip key) */
     if (ota_read(ota_off, b, 512))
@@ -342,13 +349,17 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
         own = ota_memeq(b + i, (const uint8_t *)"FELUCCA-LOADER-1", 16) && ota_rd32(b + 0x20 + 4) <= 0x14000u;
     if (!official && !own)
         return -7;
+    if (!official && fl_len != OTA_FL_LEN)
+        return -15;                                         /* ((2.0.2) V16's size: M-VAVE's loader's alone) */
     if (official) {                    /* the official loader writes the head: it must equal ours */
         ota_show(2, 0);
         for (i = 0; i < 0x4000u; i += 512u) {
             if (ota_read(fl_off + i, b, 512) || ota_fread(i, mine, 512))
                 return -4;
             if (!ota_memeq(b, mine, 512))
-                return -5;
+                return -5;                                  /* ((2.0.2, #64) V15's on a unit V16 started, or back:
+                                                             * within the head's 32 reads after the 3 before them,
+                                                             * web/fm1ota.js stockRefusal names the other version) */
         }
 #if OTA_OWN_LDR
         ota_emb = 1;                                       /* (ours in its place: its own length) */

@@ -13,8 +13,8 @@
  *         sub oscillator's level */
 static const char *const N_ANALOG_WAVE[] = {"SAW", "SQR", "TRI", "SIN", "PWM", "SYNC", "SUB"};
 enum { AW_SYNC = 5, AW_SUB = 6 };
-static const param_desc_t ANALOG_SYNC = {"SYNC", F_INT, 0, 127, 10, 0, 0};   /* DTN's range and default */
-static const param_desc_t ANALOG_SUB = {"SUB", F_PCT, 0, 127, 64, 0, 0};      /* MIX's */
+static const param_desc_t ANALOG_SYNC = {"SYNC", 0, 0, 127, 10, F_INT, 0};   /* DTN's range and default */
+static const param_desc_t ANALOG_SUB = {"SUB", 0, 0, 127, 64, F_PCT, 0};      /* MIX's */
 
 static const param_desc_t *analog_desc(const track_t *t, uint32_t k)
 {
@@ -208,14 +208,14 @@ static const engine_t ENG_ANALOG = {
     .name = "ANALOG",
     .page_title = {"OSC", "FLT"},
     .edit = {
-        {"WAVE", F_ENUM, 0, 6, 0, N_ANALOG_WAVE, 0},   /* ((1.3) SYNC SUB appended) */
-        {"DETUNE", F_INT, 0, 127, 10, 0, "ct"},
-        {"MIX", F_PCT, 0, 127, 64, 0, 0},
-        {"NOISE", F_PCT, 0, 127, 0, 0, 0},
-        {"CUTOFF", F_CUTOFF, 0, 127, 90, 0, 0},
-        {"RES", F_PCT, 0, 127, 30, 0, 0},
-        {"DRIVE", F_PCT, 0, 127, 0, 0, 0},
-        {"KEYTRK", F_PCT, 0, 127, 64, 0, 0},
+        {"WAVE", N_ANALOG_WAVE, 0, 6, 0, F_ENUM, 0},   /* ((1.3) SYNC SUB appended) */
+        {"DETUNE", 0, 0, 127, 10, F_INT, U_CT},
+        {"MIX", 0, 0, 127, 64, F_PCT, 0},
+        {"NOISE", 0, 0, 127, 0, F_PCT, 0},
+        {"CUTOFF", 0, 0, 127, 90, F_CUTOFF, 0},
+        {"RES", 0, 0, 127, 30, F_PCT, 0},
+        {"DRIVE", 0, 0, 127, 0, F_PCT, 0},
+        {"KEYTRK", 0, 0, 127, 64, F_PCT, 0},
     },
     .presets = ANALOG_PRESETS,
     .npresets = NELEM(ANALOG_PRESETS),

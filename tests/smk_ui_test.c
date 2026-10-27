@@ -8,6 +8,8 @@
  *   KEYS     the outer keys' notes and velocity (KEY VELOCITY), out of the TRS jack too; the curves.
  *   MENU     KEY VELOCITY in CONTROL, no LEDS row, the editor's rows; USR2 / USR3 not offered.
  *   WHEELS   the wheels and the pedal as MIDI in on the selected track's channel, back to rest on a switch.
+ *   PEDAL    holding the keys let go (the 27 and the outer ones) to its release, a key struck again, another track
+ *            selected, a preset loaded, a MONO track's note, a DRUM track not held.
  *   SHIFT    KNOB BANK: the map (the SMK's names), + BT TAKE, no MENU when let go.
  *   MASTER   said while turned, kept at rest, back at power-on.
  *   CLOCK    the TRS jack's MIDI clock: Start, 24 a beat, Stop; none with an external clock.
@@ -149,7 +151,7 @@ static void ui_power_on(void)
 {
     uint32_t i;
     memset(trk, 0, sizeof trk);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     memset(&ui, 0, sizeof ui);
     cin_left = cin_total = 0;                     /* (no count-in) */
     memset(&nm, 0, sizeof nm);                    /* NAME closed, no project name */
@@ -186,7 +188,7 @@ static void ui_power_on(void)
         track_defaults_steps(t);
     }
     undo_depth--;
-    song.sel = 0;
+    sel_set(0);
     ui.home = 1;
     ui.force = 1;
     panel = PANEL_DEFAULT;
@@ -299,12 +301,12 @@ static int test_pad_modes(void)
     smk_power_on();
     frame();
     bad += check("SMK pads: on HOME the steps (taps for the UI), not notes", smk_pad_steps == 1u);
-    song.sel = 3;                                 /* T4 DRUM KIT */
-    go_page(GR_TILES);
+    sel_set(3);                                 /* T4 DRUM KIT */
+    go_page(GR_ROLL);
     frame();
     bad += check("SMK pads: the DRUM grid (keys_own): the white keys", grid_on() && smk_pad_steps == 0u);
     ui.home = 1;
-    song.sel = 0;
+    sel_set(0);
     fm1_in.buttons |= 1u << panel.btn[B_ARP];     /* a layer's button held: its keys */
     host_pressed |= 1u << panel.btn[B_ARP];     /* (its edge: armed; the ISR's mask the pass after) */
     frame();
@@ -321,7 +323,7 @@ static int test_pad_taps(void)
     int bad = 0, ok;
     track_t *t;
     smk_power_on();
-    song.sel = 0;
+    sel_set(0);
     t = TSEL;
     track_defaults_steps(t);
     t->p[P_SLEN] = 16;
@@ -340,7 +342,7 @@ static int test_pad_taps(void)
     t->p[P_SLEN] = 8;
     pad_tap(9, 100);
     bad += check("SMK pad tap past LEN: nothing", !step_on(&t->step[9]));
-    song.sel = 3;                                 /* T4 DRUM KIT, HOME: the selected lane toggled */
+    sel_set(3);                                 /* T4 DRUM KIT, HOME: the selected lane toggled */
     t = TSEL;
     track_defaults_steps(t);
     t->p[P_SLEN] = 16;
@@ -359,7 +361,7 @@ static int test_pad_colours(void)
     track_t *t;
     uint32_t col;
     smk_power_on();
-    song.sel = 0;
+    sel_set(0);
     t = TSEL;
     track_defaults_steps(t);
     t->p[P_SLEN] = 12;
@@ -377,10 +379,10 @@ static int test_pad_colours(void)
     frame();
     bad += check("SMK pad colours: the step playing half way to white", host_pad[3] == smk_mixw(col, 128u));
     song.playing = 0;
-    go_page(GR_TILES);
+    go_page(GR_ROLL);
     ui.cursor = 5;
     frame();
-    bad += check("SMK pad colours: on STEP, stopped: the edited step white",
+    bad += check("SMK pad colours: on NOTES, stopped: the edited step white",
                  host_pad[5] == (SMK_PAD_WHITE << 16 | SMK_PAD_WHITE << 8 | SMK_PAD_WHITE));
     return bad;
 }
@@ -419,7 +421,7 @@ static int test_faders(void)
     press_id(SMK_BTN_FADER_BANK);
     press_id(SMK_BTN_FADER_BANK);
     bad += check("SMK FADER BANK: round to LEVEL, its LED off", smk_fbank == 0u && !host_led[SMK_BTN_FADER_BANK]);
-    song.sel = 5;                                 /* T6: the window T3..T6 */
+    sel_set(5);                                 /* T6: the window T3..T6 */
     fm1_in.fader[0] = 0;
     frame();
     trk[2].p[P_LEVEL] = 50;
@@ -434,7 +436,7 @@ static int test_entries(void)
     int bad = 0;
     uint32_t i;
     smk_power_on();
-    song.sel = 0;
+    sel_set(0);
     for (i = 0; i < 3u; i++) {                    /* T1's entries A, B, C: patterns of their own (SAVE > PATTERNS) */
         track_t *t = TSEL;
         track_defaults_steps(t);
@@ -461,7 +463,7 @@ static int test_outer_keys(void)
 {
     int bad = 0;
     smk_power_on();
-    song.sel = 0;
+    sel_set(0);
     song.octave = 0;
     trk[0].p[P_TRANS] = 0;
     trk[0].p[P_QUANT] = QN_OFF;
@@ -506,9 +508,9 @@ static int test_menu(void)
     bad += check("SMK MENU > KEY VELOCITY HARD: the settings byte and the mode", SMK_KV_BYTE == SMK_KV_HARD &&
                  smk_kv_mode == SMK_KV_HARD && str_eq(menu_vname(MI_KVEL, menu_get(MI_KVEL)), "HARD"));
     {
-        persist_t p;
+        sks_t p;
         settings_export(&p);
-        p.favorites.factory[15][12] = 9;
+        p.s.smk_kv = 9;
         settings_import(&p, (int)sizeof p);
         bad += check("SMK settings: an unknown KEY VELOCITY reads as DYNAMIC", favorites.factory[15][12] == 0u);
     }
@@ -522,7 +524,7 @@ static int test_wheels(void)
     int bad = 0;
     uint32_t st[16], d1[16], d2[16], n, i, bend = 0, mod = 0, ped = 0;
     smk_power_on();
-    song.sel = 1;
+    sel_set(1);
     fm1_in.wheel[0] = 535;
     fm1_in.wheel[1] = 629;
     fm1_in.pedal = 985;
@@ -540,7 +542,7 @@ static int test_wheels(void)
         ped |= st[i] == (0xB0u | trk_midi_ch(1)) && d1[i] == 64u && d2[i] == 127u;
     }
     bad += check("SMK wheels, pedal: a bend, CC1 and CC64 on the selected track's channel, as MIDI in", bend && mod && ped);
-    song.sel = 2;
+    sel_set(2);
     frame();
     n = midi_msgs(st, d1, d2, 16);
     for (i = 0, bend = mod = ped = 0; i < n; i++) {
@@ -549,6 +551,133 @@ static int test_wheels(void)
         ped |= st[i] == (0xB0u | trk_midi_ch(1)) && d1[i] == 64u && d2[i] == 0u;
     }
     bad += check("SMK wheels: another track selected: the one before back to rest", bend && mod && ped);
+    return bad;
+}
+
+/* the pedal holding the keys (seq.c kb_up): its state from a UI frame (smk_wheels), the keys' from the audio blocks */
+static void pedal_to(int down)                    /* the pedal pressed or let go (985: its rest), a frame, a block */
+{
+    fm1_in.pedal = down ? 40u : 985u;
+    frame();
+    events_block(CTL);
+}
+static void key_to(uint32_t k, int down)          /* key k (of the FM-1's 27) down or up, a block */
+{
+    fm1_in.notes = down ? fm1_in.notes | 1u << k : fm1_in.notes & ~(1u << k);
+    events_block(CTL);
+}
+static void outer_to(uint32_t bed, uint32_t vel)  /* an outer key (keybed 0..4, 32..36) at vel, 0 let go, a block */
+{
+    smk_extq[smk_extq_w] = (uint16_t)(bed << 8 | vel);
+    smk_extq_w = (uint8_t)((smk_extq_w + 1u) % SMK_EXTQ);
+    events_block(CTL);
+}
+static int sounding(const track_t *t, uint32_t note)   /* a voice of t holds note (gated: not in its release) */
+{
+    uint32_t i;
+    for (i = 0; i < NVOICE; i++)
+        if (t->v[i].active && t->v[i].gate && t->v[i].note == note)
+            return 1;
+    return 0;
+}
+static uint32_t note_offs(uint32_t note)          /* note-offs of note out of the TRS jack since host_ut_n was 0 */
+{
+    uint32_t i, n = 0;
+    for (i = 0; i + 1u < host_ut_n && i + 1u < HOST_UT; i++)
+        n += (host_ut[i] & 0xF0u) == 0x80u && host_ut[i + 1u] == note;
+    return n;
+}
+static int test_pedal(void)
+{
+    int bad = 0, ok;
+    uint32_t i, drum;
+    track_t *t = &trk[0];
+    smk_power_on();
+    song.sel = 0;                                 /* T1, C4 (key 7) note 60, C3 (outer key 0) note 48 */
+    song.octave = 0;
+    for (i = 0; i < 2u; i++) {
+        trk[i].p[P_TRANS] = 0;
+        trk[i].p[P_QUANT] = QN_OFF;
+        trk[i].p[P_VOICE] = V_POLY;               /* (T1's ACID is MONO) */
+    }
+    fm1_in.wheel[0] = 535;                        /* the wheels at rest */
+    fm1_in.wheel[1] = 629;
+    fm1_in.key_vel[7u + SMK_KEY_F3] = fm1_in.key_vel[0] = 100u;
+    pedal_to(0);
+    pedal_to(1);
+    key_to(7, 1);
+    outer_to(0, 100);
+    host_ut_n = 0;
+    key_to(7, 0);
+    outer_to(0, 0);
+    for (i = 0; i < 20u; i++)
+        events_block(CTL);
+    bad += check("SMK pedal down: a key and an outer key let go keep sounding (no note-off out)",
+                 smk_pedal && sounding(t, 60) && sounding(t, 48) && !note_offs(60) && !note_offs(48));
+    key_to(7, 1);
+    ok = note_offs(60) == 1u && sounding(t, 60);
+    key_to(7, 0);
+    bad += check("SMK pedal: a held key struck again: its held note ends first, then it plays", ok && sounding(t, 60));
+    host_ut_n = 0;
+    pedal_to(0);
+    bad += check("SMK pedal up: the notes it held end (note-offs out), the keys keep nothing",
+                 !sounding(t, 60) && !sounding(t, 48) && note_offs(60) == 1u && note_offs(48) == 1u && !kb_chn[7] &&
+                 !kb_chn[27]);
+
+    pedal_to(1);                                  /* T1's C4 held, then T2 selected with the pedal still down */
+    key_to(7, 1);
+    key_to(7, 0);
+    host_ut_n = 0;
+    song.sel = 1;
+    frame();
+    events_block(CTL);
+    ok = !sounding(t, 60) && note_offs(60) == 1u && !kb_chn[7] && !kb_ped[7];
+    key_to(7, 1);
+    key_to(7, 0);
+    ok = ok && sounding(&trk[1], 60);
+    fm1_in.pedal = 985u;                          /* let go in the frame T1 is selected again */
+    song.sel = 0;
+    frame();
+    events_block(CTL);
+    bad += check("SMK pedal, another track selected while it holds: the keys before end cleanly, it holds the new one's",
+                 ok && !sounding(&trk[1], 60) && !kb_chn[7] && !smk_pedal);
+
+    pedal_to(1);                                  /* a preset loaded while it holds: its keys let go, nothing kept */
+    key_to(7, 1);
+    key_to(7, 0);
+    host_ut_n = 0;
+    apply_preset(2);
+    events_block(CTL);
+    ok = !sounding(t, 60) && note_offs(60) == 1u && !kb_chn[7] && !kb_ped[7];
+    pedal_to(0);
+    bad += check("SMK pedal, a preset loaded while it holds (panic_req): the keys end, nothing left for its release",
+                 ok && note_offs(60) == 1u);
+
+    t->p[P_VOICE] = V_MONO;                       /* MONO: C4 then F3, both let go held; F3 sounds */
+    t->p[P_PRIO] = 0;
+    t->p[P_GLIDE] = 0;
+    fm1_in.key_vel[0u + SMK_KEY_F3] = 100u;
+    pedal_to(1);
+    key_to(7, 1);
+    key_to(0, 1);
+    key_to(7, 0);
+    key_to(0, 0);
+    ok = sounding(t, 53);
+    pedal_to(0);
+    bad += check("SMK pedal up on a MONO track: its sounding note ends as it is (no fall back to another one held)",
+                 ok && !t->v[0].gate && t->v[0].note == 53u);
+    t->p[P_VOICE] = V_POLY;
+
+    song.sel = 3;                                 /* T4 DRUM KIT: a hit's key ends as it is let go */
+    frame();
+    pedal_to(1);
+    host_ut_n = 0;
+    key_to(7, 1);
+    drum = kb_note[7];
+    key_to(7, 0);
+    bad += check("SMK pedal on a DRUM track: ignored (the key's note-off at once, nothing held)",
+                 smk_pedal && drum != KB_SILENT && note_offs(drum) == 1u && !kb_chn[7] && !kb_ped[7]);
+    pedal_to(0);
     return bad;
 }
 
@@ -636,6 +765,7 @@ int main(void)
     bad += test_outer_keys();
     bad += test_menu();
     bad += test_wheels();
+    bad += test_pedal();
     bad += test_shift();
     bad += test_master();
     bad += test_clock_out();

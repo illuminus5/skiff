@@ -111,13 +111,16 @@ export async function captureBackup(request, firmware, onProgress = () => {}) {
   const file = { format: "felucca-backup", version: 1, firmware, created: new Date().toISOString(), objects };
   readBackup(file); return file;
 }
-export async function restoreBackup(request, file, onProgress = () => {}) {
+// (Skiff 2.0) only: the ids to write (the installer's write-back of converted objects, web/conv/conv.js); the others
+// stay as the unit has them. In the same order.
+export async function restoreBackup(request, file, onProgress = () => {}, only = null) {
   const archive = readBackup(file); // Validate every byte before the first destructive request.
-  const total = archive.objects.reduce((n, o) => n + o.size, 0); let done = 0;
+  const pick = (o) => !only || only.includes(o.id);
+  const total = archive.objects.filter(pick).reduce((n, o) => n + o.size, 0); let done = 0;
   const ask = async (r, o = {}) => request(r, { timeout: 4000, retries: 0, ...o });
   const put = async (args) => { const a = await ask([BACKUP_CMD.PUT, args]); bkCheck(a[2]); return a; };
   // Restore live music last. Other objects commit individually; a disconnect can leave a partial restore.
-  for (const o of [...archive.objects.slice(2), archive.objects[1], archive.objects[0]]) {
+  for (const o of [...archive.objects.slice(2), archive.objects[1], archive.objects[0]].filter(pick)) {
     if (o.id >= 32) {
       const slot = o.id - 32;
       const check = (a) => { if (a[0] !== slot) throw new Error("Unexpected sample reply"); bkCheck(a.at(-1)); };

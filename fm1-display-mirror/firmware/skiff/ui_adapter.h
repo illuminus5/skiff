@@ -9,7 +9,7 @@ static void dm_ui_begin(void){
         dm.rows=FELUCCA_DISPLAY_BULK&&(ui.layer||ui.shift)?120u:240u;
     dm.graph_top=graph_y();dm.footer_y=foot_y();dm.footer_h=foot_h();
     dm.graph_height=FELUCCA_DISPLAY_BULK&&!ui.home&&!ui.layer&&!ui.shift&&!ui.menu&&
-        !ui.confirm&&!name_on()&&!seq_counting()&&(cur_page()->graph==GR_LFO||cur_page()->graph==GR_LFODST)?graph_h():0u;
+        !ui.confirm&&!name_on()&&!seq_counting()&&cur_page()->graph==GR_LFO?graph_h():0u;
 #if FELUCCA_DISPLAY_BULK
     if(!dm.graph_height)dm_graph_cache.valid=0;
 #endif

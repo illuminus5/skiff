@@ -7,7 +7,8 @@
  * 2. the filter follows the key: ANLG at RES 127 (band-pass), TRK 127: the spectral peak an octave apart for
  *    notes an octave apart (+-6 %), and at FREQ's frequency at C4 (+-1 semitone).
  * 3. the register clock follows the key: LFSR (L7, its period audible) counts twice the transitions an octave up;
- *    META is periodic at the key's pitch (autocorrelation at one period >= 0.95) and LFSR L23 is not (< 0.3).
+ *    META is periodic at the key's pitch (autocorrelation at one period >= 0.95) and LFSR L23 is not (< 0.3);
+ *    (2.0.2) past the sample rate too (ARCADE: CLK 84 met it at F4): several register steps a sample.
  * 4. no DC: every preset, 16 notes held for 1 s each (|mean| < 1 % of a voice's full scale); no clipping: every mode at the corners of
  *    COLR / FREQ / RES / DENS / CRSH, 8 notes at velocity 127, LEVEL 127: no voice sum beyond 2 x VOICE_FS a
  *    voice and no mix sample at full scale.
@@ -256,6 +257,21 @@ static void clock_test(void)
     b = autocorr(Y, n, per * 9);
     snprintf(what, sizeof what, "META (93) periodic at the key: r = %.3f at 9 periods of C4; LFSR L23 r = %.3f", a, b);
     check(what, a >= 0.95 && fabs(b) < 0.3);
+    {   /* (2.0.2) past the sample rate: ARCADE's L7, 7 octaves over the key (CLK 84), met it at F4 and every note above
+         * played that one tone; now the register steps several times a sample: none more below it (the increment
+         * noise_inc's), twice the steps an octave up, at most 32; G5 periodic at its own period, G4 not there */
+        int16_t ar[8] = {2, 0, 127, 0, 0, 112, 0, 84};
+        uint32_t f3, f4, f5, fx, w3 = noise_steps(132 * 16, &f3), w4 = noise_steps(151 * 16, &f4);
+        uint32_t w5 = noise_steps(163 * 16, &f5), wx = noise_steps(270 * 16, &fx);
+        double s4 = w4 + f4 / 4294967296.0, s5 = w5 + f5 / 4294967296.0, r4, r5;
+        voice_render(ar, 67, Y, n);
+        r4 = autocorr(Y, n, 127 / s5);
+        voice_render(ar, 79, Y, n);
+        r5 = autocorr(Y, n, 127 / s5);
+        snprintf(what, sizeof what, "LFSR past the sample rate (CLK 84): %.2f / %.2f steps a sample at G4 / G5, r %.2f / %.2f "
+                 "at G5's period", s4, s5, r4, r5);
+        check(what, w3 == 0 && f3 == noise_inc(132 * 16) && fabs(s5 / s4 - 2) < 0.01 && wx == 32 && !fx && r5 > r4 + 0.3);
+    }
 }
 
 static void dc_and_clip(void)

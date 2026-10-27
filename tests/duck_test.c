@@ -269,6 +269,27 @@ static int throws(void)
     ok &= abs(half - 10 * THR_ONE) < THR_ONE / 4 && gone >= 4u * beat_samples() / CTL * 99u / 100u &&
           gone <= 4u * beat_samples() / CTL * 101u / 100u && t->p[id] == own;
     bad += check("  the knob resting: back in a line over one bar (half way at half a bar), none before it rests", ok);
+    thr_beats = 1u;                               /* ((2.0, D 2A) MENU > CONTROL > RETURN 1 BEAT: ui.c mom_poll sets it) */
+    throw_turn(0, 0, 20);
+    fm1_ms += THROW_REST + 1u;
+    for (b = 0, gone = 0; b < 3000u && !gone; b++) {
+        mix_block(o, CTL);
+        if (!(thr_out & 1u))
+            gone = b + 1u;
+    }
+    ok = gone >= beat_samples() / CTL * 99u / 100u && gone <= beat_samples() / CTL * 101u / 100u && t->p[id] == own;
+    thr_beats = 0u;                               /* (SNAP) */
+    throw_turn(0, 0, 20);
+    mix_block(o, CTL);
+    ok &= (thr_out & 1u) != 0u;                   /* (not resting yet) */
+    fm1_ms += THROW_REST + 1u;
+    mix_block(o, CTL);
+    ok &= !thr_out && t->p[id] == own;
+    thr_beats = 4u;
+    throw_turn(0, 0, 20);
+    ok &= throw_keep() && !thr_out && t->p[id] == own + 20;
+    t->p[id] = own;
+    bad += check("  (2.0) RETURN 1 BEAT: back over a beat; SNAP: at once when it rests; OCT+ (throw_keep): the value kept", ok);
     throw_turn(0, 0, 20);
     transport_req = 2;
     mix_block(o, CTL);

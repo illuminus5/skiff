@@ -9,6 +9,7 @@ Also checks logical_image/product_of against web/fm1pkg.js (needs node and
 build/felucca.fwsc, skipped otherwise), and (BOARD_SMK37) the SMK-37 Pro identities and port names and the
 20 / 36 block deinterleave (the stock SMK-37 Pro V016 from a directory named by SMK_STOCK_DIR, skipped when unset)."""
 import io
+import os
 import queue
 import shutil
 import subprocess
@@ -329,21 +330,24 @@ def against_js():
 
 
 def official():
-    """#32: back to the official V15 from Felucca, without --force (only the unmodified file)"""
-    v15 = ROOT / "FM-1_v15.fwsc"
-    if not v15.exists():
-        print("official V15 restore: skipped (needs FM-1_v15.fwsc in the repo root)")
-        return
-    raw = v15.read_bytes()
-    dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write="FM-1_015")
-    rc, out, err = cli([str(v15), "--yes"], dev)
-    ok(rc == 0 and dev.bad == 0 and "FM-1_015" in out and dev.identity == "FM-1_015",
-       "official V15 (FM-1.fwsc) from Felucca: installed without --force, back as FM-1_015")
-    bad = bytearray(raw)
-    bad[-1] ^= 1
-    dev = FakeFM1(I.logical_image(bytes(bad)), identity="FM-1_900", name="Felucca")
-    rc, out, err = cli([pkgfile("v15mod.fwsc", bytes(bad)), "--yes"], dev)
-    ok(rc == 2 and "official V15" in err and dev.sent == [], "a modified V15 is still refused (no MIDI)")
+    """#32: back to the official V15 from Felucca, without --force (only the unmodified file); (2.0.2, #64) V16 too.
+    The files: FM-1_v15.fwsc in the repo root, or FM-1.fwsc (V15) and FM-1_016.fwsc in FM1_STOCK_DIR (never in the repo)"""
+    stock = Path(os.environ.get("FM1_STOCK_DIR") or "/nonexistent")
+    v15 = ROOT / "FM-1_v15.fwsc" if (ROOT / "FM-1_v15.fwsc").exists() else stock / "FM-1.fwsc"
+    for f, product in ((v15, "FM-1_015"), (stock / "FM-1_016.fwsc", "FM-1_016")):
+        if not f.exists():
+            print(f"official {product} restore: skipped (needs FM-1_v15.fwsc in the repo root, or FM1_STOCK_DIR)")
+            continue
+        raw = f.read_bytes()
+        dev = FakeFM1(I.logical_image(raw), identity="FM-1_900", name="Felucca", after_write=product)
+        rc, out, err = cli([str(f), "--yes"], dev)
+        ok(rc == 0 and dev.bad == 0 and product in out and dev.identity == product,
+           f"official {product} ({f.name}) from Felucca: installed without --force, back as {product}")
+        bad = bytearray(raw)
+        bad[-1] ^= 1
+        dev = FakeFM1(I.logical_image(bytes(bad)), identity="FM-1_900", name="Felucca")
+        rc, out, err = cli([pkgfile("stockmod.fwsc", bytes(bad)), "--yes"], dev)
+        ok(rc == 2 and "official V15 or V16" in err and dev.sent == [], f"a modified {product} is still refused (no MIDI)")
 
 
 def smk():

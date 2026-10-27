@@ -92,21 +92,50 @@ static struct {                          /* HALL's state (in the pool: no .bss) 
 } hl __attribute__((section(".pool")));
 #define rev_side (hl.sd)
 
+/* (Skiff 1.3) FX > INSERT's TYPEs (track_insert, below); (2.0, D 2A) the drives' and CRUSH's shapes are DRIVE's too */
+enum { IT_OFF, IT_SOFT, IT_HARD, IT_FOLD, IT_FUZZ, IT_CRUSH, IT_PHASER, IT_FLANGER, IT_CHORUS, IT_N };
+/* the drives' and CRUSH's shape of v (a voice's full scale 32768; v already through the drive): the curve the INSERT
+ * and DRIVE graphs draw too (ui_pgraph.c graph_insert, graph_drive) */
+static inline int32_t ins_shape(uint32_t ty, int32_t v, uint32_t sh)
+{
+    switch (ty) {
+    case IT_SOFT:
+        return softclip(v);
+    case IT_HARD:
+        return clamp(v, -24000, 24000);
+    case IT_FOLD: {
+        int32_t u = (int32_t)((uint32_t)(v + 16384) & 0xFFFFu) - 32768;   /* a triangle of period 65536: +-16384 */
+        u = 16384 - (u < 0 ? -u : u);
+        return u + (u >> 1);                            /* x 1.5 (no divide) */
+    }
+    case IT_FUZZ:
+        return v > 0 ? (v > 20000 ? 20000 : v) : softclip(v) >> 1;
+    case IT_CRUSH:                                      /* sh: the bits taken (16 - BITS); to the nearest step */
+        return ((v + ((1 << sh) >> 1)) >> sh) << sh;
+    default:
+        return v;
+    }
+}
+
 /* (Skiff phase 9) FX > DRIVE: DIST's kind (P_DTYPE) at the same drive (P_DIST), and its TONE (P_DTONE, -64..63: the
- * tone low-pass moved from where the drive puts it; 0 as before). SOFT: the soft clip below, as before. HARD: the
- * drive into a flat clip at 3/4 of full scale (odd harmonics: a buzz). FOLD: the drive into a triangle wavefolder, a
- * fold every 4 x 16384 (the louder, the more folds: bright, hollow). BITS: the drive as bits and rate taken away, up
- * to 11 bits, each sample held 1 2 4 or 8 (a run starts every block: CTL is a multiple of 8; aliasing, grit), its
- * low-pass closing less. Each after the low cut, before the two-pole tone and the make-up, as SOFT */
-enum { DT_SOFT, DT_HARD, DT_FOLD, DT_BITS };
+ * tone low-pass moved from where the drive puts it; 0 as before). (2.0, D 2A) The kinds are INSERT's shapers
+ * (ins_shape): SOFT the soft clip with DIST's bias (a little: even harmonics), as before; HARD a flat clip at 24000 (odd
+ * harmonics: a buzz); FOLD a triangle wavefolder, a fold every 4 x 16384 (the louder, the more folds: bright, hollow);
+ * CRUSH (BITS until 2.0, the same) the drive as bits and rate taken away, up to 11 bits, each sample held 1 2 4 or 8 (a
+ * run starts every block: CTL is a multiple of 8; aliasing, grit), its low-pass closing less; FUZZ (2.0) flat on top,
+ * soft and halved below. Each after the low cut, before the two-pole tone and the make-up, as SOFT. (HARD and FOLD
+ * until 2.0 were DIST's own: the ceiling 24576, the folds x 2) */
+enum { DT_SOFT, DT_HARD, DT_FOLD, DT_CRUSH, DT_FUZZ, DT_N };
 #define DIST_TONE(k, t) clamp((k) + (t)->p[P_DTONE] * 150, 2000, 32700)   /* TONE's move of the low-pass (Q15) */
-static __attribute__((noinline)) void dist_hard(track_t *t, int32_t *b, uint32_t n, int32_t g, int32_t k, int32_t mk)
+/* HARD, FOLD, FUZZ: the drive into INSERT's shaper ty (a constant: a loop each, no switch a sample) */
+static inline __attribute__((always_inline)) void dist_clip(track_t *t, int32_t *b, uint32_t n, int32_t g, int32_t k,
+                                                             int32_t mk, uint32_t ty)
 {
     for (uint32_t i = 0; i < n; i++) {
         int32_t x = b[i], y;
         t->dist_hp += (x - t->dist_hp + 64) >> 7;
         x = clamp(x - t->dist_hp, -230000, 230000);
-        y = clamp(((x >> 2) * g) >> 10, -24576, 24576);
+        y = ins_shape(ty, ((x >> 2) * g) >> 10, 0);
         t->dist_dc += (y - t->dist_dc + 256) >> 9;      /* (~14 Hz: a clip of an uneven wave has a mean, kept out of */
         y -= t->dist_dc;                                /* the buses' feedback) */
         t->dist_lp1 += mulq15(y - t->dist_lp1, k);
@@ -114,31 +143,28 @@ static __attribute__((noinline)) void dist_hard(track_t *t, int32_t *b, uint32_t
         b[i] = mulq15(t->dist_lp2, mk);
     }
 }
+static __attribute__((noinline)) void dist_hard(track_t *t, int32_t *b, uint32_t n, int32_t g, int32_t k, int32_t mk)
+{
+    dist_clip(t, b, n, g, k, mk, IT_HARD);
+}
 static __attribute__((noinline)) void dist_fold(track_t *t, int32_t *b, uint32_t n, int32_t g, int32_t k, int32_t mk)
 {
-    for (uint32_t i = 0; i < n; i++) {
-        int32_t x = b[i], y, u;
-        t->dist_hp += (x - t->dist_hp + 64) >> 7;
-        x = clamp(x - t->dist_hp, -230000, 230000);
-        u = ((((x >> 2) * g) >> 10) + 16384) & 65535;   /* (two's complement: the mask is the fold's period) */
-        y = (u < 32768 ? u - 16384 : 49152 - u) * 2;    /* -32768 .. 32768, the wave itself inside */
-        t->dist_dc += (y - t->dist_dc + 256) >> 9;      /* (as HARD's) */
-        y -= t->dist_dc;
-        t->dist_lp1 += mulq15(y - t->dist_lp1, k);
-        t->dist_lp2 += mulq15(t->dist_lp1 - t->dist_lp2, k);
-        b[i] = mulq15(t->dist_lp2, mk);
-    }
+    dist_clip(t, b, n, g, k, mk, IT_FOLD);
 }
-static __attribute__((noinline)) void dist_bits(track_t *t, int32_t *b, uint32_t n, int32_t d, int32_t k, int32_t mk)
+static __attribute__((noinline)) void dist_fuzz(track_t *t, int32_t *b, uint32_t n, int32_t g, int32_t k, int32_t mk)
+{
+    dist_clip(t, b, n, g, k, mk, IT_FUZZ);
+}
+static __attribute__((noinline)) void dist_crush(track_t *t, int32_t *b, uint32_t n, int32_t d, int32_t k, int32_t mk)
 {
     uint32_t s = (uint32_t)d / 11u, hm = (1u << ((uint32_t)d >> 5)) - 1u;   /* bits taken 0..11, held 1 2 4 8 */
-    int32_t h = 0, r = s ? 1 << (s - 1u) : 0;
+    int32_t h = 0;
     for (uint32_t i = 0; i < n; i++) {
         int32_t x = b[i];
         t->dist_hp += (x - t->dist_hp + 64) >> 7;
         x = clamp(x - t->dist_hp, -230000, 230000);
         if (!(i & hm))
-            h = ((x + r) >> s) << s;                    /* (rounded: no offset) */
+            h = ins_shape(IT_CRUSH, x, s);              /* (rounded: no offset) */
         t->dist_lp1 += mulq15(h - t->dist_lp1, k);
         t->dist_lp2 += mulq15(t->dist_lp1 - t->dist_lp2, k);
         b[i] = mulq15(t->dist_lp2, mk);
@@ -160,7 +186,8 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
     switch (t->p[P_DTYPE]) {
     case DT_HARD: dist_hard(t, b, n, g, k, mk); return;
     case DT_FOLD: dist_fold(t, b, n, g, k, mk); return;
-    case DT_BITS: dist_bits(t, b, n, d, DIST_TONE(32700 - d * 40, t), 32000 - d * 20); return;
+    case DT_CRUSH: dist_crush(t, b, n, d, DIST_TONE(32700 - d * 40, t), 32000 - d * 20); return;
+    case DT_FUZZ: dist_fuzz(t, b, n, g, k, mk); return;
     default: break;
     }
     b0 = softclip(bias);
@@ -168,7 +195,7 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
         int32_t x = b[i], y;
         t->dist_hp += (x - t->dist_hp + 64) >> 7;           /* ~55 Hz low cut: keep the bass out of the clipper */
         x = clamp(x - t->dist_hp, -230000, 230000);         /* (x >> 2) * g fits 32 bits; the clip is flat out there */
-        y = softclip((((x >> 2) * g) >> 10) + bias) - b0;   /* >> 2 first: no overflow for loud poly */
+        y = ins_shape(IT_SOFT, (((x >> 2) * g) >> 10) + bias, 0) - b0;   /* >> 2 first: no overflow for loud poly */
         t->dist_lp1 += mulq15(y - t->dist_lp1, k);         /* two poles: tames the fizz */
         t->dist_lp2 += mulq15(t->dist_lp1 - t->dist_lp2, k);
         b[i] = mulq15(t->dist_lp2, mk);
@@ -766,9 +793,8 @@ static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_
  * Order: DRIVE -> INSERT -> SLICER: the insert colours the sound as DRIVE does; the SLICER's gate (and its STUT
  * recordings) comes after, so its edges stay sharp and a STUT repeats the processed sound. State in the pool, per track
  * (ins[], 580 B each: a track's render is one core's, so the second core needs no copy); noinline, its own loops: the
- * part's path gains one test (track_t ins_run) */
-enum { IT_OFF, IT_SOFT, IT_HARD, IT_FOLD, IT_FUZZ, IT_CRUSH, IT_PHASER, IT_FLANGER, IT_CHORUS, IT_N };
-#define IL_LEN 256u                     /* FLANG / CHOR: the line, samples (a power of 2: masked) */
+ * part's path gains one test (track_t ins_run). The TYPEs (IT_*) and the drives' shapes (ins_shape): above DRIVE's */
+#define IL_LEN 256u                    /* FLANG / CHOR: the line, samples (a power of 2: masked) */
 #define IN_ST 4u                        /* PHASR: all-pass stages */
 static const uint8_t INS_HOLD[16] = {64, 48, 40, 32, 24, 20, 16, 12, 10, 8, 6, 5, 4, 3, 2, 1};   /* CRUSH RATE */
 /* PHASR: the stages' coefficient a (Q14) for a break of 150 Hz * 2^(5 i / 32): a = (g - 1) / (g + 1), g = tan(pi f / fs) */
@@ -801,28 +827,6 @@ static int32_t ins_lpk(int32_t c)
 {
     uint32_t g = SVF_G[clamp(c, 0, 127)];
     return (int32_t)((g << 16) / (4096u + g));
-}
-/* the drives' and CRUSH's shape of v (a voice's full scale 32768; v already through DRIVE): the curve the INSERT
- * graph draws too (ui_pgraph.c graph_insert) */
-static inline int32_t ins_shape(uint32_t ty, int32_t v, uint32_t sh)
-{
-    switch (ty) {
-    case IT_SOFT:
-        return softclip(v);
-    case IT_HARD:
-        return clamp(v, -24000, 24000);
-    case IT_FOLD: {
-        int32_t u = (int32_t)((uint32_t)(v + 16384) & 0xFFFFu) - 32768;   /* a triangle of period 65536: +-16384 */
-        u = 16384 - (u < 0 ? -u : u);
-        return u + (u >> 1);                            /* x 1.5 (no divide) */
-    }
-    case IT_FUZZ:
-        return v > 0 ? (v > 20000 ? 20000 : v) : softclip(v) >> 1;
-    case IT_CRUSH:                                      /* sh: 16 - BITS; to the nearest step */
-        return sh ? ((v + (1 << (sh - 1u))) >> sh) << sh : v;
-    default:
-        return v;
-    }
 }
 static inline uint32_t ins_bits_sh(int32_t a) { return 15u - (uint32_t)(clamp(a, 0, 127) >> 3); }   /* BITS 1..16 */
 
@@ -955,10 +959,41 @@ static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint3
  * glb) / 2 + d (gla - glb) / 2 (R alike): the mono sum is b's. b goes through DRIVE, the INSERT, the SLICER, the FX
  * layer's mute key and the DUCK as always; d gets the SLICER's gate, the mute's and the DUCK's gains and passes DRIVE
  * and the INSERT by (the spread of a driven chord is its voices' clean difference). The sends take b, mono, as before.
- * SPREAD 0, MONO or LEGATO: mix_part's own loop, bit for bit as before */
+ * SPREAD 0, MONO or LEGATO: mix_part's own loop, bit for bit as before.
+ * (2.0, #36) A drum kit with a lane panned (t->lpan_on, voice.c lpan_render) mixes here too: b is every lane, d (spread_buf)
+ * what its left channel loses to the lanes panned right, e (lpan_buf) what the right loses to those panned left, each
+ * through the same gains as d is; then the track's PAN over both. The kit's DRIVE, INSERT and sends hear b as before. (A
+ * SPREAD a kit kept from another engine, hidden, spreads its hits as in 1.x until a lane is panned) */
+/* .. (2.0, #36) a panned kit's end: each channel less its far side's sum (d the left's, e the right's), then the track's
+ * PAN; the sends from b, mono, as mix_part's */
+static __attribute__((noinline)) void lpan_mix(track_t *t, const int32_t *b, const int32_t *d, const int32_t *e,
+                                               uint32_t n SM_DECL)
+{
+    int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN];
+    int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
+    int32_t c = t->p[P_CHOR] * 258, dl = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
+    int32_t xmax = c > dl ? c : dl;
+    uint32_t i;
+    xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);
+    for (i = 0; i < n; i++) {
+        int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x, xs = clamp(x, -xmax, xmax);
+        int32_t yl = ((d[i] >> 2) * lvl) >> 10, yr = ((e[i] >> 2) * lvl) >> 10;
+        if (a > pk)
+            pk = a;
+        if (c)
+            SM(c)[i] += mulq15(xs, c);
+        if (dl)
+            SM(d)[i] += mulq15(xs, dl);
+        if (r)
+            SM(v)[i] += mulq15(xs, r);
+        SM(l)[i] += ((x - yl) * gl) >> 12;
+        SM(r)[i] += ((x - yr) * gr) >> 12;
+    }
+    t->peak = pk;
+}
 static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_t n SM_DECL)
 {
-    int32_t *d = SPREAD_BUF(t);
+    int32_t *d = SPREAD_BUF(t), *e = t->lpan_on ? LPAN_BUF(t) : 0;
     uint32_t i, k = (uint32_t)(t - trk);
     int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN], s = (t->p[P_SPRD] + 1) >> 1;
     int32_t pa = clamp(pan - s, -64, 63), pb = clamp(pan + s, -64, 63);
@@ -968,21 +1003,33 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
     int32_t c = t->p[P_CHOR] * 258, dl = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
     int32_t xmax = c > dl ? c : dl;
     xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);
-    for (i = 0; i < n; i++)
-        d[i] = (d[i] << 1) - b[i];                      /* left - right */
+    if (!e)
+        for (i = 0; i < n; i++)
+            d[i] = (d[i] << 1) - b[i];                  /* left - right */
     track_dist(t, b, n);
     if (t->p[P_ITYPE] | t->ins_run)
         track_insert(t, b, n);                          /* (the mono sum, as DRIVE) */
-    slicer_track_sd(t, b, d, n);
-    if ((pf.mute >> k) & 1u) {                          /* (the mute's ramp on both: from the same start, the same) */
+    slicer_track_sd(t, b, d, e, n);
+    if (((pf.mute >> k) & 1u) || t->p[P_MUTE] || pf.mg[k] != 32768) {   /* (the mute's ramp on both: from the same start,
+                                                                          * the same; (2.0) a MUTE's too) */
         int32_t g0 = pf.mg[k];
         AUDIO_FAR(perf_mute)(k, b, n);
         pf.mg[k] = g0;
         AUDIO_FAR(perf_mute)(k, d, n);
+        if (e) {
+            pf.mg[k] = g0;
+            AUDIO_FAR(perf_mute)(k, e, n);
+        }
     }
     if ((duck_on >> k) & 1u) {                          /* (the DUCK's gains: the same on both) */
         duck_apply(k, b, n);
         duck_apply(k, d, n);
+        if (e)
+            duck_apply(k, e, n);
+    }
+    if (e) {
+        lpan_mix(t, b, d, e, n SM_ARG(sm));
+        return;
     }
     for (i = 0; i < n; i++) {
         int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x, y = ((d[i] >> 2) * lvl) >> 10;
@@ -1054,7 +1101,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
     uint32_t nr;
 #endif
     mod_begin(t);                                       /* the matrix's per-block values into t->p (mod.c) */
-    t->spread_on = t->p[P_SPRD] > 0 && (trk_vmode(t) == V_POLY || trk_vmode(t) == V_UNISON);   /* ((1.3) mix_spread) */
+    t->lpan_on = drum_engine(t->engine) && lanes_panned(t);   /* ((2.0, #36) a kit with a lane panned: mix_spread) */
+    t->spread_on = !t->lpan_on && t->p[P_SPRD] > 0 &&   /* ((1.3) mix_spread; (2.0) a panned kit's lanes, not SPREAD) */
+                   (trk_vmode(t) == V_POLY || trk_vmode(t) == V_UNISON);
 #if FELUCCA_CPU2
     vs_sm[(uint32_t)(t - trk) % NPART] = sm;            /* ((#21) smx_render's sums) */
     nr = track_render(t, b, n);
@@ -1074,7 +1123,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
             mod_end(t);
         return;
     }
-    if (t->spread_on) {                                 /* ((1.3) SPREAD: its own mix, mix_spread) */
+    if (t->spread_on | t->lpan_on) {                   /* ((1.3) SPREAD: its own mix, mix_spread; (2.0) a kit panned) */
         mix_spread(t, b, n SM_ARG(sm));
         if (MOD(t).on)
             mod_end(t);
@@ -1090,8 +1139,8 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         if (t->p[P_ITYPE] | t->ins_run)
             track_insert(t, b, n);                      /* ((1.3) the INSERT: off, nothing) */
         slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
-        if ((pf.mute >> (t - trk)) & 1u)
-            AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* perform.c: a black key in the FX layer (RAM) */
+        if (((pf.mute >> (t - trk)) & 1u) || t->p[P_MUTE] || pf.mg[t - trk] != 32768)   /* perform.c (RAM): a black */
+            AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */
         if ((duck_on >> (t - trk)) & 1u)
             duck_apply((uint32_t)(t - trk), b, n);      /* (Skiff) duck.c: under its source's hits */
         for (i = 0; i < n; i++) {

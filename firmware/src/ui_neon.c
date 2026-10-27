@@ -96,50 +96,26 @@ static void ne_rec(int32_t cx, int32_t cy, int full)
         cv_rect(cx - 1, cy - 2, 2, 1, ux_mix(T_REC, T_TEXT, 60));
 }
 
-/* a sprite: rows of characters, each one of keys drawn in its colour (cols), a space nothing; z times its size */
-static void ne_sprite(int32_t x, int32_t y, const char *const *rows, uint32_t n, const char *keys, const uint16_t *cols,
-                      int32_t z)
-{
-    uint32_t j, i, k;
-    for (j = 0; j < n; j++)
-        for (i = 0; rows[j][i]; i++)
-            for (k = 0; keys[k]; k++)
-                if (rows[j][i] == keys[k])
-                    cv_rect(x + (int32_t)i * z, y + (int32_t)j * z, z, z, cols[k]);
-}
-
 /* the car (side on, facing right: its tail light T, the glass, the headlight, the wheels), z times its size, in a 1 px
- * dark outline; its light trails behind it from the tail light's row, `len` px, fading into `under`. NE_CAR 18 x 6 (the
- * splash), NE_CAR24 24 x 8 (HOME: the user's "a little smaller" than NE_CAR at 2x) */
-static const char *const NE_CAR[6] = {"      ######      ", "    ##.. ...##    ", "  ##############  ",
-                                      "T################H", " ###OO######OO### ", "    OO      OO    "};
-static const char *const NE_CAR24[8] = {"         #######        ", "      ###.. ....##      ",
-                                        "    #################   ", "  ######################",
-                                        "T######################H", " #####OO########OO##### ",
-                                        "     OOOO      OOOO     ", "      OO        OO      "};
-static void ne_car(int32_t x, int32_t y, const char *const *car, uint32_t n, int32_t z, uint16_t body, int32_t len,
-                   uint16_t under)
+ * dark outline; its light trails behind it from the tail light's row, `len` px, fading into `under`. SPR_CAR 18 x 6 (the
+ * splash), SPR_CAR24 24 x 8 (HOME: the user's "a little smaller" than SPR_CAR at 2x; tools/gen_sprites.py) */
+static void ne_car(int32_t x, int32_t y, const uint8_t *car, int32_t z, uint16_t body, int32_t len, uint16_t under)
 {
     const uint16_t ol[5] = {T_BG, T_BG, T_BG, T_BG, T_BG}, cols[5] = {body, T_ACCENT, NE_RED, NE_YELLOW, T_BG};
     int32_t i, t;
-    for (t = 0; t < (int32_t)n && car[t][0] != 'T'; t++)
+    for (t = 0; t < car[1] && spr_px(car, (uint32_t)t * car[0]) != 3u; t++)   /* (the tail light: key 3, T) */
         ;
     for (i = 0; i < len; i++) {                       /* the trails: the tail light's red, a cyan streak under it */
         cv_rect(x - 1 - i, y + t * z, 1, z, ux_mix(NE_RED, under, i * 100 / len));
         cv_rect(x - 1 - i, y + (t + 1) * z + 1, 1, 1, ux_mix(T_ACCENT, under, i * 140 / len < 100 ? i * 140 / len : 100));
     }
     for (i = 0; i < 4; i++)
-        ne_sprite(x + (i == 0) - (i == 1), y + (i == 2) - (i == 3), car, n, "#.THO", ol, z);
-    ne_sprite(x, y, car, n, "#.THO", cols, z);
+        ui_sprite(x + (i == 0) - (i == 1), y + (i == 2) - (i == 3), car, 5u, ol, z);
+    ui_sprite(x, y, car, 5u, cols, z);
 }
 
 /* a palm, 18 x 18, a silhouette in c */
-static const char *const NE_PALM[18] = {"      ##  ##      ", "    ##########    ", "  ####  ##  ####  ", " ##    ####    ## ",
-                                        "##    ## # ##   ##", "#    ##  #  ##   #", "    ##   #   ##   ", "    #    #    #   ",
-                                        "         ##       ", "         ##       ", "        ##        ", "        ##        ",
-                                        "        ##        ", "       ##         ", "       ##         ", "       ##         ",
-                                        "       ##         ", "      ####        "};
-static void ne_palm(int32_t x, int32_t y, uint16_t c) { ne_sprite(x, y, NE_PALM, 18, "#", &c, 1); }
+static void ne_palm(int32_t x, int32_t y, uint16_t c) { ui_sprite(x, y, SPR_PALM, 1u, &c, 1); }
 
 /* the striped sun: a half disc on the horizon hy, gold at its top to pink and purple, cut by gaps that widen downward
  * (dim: that much into the glass, behind a graph) */
@@ -208,11 +184,10 @@ static void ne_vu(int32_t x, int32_t y1, int32_t w, int32_t h, int32_t fh, uint1
 }
 
 /* a sparkle (a lens flare's star), centred on (x, y): its arms c, its heart white; z times its 7 x 7 */
-static const char *const NE_SPARK[7] = {"   #   ", "   #   ", "  #W#  ", "##WWW##", "  #W#  ", "   #   ", "   #   "};
 static void ne_spark(int32_t x, int32_t y, uint16_t c, int32_t z)
 {
     const uint16_t cols[2] = {c, T_TEXT};
-    ne_sprite(x - 3 * z, y - 3 * z, NE_SPARK, 7, "#W", cols, z);
+    ui_sprite(x - 3 * z, y - 3 * z, SPR_SPARK, 2u, cols, z);
 }
 
 /* the sun's bands under a curve: column x from below y to the foot, gold at `top` to pink and purple at the foot, cut

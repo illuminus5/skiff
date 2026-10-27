@@ -98,8 +98,9 @@ a.render(800);
 const brK = a.ex.web_breath_keys(), brB = a.ex.web_breath_buttons(), litK = a.ex.web_lit_keys();
 a.ex.web_buttons(0);
 a.render(300);
-check("FX held: its button and the effects' keys breathe, none lit; let go: nothing",
-      (brB >> B.FX & 1) === 1 && brK !== 0 && (brK & litK) === 0 && litK === 0 &&
+check("FX held: its button and the effects' keys breathe, (2.0) its black keys 1..6 lit as GLO's (the tracks sound); " +
+      "let go: nothing",                                         // (F#3 G#3 A#3 C#4 D#4 F#4: keys 1 3 5 8 10 13)
+      (brB >> B.FX & 1) === 1 && brK !== 0 && (brK & litK) === 0 && litK === 0x252A &&
       a.ex.web_breath_keys() === 0 && a.ex.web_breath_buttons() === 0);
 { // the page's breathing peaks against the firmware's (hal/fm1_input.h FM1_LED_BREATH_PK / _LO, /256 of lit): the
   // colour at 50 % between the dark and the lit one by the LED's share, gamma-encoded (sRGB), within 0.06

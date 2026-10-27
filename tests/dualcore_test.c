@@ -26,7 +26,7 @@ static int32_t peak[NPART];                         /* each track's loudest (tra
 static void part_setup(track_t *t, uint32_t k)
 {
     t->p[P_DIST] = (int16_t)(10 + 15 * (k % 3u));    /* DRIVE: each track its type (t->dist_*) */
-    t->p[P_DTYPE] = (int16_t)(k % 4u);
+    t->p[P_DTYPE] = (int16_t)(k % DT_N);
     t->p[P_REV] = (int16_t)(20 + 10 * k);
     t->p[P_DLY] = (int16_t)(10 * k);
     t->p[P_CHOR] = (int16_t)(30 - 5 * k);

@@ -111,36 +111,36 @@ static void graph_tracks(void)
                                                        * this bar: spent, a ring), a tie its trail, nothing a dot */
                 int32_t bx = x + HL_CELL_W / 2, by = y + h / 2;
                 int past = song.playing && t->seq_idx / 16u * 16u == first && i < play;
-                if ((st->time == ST_NOTE && st->n) || st->hit) {
+                if (step_on(st) || st->hit) {
                     if (past)
                         qk_ellipse(bx, by, 2, 2, 0, ux_mix(col, T_BG, 45), 8);
                     else {
                         qk_disc(bx, by, big ? 3 : 2, col);
                         cv_rect(bx - 1, by - 1, 1, 1, ux_mix(col, T_TEXT, 60));
                     }
-                } else if (st->time == ST_TIE)
+                } else if (step_tie(st))
                     cv_rect(x - 1, by, HL_CELL_W + 2, 1, ux_mix(col, T_BG, 40));
                 else
                     cv_rect(bx, by, 1, 1, T_DIM);
             } else if (ux.crypt) {                    /* (Skiff) CRYPT: the steps in ASCII, # a note, - a tie, . nothing */
                 int32_t base = cy + ch / 2 + 4;       /* (S's capitals centred on the cell) */
-                if ((st->time == ST_NOTE && st->n) || st->hit)
+                if (step_on(st) || st->hit)
                     cr_ch(x, base, &AF_S, '#', on);
-                else if (st->time == ST_TIE)
+                else if (step_tie(st))
                     cr_ch(x + 1, base, &AF_S, '-', on);
                 else
                     cr_ch(x + 2, base, &AF_S, '.', sel ? off : T_DIM);
-            } else if (ux.neon && !sel && ((st->time == ST_NOTE && st->n) || st->hit)) {   /* (Skiff N3) NEON: a lit */
+            } else if (ux.neon && !sel && (step_on(st) || st->hit)) {   /* (Skiff N3) NEON: a lit */
                 cv_rect(x - 1, cy - 1, HL_CELL_W + 2, ch + 2, ux_mix(on, lane, 65));      /* tube: its glow, its hot top */
                 cv_rect(x, cy, HL_CELL_W, ch, on);
                 cv_rect(x + 1, cy + 1, HL_CELL_W - 2, 1, ux_mix(on, T_TEXT, 60));
-            } else if (ux.neon && !sel && st->time != ST_TIE) {
+            } else if (ux.neon && !sel && !step_tie(st)) {
                 cv_rect(x + HL_CELL_W / 2 - 1, cy + ch / 2, 2, 1, off);   /* (nothing: a dim dash) */
-            } else if ((st->time == ST_NOTE && st->n) || st->hit) {
+            } else if (step_on(st) || st->hit) {
                 cv_rect(x, cy, HL_CELL_W, ch, on);
             } else {
                 cv_rect(x, cy, HL_CELL_W, ch, off);
-                if (st->time == ST_TIE)               /* a tie: the note held on, half the cell */
+                if (step_tie(st))               /* a tie: the note held on, half the cell */
                     cv_rect(x, cy + ch / 4, HL_CELL_W, ch / 2, on);
             }
             if (song.playing && i == play && t->seq_idx / 16u * 16u == first) {   /* the step playing: a line before it */
@@ -174,6 +174,6 @@ static void graph_tracks(void)
         int32_t cx = tx + 7 - 24;
         if (cx < HL_STEP_X - 6)
             cx = HL_STEP_X - 6;
-        ne_car(cx, ty + 8, NE_CAR24, 8, 1, T_TEXT, cx - (HL_STEP_X - 4), T_TRK(song.sel));
+        ne_car(cx, ty + 8, SPR_CAR24, 1, T_TEXT, cx - (HL_STEP_X - 4), T_TRK(song.sel));
     }
 }

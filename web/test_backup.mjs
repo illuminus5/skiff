@@ -116,6 +116,12 @@ ok([0, 1, 2, 6].every((id) => target.objs.get(id).every((v, i) => v === objs.fin
   ok(felucca.log.includes("refused 18") && !felucca.objs.has(18) && felucca.objs.has(2) && felucca.log.at(-1) === 0,
     "backup: a Skiff archive onto firmware without the bank: 16..31 skipped, the rest restored");
 }
+{ // (Skiff 2.0) only: the installer's write-back of converted objects; the rest as the unit has them, in the same order
+  const unit = device([[0, rnd(3388, 7)], [1, rnd(1200, 8)]]);
+  await restoreBackup(unit.request, file, () => {}, [6, 2, 0]);
+  ok(unit.log.join() === "2,6,0" && unit.objs.get(1).every((v, i) => v === rnd(1200, 8)[i]) &&
+     unit.objs.get(0).every((v, i) => v === objs[0][1][i]), "backup: only some ids: those written, in the restore's order");
+}
 const failing = device([], { failChunk: 2 });
 ok(await athrows(() => restoreBackup(failing.request, file)) && failing.log.includes("abort 2") && !failing.log.includes(0), "backup: a refused chunk aborts that object and stops before the live music");
 { // (#23) nobody answers: code "timeout", which the installer reads as "not running Skiff" (every Skiff answers INFO)

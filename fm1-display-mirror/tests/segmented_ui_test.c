@@ -30,11 +30,10 @@ int main(void){
  ui_power_on();ui.shift=1;capture("held-home");
  ui_power_on();ui.layer=LAYER_GLO;capture("held-glo");
  unsigned which=0;
- for(unsigned p=0;p<NPAGES;p++)if(PAGES[p].graph==GR_LFO||PAGES[p].graph==GR_LFODST){
-        const char *prefix=which==0?"lfo":which==1?"lfo2":"lfodest";
+ for(unsigned p=0;p<NPAGES;p++)if(PAGES[p].graph==GR_LFO){
+        const char *prefix=which==0?"lfo":"lfo2";
         char label[64],path[160];which++;
         ui_power_on();ui.home=0;ui.page=p;
-        if(PAGES[p].graph==GR_LFODST){TSEL->p[P_LD_PIT]=24;TSEL->p[P_LD_FLT]=24;TSEL->p[P_LD_SHP]=24;TSEL->p[P_LD_AMP]=48;}
         snprintf(label,sizeof label,"%s-initial",prefix);TSEL->lfo_t=0;capture(label);
         snprintf(label,sizeof label,"%s-running",prefix);TSEL->lfo_t=8000;capture(label);
         snprintf(path,sizeof path,"build/host/display-mirror-%s-stream.bin",prefix);
@@ -53,6 +52,15 @@ int main(void){
         stream=fopen(path,"wb");assert(stream);fwrite(host_screen,1,sizeof host_screen,stream);fclose(stream);
         printf("%s graph-only transfer: %u then %u bytes; header + graph recovery without full page\n",prefix,initial,dm.ready);
  }
- assert(which==3);
+ assert(which==2);
+ /* 2.0 replaced the animated LFO DEST page with the MOD routing sheet.
+  * Capture its actual pixels normally, rather than treating it as an LFO. */
+ unsigned mod=0;
+ for(unsigned p=0;p<NPAGES;p++)if(PAGES[p].graph==GR_MOD){
+    ui_power_on();ui.home=0;ui.page=p;capture("mod-initial");
+    TSEL->p[P_LD_PIT]=24;TSEL->p[P_LD_FLT]=24;TSEL->p[P_LD_SHP]=24;TSEL->p[P_LD_AMP]=48;
+    capture("mod-edited");mod++;
+ }
+ assert(mod==1);
  printf("segmented overlay/LFO peak: %u / %u bytes\n",peak,DM_CAPACITY);
 }

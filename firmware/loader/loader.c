@@ -38,8 +38,9 @@
 #include "../src/lcd.c"
 
 #include "ldr_screen.c"                         /* (Skiff) the screen: UPDATE MODE, WRITING */
+#include "fm1_clk_regs.h"                       /* (Skiff) the flash controller's divider as the app has it */
+static uint32_t ldr_sfc_found;                  /* SFC_BAUD as this start found it (0x7C's last word on the SMK) */
 #if BOARD_SMK37
-#include "fm1_clk_regs.h"
 #include "ldr_crumb.h"                          /* (Skiff) the start record: why it started, how far the last run got */
 #define LDR_CRUMB ((ldr_crumb_t *)FM1_LDR_CRUMB_ADDR)
 #endif
@@ -77,12 +78,14 @@ static void ota_show(uint32_t step, int32_t code) { (void)step; (void)code; }
 static void ota_commit(const uint8_t *parm) { (void)parm; }
 #include "../src/ota.c"
 #if BOARD_SMK37
-/* ota.c's queries (cmd 0x7B the start record, 0x7C the clock registers: ldr_crumb.h, fm1_clk_regs.h), 32 bytes each */
+/* ota.c's queries (cmd 0x7B the start record, 0x7C the clock registers: ldr_crumb.h, fm1_clk_regs.h), 32 bytes each;
+ * 0x7C's last word is SFC_BAUD as the loader found it at its start, before it set the app's (in place of USB_CLK) */
 static void ota_reply_info(void) { ota_send_msg(0x7B, (const uint8_t *)LDR_CRUMB, 32); }
 static void ota_reply_clocks(void)
 {
     uint32_t r[8];
     fm1_clk_regs(r);
+    r[7] = ldr_sfc_found;
     ota_send_msg(0x7C, (const uint8_t *)r, sizeof r);
 }
 static __attribute__((noinline)) void ldr_stage(uint32_t st, uint32_t sec)
@@ -92,11 +95,17 @@ static __attribute__((noinline)) void ldr_stage(uint32_t st, uint32_t sec)
 #define LDR_STAGE(st, sec) ldr_stage((st), (sec))
 #endif
 
-/* ---- ldr_core.c hooks: interrupts are off for the whole loader ---- */
-static int ldr_fread(uint32_t off, void *p, uint32_t n) { return fl_read_ram(off, p, n); }
+/* ---- ldr_core.c hooks: interrupts are off for the whole loader. Each feeds the watchdog first: no stretch without a
+ * feed spans more than one flash operation ---- */
+static int ldr_fread(uint32_t off, void *p, uint32_t n)
+{
+    fm1_wdt_feed();
+    return fl_read_ram(off, p, n);
+}
 static int ldr_erase(uint32_t off)
 {
     uint32_t took;
+    fm1_wdt_feed();
 #if BOARD_SMK37
     int rc;
     took = 0;                                       /* (a refused erase leaves it as it is) */
@@ -110,6 +119,7 @@ static int ldr_erase(uint32_t off)
 static int ldr_prog(uint32_t off, const void *p, uint32_t n)
 {
     uint32_t took;
+    fm1_wdt_feed();
     return fl_prog_ram(off, p, n, &took);
 }
 static void ldr_record_clear(void)
@@ -164,6 +174,7 @@ void ldr_cstart(void)
                                                      * warm reset; resume after power loss uses the flash record */
     for (p = _bss_start; p < _bss_end; p++)
         *p = 0;
+    ldr_sfc_found = fm1_sfc_baud_app();             /* (a power-on start: the boot ROM's slow divider, fm1_clk_regs.h) */
 #if BOARD_SMK37
     fm1_reset_reason();
     ldr_crumb_start(LDR_CRUMB, warm, fm1_boot.p3_rst, fm1_boot.rst_src, fm1_boot.wdt_con);

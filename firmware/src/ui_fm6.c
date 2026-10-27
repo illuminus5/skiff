@@ -44,6 +44,7 @@ static const fm_field_t FM_F[2][FM_NWIN][4] = {
 };
 static const char *const FM_CURVE[4] = {"-LIN", "-EXP", "+EXP", "+LIN"};
 static const char *const FM_WAVE[6] = {"TRI", "SAW DN", "SAW UP", "SQUARE", "SINE", "RANDOM"};
+static const char *const FM_HZ[4] = {"1", "10", "100", "1K"};          /* a fixed operator's range (FC & 3) */
 
 static uint32_t fm_tr(void) { return trk_index(TSEL) % NTRK; }
 /* field f's byte in the patch (operator fm_ui[0] on OPERATOR) */
@@ -103,9 +104,8 @@ static int32_t fm_val(const fm_field_t *f, uint32_t i, const uint8_t *p, const t
     switch (f->fmt) {
     case FMF_RATIO: {
         int32_t pos = fm_ratio_pos(op);
-        static const char *const HZ[4] = {"1", "10", "100", "1K"};
         if (op[FP_MODE]) {
-            str_cpy(val, HZ[op[FP_FC] & 3u], 8);
+            str_cpy(val, FM_HZ[op[FP_FC] & 3u], 8);
             *unit = "HZ";
         } else {
             if (op[FP_FC])
@@ -221,11 +221,11 @@ static void fm_cards_of(uint32_t pg)
         const char *unit;
         int32_t g;
         if (!f->label) {
-            draw_column(k, "", "", "", T_THEME, -1, ICON_NONE);
+            draw_column(k, "", "", "", VR_THEME, -1, ICON_NONE);
             continue;
         }
         g = fm_val(f, fm_at(pg, f), p, TSEL, val, &unit);
-        draw_column(k, f->label, val, unit, VAL(k), g, ICON_NONE);
+        draw_column(k, f->label, val, unit, VR_LIVE, g, ICON_NONE);
     }
 }
 static void fm_op_cards(void) { fm_cards_of(0); }
@@ -517,12 +517,8 @@ static void fm_under(int32_t x, int32_t y, int32_t foot)
         if ((x - FM_X0) % 6 == 0)
             for (y = (y + 4) & ~3; y < foot; y += 4)
                 cv_pset(x, y, T_DIM);
-    } else if (ux.neon)
-        ne_band_col(x, y, FM_GY, foot);
-    else if (ux.quark)
-        qk_mc(x, y, foot);
-    else
-        cv_rect(x, y, 1, foot - y, T_RAISE);
+    } else
+        pg_under(x, y, FM_GY, foot, T_RAISE);
 }
 static void fm_line(const fm_env_line_t *l, int32_t dy, int32_t w, uint16_t c, const uint8_t *shade, const uint16_t *sh)
 {
@@ -617,7 +613,7 @@ static void fm_tabs(const fm_sim_t *s, const uint16_t *sh, int ratios)
             b[1] = 0;
             cv_text_on(x + 5, 4 + CAP_IN(S, 17), &AF_S, b, ink, T_SURF);
             if (op[FP_MODE])
-                str_cpy(b, ((const char *const[]){"1", "10", "100", "1K"})[op[FP_FC] & 3u], sizeof b);
+                str_cpy(b, FM_HZ[op[FP_FC] & 3u], sizeof b);
             else if (op[FP_FC])
                 fmt_int(b, op[FP_FC]);
             else
@@ -736,8 +732,7 @@ static void fm_lines(const fm_sim_t *s, const uint16_t *sh, uint32_t w)
     if (best) {                                         /* where it bites most: a mark under it, the caption */
         int32_t r, lo = 0, hi = s->n;                   /* (the block at that column: the axis rises) */
         if (ux.crypt) {                                 /* ((FM6 LAB T) CRYPT: a flame; NEON, QUARK: theirs behind) */
-            static const char *const FL[6] = {"  #  ", " ##  ", " #.# ", "##.##", "#...#", " ### "};
-            cr_sprite(FM_X0 + bx - 2, FM_GY + FM_GH - 3, FL, 6, CR_EMBER, CR_FLAME);
+            cr_sprite(FM_X0 + bx - 2, FM_GY + FM_GH - 3, SPR_FM_FLAME, CR_EMBER, CR_FLAME);
         } else if (!ux.neon && !ux.quark)
             for (r = 0; r < 4; r++)
                 cv_rect(FM_X0 + bx - r, FM_GY + FM_GH + 1 + r, 2 * r + 1, 1, T_TEXT);

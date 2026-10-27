@@ -22,7 +22,8 @@
  * A power cut in 2 leaves the bank's copy whole and no valid OBJ_UPFM6: the next boot starts again at 1
  * (idempotent: the records did not change). No bank, or no flash: nothing to move, nothing written.
  * A full backup of older firmware (id 8, the bank) restores the same way into the restored user presets
- * (upf_migrate, editor_backup.c). Included by upreset.c. */
+ * (upf_migrate, editor_backup.c). (2.0) Both only with FELUCCA_LEGACY: the converter (web/conv) moves an archive's
+ * bank, and 2.0 reads none. Included by upreset.c. */
 #define FM6_BANK_MAGIC 0x42364D46u               /* "FM6B": the retired bank (read only) */
 #define FM6_BANK_N 27u
 typedef struct {
@@ -34,6 +35,7 @@ typedef struct {
 } fm6_bank_t;
 _Static_assert(sizeof(fm6_bank_t) == 3472u, "FM6 bank layout");
 
+#if FELUCCA_LEGACY                               /* ((2.0) the converter moves the bank's patches: web/conv) */
 static int fm6_bank_valid(const fm6_bank_t *b)
 {
     uint32_t k, i;
@@ -45,6 +47,7 @@ static int fm6_bank_valid(const fm6_bank_t *b)
                 return 0;
     return 1;
 }
+#endif
 
 #define UPF_MAGIC 0x36465055u                    /* "UPF6" */
 #define UPF_PK 112u                              /* 128 x 7 bits */
@@ -148,6 +151,7 @@ static int upf_save(void)
 #endif
 }
 
+#if FELUCCA_LEGACY
 /* the retired bank's patches -> the FM6 user presets whose stored SLOT is a B slot and have no patch yet; the count */
 static uint32_t upf_migrate(const fm6_bank_t *b)
 {
@@ -168,37 +172,46 @@ static uint32_t upf_migrate(const fm6_bank_t *b)
     }
     return moved;
 }
+#endif
 
 static void upf_boot(void)                       /* up_boot, after the user preset banks */
 {
 #if FELUCCA_FLASH
-    st_hdr_t h;
     if (flash_ok && st_load(OBJ_UPFM6, &upf, sizeof upf) == (int)sizeof upf && upf_valid(&upf))
         return;
     upf_empty();
-    if (flash_ok && st_current(OBJ_FM6BANK, &h) >= 0 && h.len == sizeof(fm6_bank_t) &&
-        fm6_bank_valid((const fm6_bank_t *)st_buf)) {
-        upf_migrate((const fm6_bank_t *)st_buf);   /* (st_buf holds the bank until upf_save) */
-        upf_save();
+#if FELUCCA_LEGACY
+    {
+        st_hdr_t h;
+        if (flash_ok && st_current(OBJ_FM6BANK, &h) >= 0 && h.len == sizeof(fm6_bank_t) &&
+            fm6_bank_valid((const fm6_bank_t *)st_buf)) {
+            upf_migrate((const fm6_bank_t *)st_buf);   /* (st_buf holds the bank until upf_save) */
+            upf_save();
+        }
     }
+#endif
 #else
     upf_empty();
 #endif
 }
 
-/* up_load: track t (its values just loaded from slot k) gets the record's patch; without one, as before 1.0.3:
- * SLOT F n that factory patch, OWN the init voice. SLOT then shows F n or OWN (fm6_adopt) */
+/* slot k's patch into v (unpacked); without one, as before 1.0.3: SLOT s F n that factory patch, OWN the init voice */
+static void upf_patch(uint32_t k, int32_t s, uint8_t *v)
+{
+    uint8_t pk[FM6_PACKED];
+    if (upf_get(k, pk))
+        memcpy(pk, s >= 0 && s < (int32_t)FM6_NFACTORY ? FM6_FACTORY[s] : FM6_INIT, FM6_PACKED);
+    fm6_unpack(pk, v);
+}
+/* up_load: track t (its values just loaded from slot k) gets the record's patch (upf_patch). SLOT then shows F n or
+ * OWN (fm6_adopt) */
 static void upf_track_load(track_t *t, uint32_t k)
 {
-    uint8_t pk[FM6_PACKED], v[FP_SIZE + 1u];
+    uint8_t v[FP_SIZE + 1u];
     uint32_t tr = (uint32_t)(t - trk);
     if (tr >= NTRK || t->eng_req != ENGI_FM6)
         return;
-    if (upf_get(k, pk)) {
-        int32_t s = t->p[P_E7];
-        memcpy(pk, s >= 0 && s < (int32_t)FM6_NFACTORY ? FM6_FACTORY[s] : FM6_INIT, FM6_PACKED);
-    }
-    fm6_unpack(pk, v);
+    upf_patch(k, t->p[P_E7], v);
     fm6_set_patch(tr, v);
     fm6_adopt(tr);
 }

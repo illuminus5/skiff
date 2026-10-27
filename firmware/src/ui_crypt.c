@@ -18,44 +18,50 @@ static void cr_frame2(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
     cv_frame(x + 2, y + 2, w - 4, h - 4, c);
 }
 
-/* a sprite: rows of characters, '#' c1, '.' c2 (0: left as it is), a space nothing */
-static void cr_sprite(int32_t x, int32_t y, const char *const *rows, uint32_t n, uint16_t c1, uint16_t c2)
+/* (Skiff 2.0) the themes' sprites (CRYPT's, NEON's, FM6 LAB's flame), their art in tools/gen_sprites.py: SPR_x[] = {w,
+ * h, bits a pixel, the pixels MSB first}. spr_px: pixel i's key (1..), 0 none; ui_sprite draws keys 1..nk each z x z in
+ * its colour (cols[key - 1]), leaving the rest as they are */
+#include "ui_sprites.h"
+static uint32_t spr_px(const uint8_t *art, uint32_t i)
 {
-    uint32_t j, i;
-    for (j = 0; j < n; j++)
-        for (i = 0; rows[j][i]; i++)
-            if (rows[j][i] == '#' || (rows[j][i] == '.' && c2))
-                cv_pset(x + (int32_t)i, y + (int32_t)j, rows[j][i] == '#' ? c1 : c2);
+    uint32_t b = art[2], k = i * b;
+    return (uint32_t)(art[3u + (k >> 3)] << 8 | art[4u + (k >> 3)]) >> (16u - b - (k & 7u)) & ((1u << b) - 1u);
 }
+static void ui_sprite(int32_t x, int32_t y, const uint8_t *art, uint32_t nk, const uint16_t *cols, int32_t z)
+{
+    uint32_t w = art[0], j, i;
+    for (j = 0; j < art[1]; j++)
+        for (i = 0; i < w; i++) {
+            uint32_t v = spr_px(art, j * w + i);
+            if (v && v <= nk)
+                cv_rect(x + (int32_t)i * z, y + (int32_t)j * z, z, z, cols[v - 1u]);
+        }
+}
+/* '#' c1, '.' c2 (0: left as it is), z times its size */
+static void cr_spritez(int32_t x, int32_t y, const uint8_t *art, uint16_t c1, uint16_t c2, int32_t z)
+{
+    const uint16_t cols[2] = {c1, c2};
+    ui_sprite(x, y, art, c2 ? 2u : 1u, cols, z);
+}
+#define cr_sprite(x, y, art, c1, c2) cr_spritez(x, y, art, c1, c2, 1)
 
-static const char *const CR_SKULL[9] = {"  #####  ", " ####### ", "#########", "#..###..#", "#..###..#", "####.####",
-                                        " ####### ", "  #.#.#  ", "  #####  "};
-static const char *const CR_SKULL_X[9] = {"  #####  ", " ####### ", "#########", "#.#####.#", "##.###.##",
-                                          "####.####", " ####### ", "  #.#.#  ", "  #####  "};   /* muted: crossed eyes */
 static void cr_skull(int32_t x, int32_t y, uint16_t c, uint16_t eyes, int muted)
 {
-    cr_sprite(x, y, muted ? CR_SKULL_X : CR_SKULL, 9, c, eyes);
+    cr_sprite(x, y, muted ? SPR_SKULL_X : SPR_SKULL, c, eyes);   /* (muted: crossed eyes) */
 }
 
 /* the torch: the flame (two frames, flickering), its head, the stick; 5 x 12, z times that (2 and more: in a 1 px dark
  * outline, so it shows on a band of its own amber: HOME's selected track) */
 static void cr_torch(int32_t x, int32_t y, uint32_t frame, int32_t z)
 {
-    static const char *const T[2][12] = {
-        {"  Y  ", " YYY ", " YFY ", "YFFFY", "YORFY", " ORO ", " BBB ", "  B  ", "  B  ", " BBB ", "  B  ", "  B  "},
-        {"   Y ", "  YY ", " YYY ", "YFFFY", "YOFRY", " ORO ", " BBB ", "  B  ", "  B  ", " BBB ", "  B  ", "  B  "}};
+    const uint8_t *T = frame & 1u ? SPR_TORCH1 : SPR_TORCH0;
+    const uint16_t cols[5] = {CR_GOLD, CR_FLAME, T_THEME, CR_EMBER, T_DIM};
     uint32_t j, i;
     for (j = 0; z > 1 && j < 12u; j++)
         for (i = 0; i < 5u; i++)
-            if (T[frame & 1u][j][i] != ' ')
+            if (spr_px(T, j * 5u + i))
                 cv_rect(x + (int32_t)i * z - 1, y + (int32_t)j * z - 1, z + 2, z + 2, T_BG);
-    for (j = 0; j < 12u; j++)
-        for (i = 0; i < 5u; i++) {
-            char k = T[frame & 1u][j][i];
-            if (k != ' ')
-                cv_rect(x + (int32_t)i * z, y + (int32_t)j * z, z, z, k == 'Y' ? CR_GOLD : k == 'F' ? CR_FLAME :
-                        k == 'O' ? T_THEME : k == 'R' ? CR_EMBER : T_DIM);
-        }
+    ui_sprite(x, y, T, 5u, cols, z);
 }
 
 /* a gauge as a sword (the card's): the hilt at the left, the blade as long as the value along a groove, its edge
@@ -63,7 +69,6 @@ static void cr_torch(int32_t x, int32_t y, uint32_t frame, int32_t z)
 static void cr_sword(int32_t x, int32_t y, int32_t w, int32_t ratio, uint16_t blade, uint16_t edge, uint16_t hilt,
                      uint16_t groove)
 {
-    static const char *const H[5] = {"  #       ", " ### ##   ", "########  ", " ### ##   ", "  #       "};
     int32_t len = (w - 10) * (ratio > 1000 ? 1000 : ratio) / 1000;
     cv_rect(x + 10, y + 2, w - 10, 1, groove);
     if (len > 0) {
@@ -71,19 +76,18 @@ static void cr_sword(int32_t x, int32_t y, int32_t w, int32_t ratio, uint16_t bl
         cv_rect(x + 9, y + 1, len, 1, edge);
         cv_pset(x + 9 + len, y + 2, blade);
     }
-    cr_sprite(x, y, H, 5, hilt, 0);
+    cr_sprite(x, y, SPR_SWORD, hilt, 0);
 }
 
 /* a level as a torch (MIXER, FX, LANES): a 6 px column fh tall up to y1, ember at its foot, amber, gold at its top, its
  * flame on it (out: dim, no flame, a bar where it ends) */
 static void cr_meter(int32_t x, int32_t y1, int32_t fh, int out)
 {
-    static const char *const FL[6] = {"  ##  ", " #..# ", " #..# ", "#....#", "#....#", " #### "};
     int32_t r;
     for (r = 0; r < fh; r++)
         cv_rect(x, y1 - 1 - r, 6, 1, out ? T_DIM : r * 3 < fh ? CR_EMBER : r * 3 < 2 * fh ? T_THEME : CR_GOLD);
     if (!out && fh)
-        cr_sprite(x, y1 - fh - 6, FL, 6, T_THEME, CR_FLAME);
+        cr_sprite(x, y1 - fh - 6, SPR_FLAME, T_THEME, CR_FLAME);
     else
         cv_rect(x - 3, y1 - fh - 1, 12, 2, T_DIM);
 }
@@ -110,11 +114,7 @@ static void cr_leader(int32_t x0, int32_t x1, int32_t y)
 /* REC: a blood drop (the selected track armed: full; another: its outline); 7 x 9 */
 static void cr_drop(int32_t x, int32_t y, int full)
 {
-    static const char *const D[9] = {"   #   ", "  ###  ", "  ###  ", " ##### ", "#######", "#######", "#######",
-                                     " ##### ", "  ###  "};
-    static const char *const O[9] = {"   #   ", "  # #  ", "  # #  ", " #   # ", "#     #", "#     #", "#     #",
-                                     " #   # ", "  ###  "};
-    cr_sprite(x, y, full ? D : O, 9, T_REC, 0);
+    cr_sprite(x, y, full ? SPR_DROP : SPR_DROP_O, T_REC, 0);
 }
 
 /* ---------------------------------------------------------------- (Skiff C4) the graphs as ASCII art */
@@ -163,8 +163,7 @@ static void cr_dots(int32_t x0, int32_t y0, int32_t cw, int32_t ch, const uint8_
 /* the snake's head (LFO's motif), its snout at (x, y): an eye, a forked tongue */
 static void cr_head(int32_t x, int32_t y, uint16_t c)
 {
-    static const char *const H[6] = {"  ####  ", " ###### ", "########", "##.#####", "########", " ###### "};
-    cr_sprite(x - 2, y - 3, H, 6, c, T_INK);
+    cr_sprite(x - 2, y - 3, SPR_HEAD, c, T_INK);
     cv_rect(x + 6, y, 4, 1, CR_BLOOD);
     cv_pset(x + 10, y - 1, CR_BLOOD);
     cv_pset(x + 10, y + 1, CR_BLOOD);
@@ -194,22 +193,7 @@ static void cr_ch(int32_t x, int32_t base, const aafont_t *f, char ch, uint16_t 
 /* a dagger, pointing down (FLT's cutoff), 10 x 14 */
 static void cr_dagger(int32_t x, int32_t y, uint16_t c)
 {
-    static const char *const D[7] = {"  #  ", "  #  ", "#####", "  #  ", "  #  ", "  #  ", "  #  "};
-    uint32_t j, i;
-    for (j = 0; j < 7u; j++)
-        for (i = 0; i < 5u; i++)
-            if (D[j][i] == '#')
-                cv_rect(x + 2 * (int32_t)i, y + 2 * (int32_t)j, 2, 2, c);
-}
-
-/* a sprite drawn z times its size */
-static void cr_spritez(int32_t x, int32_t y, const char *const *rows, uint32_t n, uint16_t c1, uint16_t c2, int32_t z)
-{
-    uint32_t j, i;
-    for (j = 0; j < n; j++)
-        for (i = 0; rows[j][i]; i++)
-            if (rows[j][i] == '#' || (rows[j][i] == '.' && c2))
-                cv_rect(x + (int32_t)i * z, y + (int32_t)j * z, z, z, rows[j][i] == '#' ? c1 : c2);
+    cr_spritez(x, y, SPR_DAGGER, c, 0, 2);
 }
 
 /* half the pixels of a box in c (a checkerboard: the ASCII shade, blood in a saw's teeth) */

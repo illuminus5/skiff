@@ -159,6 +159,8 @@ static int ldr_prog(uint32_t off, const void *p, uint32_t n)
 static void ldr_record_clear(void) { record_cleared++; }
 static void ldr_progress(uint32_t done, uint32_t total) { (void)done; (void)total; }
 #include "../firmware/loader/ldr_core.c"
+#define FM1_CLK_HOST 1
+#include "../firmware/hal/fm1_clk_regs.h"          /* (fm1_sfc_baud_pick: the loader's start sets the app's flash divider) */
 
 static uint8_t *load_logical_b(const char *path, size_t *len, int stock)
 {
@@ -383,6 +385,14 @@ int main(int argc, char **argv)
     bad += check("SMK record: the slowest erase kept (310 ms)", crumb.now.erase_max_ms == 310);
 #endif
     bad += check("protected ranges untouched (SMK: BTIF, USRTRIM, USR, key_mac)", protect_ok());
+    /* a power-on start finds the boot ROM's flash divider (0xB9 on the SMK, the app's 1): the app's set back */
+    bad += check("start: the boot ROM's flash divider 0xB9 under the app's clocks -> the app's 1",
+                 fm1_sfc_baud_pick(0xB9u, 0x6u, 0x00010200u) == 1u);
+    bad += check("start: already the app's (1), or 0: left", !fm1_sfc_baud_pick(1u, 0x6u, 0x00010200u) &&
+                 !fm1_sfc_baud_pick(0u, 0x6u, 0x00010200u));
+    bad += check("start: another clock tree (SYS not on PLL2 x 2/3, or HSB not SYS / 2): left",
+                 !fm1_sfc_baud_pick(0xB9u, 0x5u, 0x00010200u) && !fm1_sfc_baud_pick(0xB9u, 0x6u, 0x00020200u) &&
+                 !fm1_sfc_baud_pick(0xB9u, 0x6u, 0x00000200u));
     printf("%s\n", bad ? "LOADER TEST FAILED" : "loader test passed");
     return bad != 0;
 }

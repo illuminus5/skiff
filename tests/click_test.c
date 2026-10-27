@@ -50,7 +50,7 @@ static void fresh(void)
 {
     uint32_t p;
     memset(trk, 0, sizeof trk);
-    memset(&song, 0, sizeof song);
+    memset(&song, 0, sizeof song); sel_set(0);
     memset(&midi_clock, 0, sizeof midi_clock);
     host_tracks_init();
     for (p = 0; p < NPART; p++) host_preset(&trk[p], 0, 0);
@@ -66,7 +66,7 @@ static void fresh(void)
     mi_r = mi_w = 0; midi_in_overflow = 0; midi_beat_samples = 0;
     fm1_in.notes = kb_prev = 0;
     fm1_ms = 0;
-    song.sel = 0;
+    sel_set(0);
     nb = 0;
 }
 static void run(uint32_t n)                            /* n blocks through audio_block */

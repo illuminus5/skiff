@@ -5,7 +5,8 @@
  * MODE picks the source:
  *   ANLG  xorshift white noise, plus random impulses (DENS: their density, 0 = none)
  *   DUST  the impulses only: crackle, drops (through a resonant filter)
- *   LFSR  a long shift register (LEN: 23 down to 7 bits) clocked CLK semitones above the key
+ *   LFSR  a long shift register (LEN: 23 down to 7 bits) clocked CLK semitones above the key ((2.0.2) past the sample
+ *         rate too, several steps a sample, at most 32: ARCADE's clock, 7 octaves up, met it at F4 and stopped there)
  *   META  one cycle of a short register sequence per period of the key (LEN: which one): a metallic tone
  * COLR tilts the source from white (0) through pink (64, -3 dB/oct) to brown (127, -6 dB/oct).
  * FREQ / RES: a trapezoidal SVF that morphs from low-pass (RES 0) to a narrow band-pass (RES 127);
@@ -21,9 +22,9 @@ static const char *const N_NOISE_MODE[] = {"ANLG", "DUST", "LFSR", "META"};
 enum { NZ_ANLG, NZ_DUST, NZ_LFSR, NZ_META };
 static const char *const N_NOISE_LONG[] = {"L23", "L20", "L17", "L15", "L13", "L11", "L9", "L7", 0};
 static const char *const N_NOISE_META[] = {"127", "127B", "93", "63", "63B", "31", "15", "7", 0};
-static const param_desc_t NOISE_LONG = {"LEN", F_INT, 0, 127, 0, N_NOISE_LONG, 0};   /* = edit[5] but the names */
-static const param_desc_t NOISE_META = {"LEN", F_INT, 0, 127, 0, N_NOISE_META, 0};
-static const param_desc_t NOISE_CLK = {"CLK", F_INT, 0, 127, 0, 0, "st"};           /* = edit[7]: above the key */
+static const param_desc_t NOISE_LONG = {"LEN", N_NOISE_LONG, 0, 127, 0, F_INT, 0};   /* = edit[5] but the names */
+static const param_desc_t NOISE_META = {"LEN", N_NOISE_META, 0, 127, 0, F_INT, 0};
+static const param_desc_t NOISE_CLK = {"CLK", 0, 0, 127, 0, F_INT, U_ST};           /* = edit[7]: above the key */
 
 /* Galois taps of the long registers (maximal length: 2^n - 1 clocks) */
 static const uint32_t NOISE_TAPS[8] = {0x420000u, 0x90000u, 1u << 16 | 1u << 13, 0x6000u, 0x100Du, 0x500u, 0x110u, 0x60u};
@@ -62,6 +63,21 @@ static uint32_t noise_inc(int32_t p)
     }
     inc = pitch_inc((uint32_t)clamp(p, 0, 2047));
     return sh && inc >= 0x80000000u >> (sh - 1u) ? 0xFFFFFFFFu : inc << sh;
+}
+/* (2.0.2) LFSR: the register steps a sample of pitch p, whole ones back and the fraction in *frac (Q32), at most 32 */
+static uint32_t noise_steps(int32_t p, uint32_t *frac)
+{
+    uint32_t sh = 0;
+    uint64_t inc;
+    while (p > 2047) {
+        p -= 192;
+        sh++;
+    }
+    inc = (uint64_t)pitch_inc((uint32_t)clamp(p, 0, 2047)) << sh;
+    if (inc >> 32 >= 32u)
+        inc = (uint64_t)32u << 32;
+    *frac = (uint32_t)inc;
+    return (uint32_t)(inc >> 32);
 }
 
 static uint32_t isqrt32(uint32_t x)
@@ -102,7 +118,7 @@ static void noise_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
     int32_t ic1 = v->s[0], ic2 = v->s[1], rng = v->s[2], b0 = v->s[4], b1 = v->s[5], b2 = v->s[6], br = v->s[7];
     uint32_t ph = v->ph[0], reg = v->ph[1];         /* state in locals: out[] may alias v->s[] */
     int32_t drift = (int32_t)v->ph[2], d16 = 0, gain = 32767, gq, colr, cut, k, a1, a2, a3, g, bpg, mix, cf, thr = 0;
-    uint32_t inc = 0, taps = NOISE_TAPS[sel];
+    uint32_t inc = 0, whole = 0, taps = NOISE_TAPS[sel];
     /* drift: a new random target every 0.7..3 s, followed with a 0.7 s lag */
     if (drft) {
         int32_t tg = v->s[3] >> 16, cnt = v->s[3] & 0xFFFF;
@@ -149,7 +165,7 @@ static void noise_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
     }
     if (mode == NZ_LFSR) {
         uint32_t mask = taps;                         /* the register's own bits (MODE / LEN changes) */
-        inc = noise_inc(m->pitch16 + p[P_E7] * 16 + d16);
+        whole = noise_steps(m->pitch16 + p[P_E7] * 16 + d16, &inc);
         mask |= mask >> 1;
         mask |= mask >> 2;
         mask |= mask >> 4;
@@ -175,9 +191,9 @@ static void noise_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
             break;
         }
         case NZ_LFSR: {
-            uint32_t o = ph;
+            uint32_t o = ph, s;
             ph += inc;
-            if (ph < o)
+            for (s = whole + (ph < o); s; s--)        /* ((2.0.2) whole: the steps a sample past one) */
                 reg = (reg >> 1) ^ (-(reg & 1u) & taps);
             w = (reg & 1u) ? 12000 : -12000;
             break;
@@ -259,14 +275,14 @@ static const engine_t ENG_NOISE = {
     .name = "NOISE",
     .page_title = {"SOURCE", "MOVE"},
     .edit = {
-        {"MODE", F_ENUM, 0, 3, 0, N_NOISE_MODE, 0},
-        {"COLOR", F_PCT, 0, 127, 64, 0, 0},
-        {"CUTOFF", F_CUTOFF, 0, 127, 80, 0, 0},
-        {"RES", F_PCT, 0, 127, 30, 0, 0},
-        {"KEYTRK", F_PCT, 0, 127, 64, 0, 0},
-        {"DENSITY", F_PCT, 0, 127, 0, 0, 0},           /* LFSR, META: the register (noise_desc) */
-        {"DRIFT", F_PCT, 0, 127, 0, 0, 0},
-        {"CRUSH", F_PCT, 0, 127, 0, 0, 0},           /* LFSR, META: the clock above the key */
+        {"MODE", N_NOISE_MODE, 0, 3, 0, F_ENUM, 0},
+        {"COLOR", 0, 0, 127, 64, F_PCT, 0},
+        {"CUTOFF", 0, 0, 127, 80, F_CUTOFF, 0},
+        {"RES", 0, 0, 127, 30, F_PCT, 0},
+        {"KEYTRK", 0, 0, 127, 64, F_PCT, 0},
+        {"DENSITY", 0, 0, 127, 0, F_PCT, 0},           /* LFSR, META: the register (noise_desc) */
+        {"DRIFT", 0, 0, 127, 0, F_PCT, 0},
+        {"CRUSH", 0, 0, 127, 0, F_PCT, 0},           /* LFSR, META: the clock above the key */
     },
     .presets = NOISE_PRESETS,
     .npresets = NELEM(NOISE_PRESETS),

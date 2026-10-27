@@ -90,7 +90,7 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaises(ProtocolError):identify(cap)
     def test_segmented_actual_overlays(self):
         root=Path(__file__).resolve().parents[2]/'build/host'
-        for name in ('held-home','held-glo','lfo-initial','lfo-running'):
+        for name in ('held-home','held-glo','lfo-initial','lfo-running','mod-initial','mod-edited'):
             wire=(root/f'display-mirror-{name}.bin').read_bytes()
             expected=(root/f'display-mirror-{name}-panel.bin').read_bytes()
             dec=self.decoder();frames=[]
@@ -98,10 +98,11 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(len(frames),1,name)
             self.assertEqual(frames[0]['pixels'],expected,name)
         self.assertNotEqual((root/'display-mirror-lfo-initial-panel.bin').read_bytes(),(root/'display-mirror-lfo-running-panel.bin').read_bytes())
+        self.assertNotEqual((root/'display-mirror-mod-initial-panel.bin').read_bytes(),(root/'display-mirror-mod-edited-panel.bin').read_bytes())
 
     def test_lfo_graph_only_after_busy_transfer(self):
         root=Path(__file__).resolve().parents[2]/'build/host'
-        for name in ('lfo','lfo2','lfodest'):
+        for name in ('lfo','lfo2'):
             dec=self.decoder();frames=dec.feed((root/f'display-mirror-{name}-stream.bin').read_bytes())
             self.assertEqual(len(frames),3,name)
             self.assertTrue(frames[0]['full'])

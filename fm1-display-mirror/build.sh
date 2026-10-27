@@ -21,9 +21,9 @@ case "${1:-}" in
         # LSB/(3+1): 13.33 MHz at 320 MHz CPU, 15 MHz at 360 MHz.
         # Keep the 66 ns minimum write cycle of the original ST7789V.
         export FELUCCA_MIRROR_LCD_BAUD="${FELUCCA_MIRROR_LCD_BAUD:-3}"
-        exec sh build.sh --release 1.4-mirrorbulk ;;
+        exec sh build.sh --release 2.0.2-mirrorbulk ;;
     "")
         export FELUCCA_DISPLAY_BULK=0
-        exec sh build.sh --release 1.4-mirror ;;
+        exec sh build.sh --release 2.0.2-mirror ;;
     *) echo "usage: sh fm1-display-mirror/build.sh [--bulk]" >&2; exit 2 ;;
 esac

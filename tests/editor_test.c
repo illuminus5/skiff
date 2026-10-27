@@ -7,7 +7,13 @@ static unsigned char host_samples[3][0x14000];
 #define FELUCCA_OTA 1
 #define FELUCCA_FLASH 0
 #define FELUCCA_VERSION "TEST"
+#ifndef FELUCCA_CDC
 #define FELUCCA_CDC 1                                    /* (as the firmware: MENU > USB SERIAL switches the console) */
+#endif
+/* (Skiff 2.0) the MENU settings an editor is offered: 17; without the console (FELUCCA_CDC=0, a release) 16, no USB
+ * SERIAL (the 10th): item i is the 17's MENU_I(i) */
+#define MENU_NI (18u - !FELUCCA_CDC)
+#define MENU_I(i) (FELUCCA_CDC || (i) < 9u ? (i) : (i) + 1u)
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -77,7 +83,7 @@ static int check(const char *what, int ok)
 static void reset(void)
 {
     uint32_t t, i;
-    memset(&song, 0, sizeof song); memset(trk, 0, sizeof trk);
+    memset(&song, 0, sizeof song); sel_set(0); memset(trk, 0, sizeof trk);
     memset(&ed_w, 0, sizeof ed_w); memset(&ui, 0, sizeof ui);
     memset(&favorites, 0, sizeof favorites); memset(&settings, 0, sizeof settings); settings_init();
     memset(proj_slot, 0, sizeof proj_slot); memset(up_bank, 0, sizeof up_bank);
@@ -154,7 +160,7 @@ static int wide_ids(void)
     uint8_t a[8];
     const param_desc_t *d;
     reset();
-    song.sel = 1;
+    sel_set(1);
     d = param_desc_of(trk[1].eng_req % NENGINES, id);
     v = d->max > d->min ? d->max : d->min;
     a[0] = 1u | 64u; a[1] = id & 127u; a[2] = (uint8_t)((v + 8192) & 127); a[3] = (uint8_t)((v + 8192) >> 7);
@@ -184,7 +190,10 @@ static int preferences(void)
     uint8_t a[4] = {0, 3, 0, 0};                          /* (THEME: 3, CRYPT) */
     reset();
     uint32_t n = request(ED_INFO, a, 0);
-    bad += check("INFO (1.3) wide ids last: 49 01, P_COUNT and P_E0 in two 7-bit bytes each; the plain bytes at most 127",
+    bad += check("INFO (2.0) the song's tag last: 58 01 01 (LIST2, NEW, COPY+, CHAIN, ONCE, EMPTY, CLEAR UNUSED)",
+        host_wire[n - 4] == 0x58 && host_wire[n - 3] == 1 && host_wire[n - 2] == ED_SONG2);
+    n -= 3u;                                              /* (the tags before it, as they were) */
+    bad += check("INFO (1.3) wide ids next: 49 01, P_COUNT and P_E0 in two 7-bit bytes each; the plain bytes at most 127",
         host_wire[n - 7] == 0x49 && host_wire[n - 6] == 1 && host_wire[n - 5] == (P_COUNT & 127u) &&
         host_wire[n - 4] == P_COUNT >> 7 && host_wire[n - 3] == (P_E0 & 127u) && host_wire[n - 2] == P_E0 >> 7 &&
         P_COUNT > 127u);
@@ -200,14 +209,14 @@ static int preferences(void)
         host_wire[n - 9 - 23] == 0 &&                        /* (no bank since 1.0.3) */
         host_wire[n - 9 - 22] == 0x53 && host_wire[n - 9 - 21] == 1 && host_wire[n - 9 - 20] == 3 &&
         host_wire[n - 9 - 19] == 0x50 && host_wire[n - 9 - 18] == 1 && host_wire[n - 9 - 17] == 3 &&   /* FM6 v2: no bank, preset patches */
-        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == 17 &&   /* MENU settings: 17 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD) */
+        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == MENU_NI &&   /* MENU settings: 18 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD; (2.0) RETURN) */
         host_wire[n - 9 - 13] == 0x52 && host_wire[n - 9 - 12] == 1 && host_wire[n - 9 - 11] == 4 &&   /* RATCH */
         host_wire[n - 9 - 10] == 0x4C && host_wire[n - 9 - 9] == 1 && host_wire[n - 9 - 8] == 1 &&   /* 1.1 parameter locks */
         host_wire[n - 9 - 7] == 0x54 && host_wire[n - 9 - 6] == 1 && host_wire[n - 9 - 5] == 0x30 &&  /* (Skiff phase 6) T5, T6 */
         host_wire[n - 9 - 4] == 0 && host_wire[n - 9 - 3] == 6 && host_wire[n - 9 - 2] == 0 &&         /* light: no GRAIN, PHYS */
         host_wire[n - 10] == 0x43 && host_wire[n - 9] == 1 && host_wire[n - 8] == TC_COUNT &&
         host_wire[n - 7] == 0x4B && host_wire[n - 6] == 1 && host_wire[n - 5] == 8 &&    /* (Skiff W3) the kit, */
-        host_wire[n - 4] == 0x57 && host_wire[n - 3] == 1 && host_wire[n - 2] == 63);    /* TRANSPORT .. PERFORM, (#21) SMP_MIX */   /* (Skiff W1) the step's FLAM
+        host_wire[n - 4] == 0x57 && host_wire[n - 3] == 1 && host_wire[n - 2] == 127);   /* TRANSPORT .. PERFORM, (#21) SMP_MIX, (2.0) ties */   /* (Skiff W1) the step's FLAM
                                                                                           * COND NUDGE */
     request(ED_UI_SET, a, 2);
     bad += check("UI_SET updates the actual palette and reports RAM-only saving",
@@ -323,10 +332,10 @@ static int steps(void)
     reset();
     TSEL->step[0].hit = TSEL->step[0].acc = 0x80;
     bad += check("legacy 8-byte step writes preserve lane data",
-                 request(ED_STEP_SET, a, 9) == 23u && TSEL->step[0].note[0] == 60 &&
+                 request(ED_STEP_SET, a, 9) == 24u && TSEL->step[0].note[0] == 60 &&
                  TSEL->step[0].hit == 0x80 && TSEL->step[0].acc == 0x80);
     bad += check("full grid step writes preserve high lane bits and constrain accents",
-                 request(ED_STEP_SET, a, 12) == 23u && TSEL->step[0].hit == 0x92 && TSEL->step[0].acc == 2);
+                 request(ED_STEP_SET, a, 12) == 24u && TSEL->step[0].hit == 0x92 && TSEL->step[0].acc == 2);
     before = TSEL->step[0]; a[2] = 71;
     for (n = 2; n <= sizeof a; n++) {
         if (n == 9u || n == 12u || n == 13u) continue;   /* (14: a[13], the ratchet, 0 is refused) */
@@ -335,7 +344,7 @@ static int steps(void)
     bad += check("partial or oversized step payloads never mutate a valid step", ok);
     a[0] = 1; a[1] = 0; memcpy(a + 2, (const uint8_t[]){1,64,0,0,0,ST_NOTE,0,99}, 8);
     bad += check("TRACK_STEP accepts its legacy payload on an unselected track",
-                 request(ED_TRACK_STEP, a, 10) == 24u && trk[1].step[0].note[0] == 64 && song.sel == 0);
+                 request(ED_TRACK_STEP, a, 10) == 25u && trk[1].step[0].note[0] == 64 && song.sel == 0);
     before = trk[1].step[0]; a[3] = 65;
     bad += check("TRACK_STEP rejects an incomplete grid extension",
                  !request(ED_TRACK_STEP, a, 11) && !memcmp(&before, &trk[1].step[0], sizeof before));
@@ -343,13 +352,13 @@ static int steps(void)
     memcpy(a, (const uint8_t[]){0, 1, 60, 0, 0, 0, ST_NOTE, SF_ACCENT, 100, 0, 0, 0, 80, 3}, 14);
     n = request(ED_STEP_SET, a, 14);
     bad += check("STEP_SET with the ratchet: x3 kept, replied after the chance, flags without it",
-                 n == 23u && step_ratchet(&TSEL->step[0]) == 3u && step_chance(&TSEL->step[0]) == 80u &&
-                 host_wire[n - 5] == 3 && host_wire[n - 6] == 80 && host_wire[12] == SF_ACCENT);
+                 n == 24u && step_ratchet(&TSEL->step[0]) == 3u && step_chance(&TSEL->step[0]) == 80u &&
+                 host_wire[n - 6] == 3 && host_wire[n - 7] == 80 && host_wire[12] == SF_ACCENT);
     a[7] = SF_SLIDE; n = request(ED_STEP_SET, a, 13);
-    ok = n == 23u && step_ratchet(&TSEL->step[0]) == 3u && TSEL->step[0].flags == (SF_SLIDE | 2u << SF_RATCH_SH);
+    ok = n == 24u && step_ratchet(&TSEL->step[0]) == 3u && TSEL->step[0].flags == (SF_SLIDE | 2u << SF_RATCH_SH);
     n = request(ED_STEP_SET, a, 9);
     bad += check("STEP_SET without the ratchet (an older editor) keeps the step's own",
-                 ok && n == 23u && step_ratchet(&TSEL->step[0]) == 3u);
+                 ok && n == 24u && step_ratchet(&TSEL->step[0]) == 3u);
     before = TSEL->step[0]; ok = 1;
     for (n = 0; n < 8u; n++) {
         a[13] = (uint8_t)(n < 4u ? 0u : 5u + n);
@@ -358,10 +367,10 @@ static int steps(void)
     bad += check("STEP_SET refuses a ratchet outside 1..4 and leaves the step", ok);
     memcpy(a, (const uint8_t[]){1, 2, 1, 64, 0, 0, 0, ST_NOTE, 0, 99, 0, 0, 0, 100, 4}, 15);
     n = request(ED_TRACK_STEP, a, 15);
-    ok = n == 24u && step_ratchet(&trk[1].step[2]) == 4u && host_wire[n - 5] == 4;
+    ok = n == 25u && step_ratchet(&trk[1].step[2]) == 4u && host_wire[n - 6] == 4;
     a[14] = 1; n = request(ED_TRACK_STEP, a, 15);
     bad += check("TRACK_STEP sets the ratchet of any track (x4, then back to x1)",
-                 ok && n == 24u && step_ratchet(&trk[1].step[2]) == 1u && !(trk[1].step[2].flags & SF_RATCH));
+                 ok && n == 25u && step_ratchet(&trk[1].step[2]) == 1u && !(trk[1].step[2].flags & SF_RATCH));
     /* (Skiff W1, INFO 43 01) FLAM, COND, NUDGE + 32 after the ratchet; an older editor's write keeps FLAM */
     memcpy(a, (const uint8_t[]){0, 1, 60, 0, 0, 0, ST_NOTE, 0, 100, 0, 0, 0, 100, 1}, 14);
     step_set_rflam(&TSEL->step[0], 5u);
@@ -369,14 +378,14 @@ static int steps(void)
     TSEL->step[0].nudge = -7;
     n = request(ED_STEP_SET, a, 14);
     bad += check("STEP_SET x1 (an editor of before) keeps a FLAM step's FLAM, its COND and NUDGE; the reply carries them",
-                 n == 23u && (TSEL->step[0].flags & SF_FLAM) && TSEL->step[0].cond == TC_1_2 && TSEL->step[0].nudge == -7 &&
-                 host_wire[n - 4] == 1 && host_wire[n - 3] == TC_1_2 && host_wire[n - 2] == 25);
+                 n == 24u && (TSEL->step[0].flags & SF_FLAM) && TSEL->step[0].cond == TC_1_2 && TSEL->step[0].nudge == -7 &&
+                 host_wire[n - 5] == 1 && host_wire[n - 4] == TC_1_2 && host_wire[n - 3] == 25);
     memcpy(a, (const uint8_t[]){0, 1, 60, 0, 0, 0, ST_NOTE, 0, 100, 0, 0, 0, 100, 1, 0, TC_FILL, 32 + 9}, 17);
     n = request(ED_STEP_SET, a, 17);
-    ok = n == 23u && !(TSEL->step[0].flags & SF_FLAM) && TSEL->step[0].cond == TC_FILL && TSEL->step[0].nudge == 9;
+    ok = n == 24u && !(TSEL->step[0].flags & SF_FLAM) && TSEL->step[0].cond == TC_FILL && TSEL->step[0].nudge == 9;
     a[14] = 1; a[15] = 0; a[16] = 32; n = request(ED_STEP_SET, a, 17);
     bad += check("STEP_SET writes FLAM, COND and NUDGE (a Clear: FLAM off, COND --, NUDGE 0)",
-                 ok && n == 23u && (TSEL->step[0].flags & SF_FLAM) && !TSEL->step[0].cond && !TSEL->step[0].nudge);
+                 ok && n == 24u && (TSEL->step[0].flags & SF_FLAM) && !TSEL->step[0].cond && !TSEL->step[0].nudge);
     before = TSEL->step[0]; ok = 1;
     a[14] = 2; ok &= !request(ED_STEP_SET, a, 17);
     a[14] = 0; a[15] = TC_COUNT; ok &= !request(ED_STEP_SET, a, 17);
@@ -386,8 +395,29 @@ static int steps(void)
     memcpy(a, (const uint8_t[]){1, 2, 1, 64, 0, 0, 0, ST_NOTE, 0, 99, 0, 0, 0, 100, 2, 1, TC_3_4, 0}, 18);
     n = request(ED_TRACK_STEP, a, 18);
     bad += check("TRACK_STEP writes COND and NUDGE on any track (FLAM only at x1)",
-                 n == 24u && trk[1].step[2].cond == TC_3_4 && trk[1].step[2].nudge == -32 &&
+                 n == 25u && trk[1].step[2].cond == TC_3_4 && trk[1].step[2].nudge == -32 &&
                  !(trk[1].step[2].flags & SF_FLAM) && step_ratchet(&trk[1].step[2]) == 2u);
+    /* (2.0, #25, INFO 57 01 bit 6) the ties after NUDGE: kept to the step's notes; none on a step with hits or a TIE; a
+     * write without them (an editor of before) leaves none; past 15 refused */
+    memcpy(a, (const uint8_t[]){3, 2, 60, 64, 0, 0, ST_NOTE, 0, 100, 0, 0, 0, 100, 1, 0, 0, 32, 1}, 18);
+    n = request(ED_STEP_SET, a, 18);
+    ok = n == 24u && step_ties(&TSEL->step[3]) == 1u && host_wire[n - 2] == 1;
+    a[17] = 15; n = request(ED_STEP_SET, a, 18);
+    ok &= n == 24u && TSEL->step[3].acc == 3u && host_wire[n - 2] == 3;
+    before = TSEL->step[3];
+    a[17] = 16; ok &= !request(ED_STEP_SET, a, 18) && !memcmp(&before, &TSEL->step[3], sizeof before);
+    n = request(ED_STEP_SET, a, 17);
+    ok &= n == 24u && !TSEL->step[3].acc && !host_wire[n - 2];
+    bad += check("STEP_SET writes a step's ties (to its 2 notes), refuses 16, a write without them leaves none", ok);
+    a[17] = 1; a[9] = 0x04; a[10] = 0x04; n = request(ED_STEP_SET, a, 18);
+    ok = n == 24u && TSEL->step[3].hit == 0x04 && TSEL->step[3].acc == 0x04 && !host_wire[n - 2];
+    a[9] = a[10] = 0; a[6] = ST_TIE; n = request(ED_STEP_SET, a, 18);
+    ok &= n == 24u && !TSEL->step[3].acc;
+    memcpy(a, (const uint8_t[]){1, 4, 2, 60, 64, 0, 0, ST_NOTE, 0, 99, 0, 0, 0, 100, 1, 0, 0, 32, 2}, 19);
+    ok &= request(ED_TRACK_STEP, a, 19) == 25u && step_ties(&trk[1].step[4]) == 2u;
+    n = request(ED_TRACK_STEP, a, 2);
+    bad += check("no ties on a step with hits (its accents kept) or a TIE; TRACK_STEP writes and reads them on any track",
+                 ok && n == 25u && host_wire[n - 2] == 2);
     {   /* (Skiff W3) the DRUM-X kit: KIT_GET, KIT_PUT, a lane's 15 values; a bad one refused, the kit as it was */
         static const uint8_t PUT[16] = {2, DXW_BELL, DXF_BP, 1, DXM_NOISE, 1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
         dx_lane_t was = dx_kit[2];
@@ -608,7 +638,7 @@ static int fm6_patches(void)
         bad += check("FM6_LIST: 8 factory names, nbank 0", ok && k == FM6_NFACTORY && p == n - 1u);
     }
     /* target 3: an FM6 user preset's patch */
-    song.sel = 2;
+    sel_set(2);
     up_store(5, "MINE");                                 /* track 3 (MY PATCH, OWN) -> slot 6 */
     a[0] = ED_FM6_USER; a[1] = 5;
     request(ED_FM6_GET, a, 2);
@@ -631,7 +661,7 @@ static int fm6_patches(void)
     request(ED_FM6_GET, a, 2);
     bad += check("  .. a rename keeps it", host_wire[7] == 0 && !memcmp(host_wire + 8 + 118, "EDITOR    ", 10));
     trk[0].eng_req = ENGI_DRUM;
-    song.sel = 0;
+    sel_set(0);
     up_store(6, "KIT");
     a[0] = ED_FM6_USER; a[1] = 6; memcpy(a + 2, pk, FM6_PACKED);
     request(ED_FM6_GET, a, 2);
@@ -659,7 +689,8 @@ static int fm6_patches(void)
     return bad;
 }
 
-/* UP_PUT -> UP_GET: every value round-trips through the v4 record (a byte each), negative ones too */
+/* UP_PUT -> UP_GET: every value round-trips through the record ((2.0) version 6: by stored id, a byte each), negative
+ * ones too; the pattern UP_PUT sends is not kept (nothing plays it since Skiff phase 5) */
 static int user_preset_roundtrip(void)
 {
     static uint8_t a[16 + 2u * P_COUNT + 32u];
@@ -683,8 +714,8 @@ static int user_preset_roundtrip(void)
     }
     for (i = 0; i < 16u; i++) { a[k++] = i & 1u ? 0u : (uint8_t)(48u + i); a[k++] = 0; }
     request(ED_UP_PUT, a, k);
-    bad += check("UP_PUT stores a v4 record (no flash here: kept in RAM)",
-                 host_wire[6] != 1u && up_used(3) && up_rec(3)->ver == UP_VER);
+    bad += check("UP_PUT stores a version 6 record (no flash here: kept in RAM)",
+                 host_wire[6] != 1u && up_used(3) && up_rec(3)->ver == UP_VER_SID && up_rec(3)->np == SID_COUNT);
     up_values(up_rec(3), got);
     for (i = 0, ok = 1; i < P_COUNT; i++) ok &= got[i] == want[i];
     bad += check("UP_PUT keeps every value (PAN -20, FLT -40, min and max)", ok);
@@ -694,8 +725,8 @@ static int user_preset_roundtrip(void)
     for (i = 0, p = 14; i < P_COUNT; i++, p += 2u)
         ok &= (int32_t)(host_wire[p] | host_wire[p + 1] << 7) - 8192 == want[i];
     for (i = 0; i < 16u; i++, p += 2u)
-        ok &= host_wire[p] == (i & 1u ? 0u : 48u + i);
-    bad += check("UP_GET returns the values and the pattern UP_PUT sent", ok);
+        ok &= !host_wire[p] && !host_wire[p + 1u];
+    bad += check("UP_GET returns the values; (2.0) no pattern: 16 rests, kind 0", ok && !host_wire[p]);
     return bad;
 }
 
@@ -897,16 +928,17 @@ static uint32_t menu_set(uint32_t id, int32_t v)            /* -> rc; host_wire[
 }
 static int menu_protocol(void)
 {
-    static const char *const WANT[17][2] = {   /* ((Skiff U2) STYLE, id 1, and FX LATCH, id 7, retired) */
+    static const char *const WANT[18][2] = {   /* ((Skiff U2) STYLE, id 1, and FX LATCH, id 7, retired) */
         {"THEME", 0}, {"LARGE", "OFF,ON"}, {"ANIM", "ON,OFF"}, {"LEDS", "OFF,DIM LO,DIM HI,INV"},
         {"HOLD", "0.3 s,0.4 s,0.5 s,0.6 s"}, {"KNOB ACCEL", "OFF,ON"}, {"BPM LOCK", "OFF,ON"},
         {"SPEAKER EQ", "FLAT,LOWCUT,BASS+"}, {"USB LEVEL", "MASTER,FIXED"}, {"USB SERIAL", "ON,OFF"},
         {"CLICK", "OFF,REC,ON"}, {"CLICK LEVEL", "LOW,MID,HIGH"}, {"COUNT-IN", "OFF,1 BAR,2 BARS"},   /* (1.1: appended) */
         {"RESTORE LAST", "ON,OFF"}, {"SCALE LEDS", "OFF,ON"},                                        /* (1.2) */
-        {"SCREEN OFF", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"}, {"PLAYHEAD", "THEME,LINE"}};   /* ((Skiff #27) id 19) */
-    static const int32_t DEF[17] = {-1, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0};   /* (COLOR: the default palette) */
-    static const uint8_t TAB[17] = {0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 2, 2, 2, 3, 1, 0, 0};      /* DISPLAY CONTROL AUDIO SYSTEM */
-    static const uint8_t ID[17] = {0, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19};   /* (1, 7, 18: none here) */
+        {"SCREEN OFF", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"}, {"PLAYHEAD", "THEME,LINE"},   /* ((Skiff #27) id 19) */
+        {"RETURN", "SNAP,1 BEAT,1 BAR"}};                                                   /* ((2.0, D 2A) id 20) */
+    static const int32_t DEF[18] = {-1, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0, 2};   /* (COLOR: the default palette) */
+    static const uint8_t TAB[18] = {0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 2, 2, 2, 3, 1, 0, 0, 1};   /* DISPLAY CONTROL AUDIO SYSTEM */
+    static const uint8_t ID[18] = {0, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20};   /* (1, 7, 18: none here) */
     static const char *const TABN[4] = {"DISPLAY", "CONTROL", "AUDIO", "SYSTEM"};
     int bad = 0, ok = 1;
     uint32_t i, k, n;
@@ -916,15 +948,16 @@ static int menu_protocol(void)
     FILE *jf = json ? fopen(json, "w") : 0;
     reset();
     if (jf) fprintf(jf, "[");
-    for (i = 0; i < 17u; i++) {
+    for (i = 0; i < MENU_NI; i++) {
+        uint32_t w = MENU_I(i);
         n = menu_desc(i, &it);
         joined[0] = 0;
         for (k = 0; k < it.nnames; k++) { if (k) strcat(joined, ","); strcat(joined, it.names[k]); }
-        ok &= n > 10u && it.index == i && it.id == ID[i] && it.kind == 0 && it.min == 0 &&
-              it.max + 1 == (int32_t)it.nnames && !strcmp(it.name, WANT[i][0]) &&
-              (WANT[i][1] ? !strcmp(joined, WANT[i][1]) : it.nnames == NPALETTES) &&
-              it.value == (DEF[i] < 0 ? (int32_t)settings.palette : DEF[i]) &&
-              it.tab == TAB[i] && !strcmp(it.tabname, TABN[TAB[i]]) && !it.rest;
+        ok &= n > 10u && it.index == i && it.id == ID[w] && it.kind == 0 && it.min == 0 &&
+              it.max + 1 == (int32_t)it.nnames && !strcmp(it.name, WANT[w][0]) &&
+              (WANT[w][1] ? !strcmp(joined, WANT[w][1]) : it.nnames == NPALETTES) &&
+              it.value == (DEF[w] < 0 ? (int32_t)settings.palette : DEF[w]) &&
+              it.tab == TAB[w] && !strcmp(it.tabname, TABN[TAB[w]]) && !it.rest;
         if (i == 0)
             for (k = 0; k < NPALETTES; k++) ok &= !strcmp(it.names[k], UI_PALETTES[k].name);
         if (!ok) { printf("  MENU_DESC %u: %s [%s] value %d max %d tab %u %s\n", i, it.name, joined, it.value, it.max, it.tab, it.tabname); break; }
@@ -936,7 +969,7 @@ static int menu_protocol(void)
         }
     }
     if (jf) { fprintf(jf, "]\n"); fclose(jf); }
-    bad += check("MENU_DESC: 17 items (1.0.4's 12 in the menu's order less STYLE and FX LATCH, then 1.1's CLICK, CLICK LEVEL, COUNT-IN, 1.2's RESTORE LAST, SCALE LEDS, SCREEN OFF, (Skiff #27) PLAYHEAD), ids 0, 2..6, 8..17, 19, names, defaults", ok);
+    bad += check("MENU_DESC: 18 items (1.0.4's 12 in the menu's order less STYLE and FX LATCH, then 1.1's CLICK, CLICK LEVEL, COUNT-IN, 1.2's RESTORE LAST, SCALE LEDS, SCREEN OFF, (Skiff #27) PLAYHEAD, (2.0) RETURN), ids 0, 2..6, 8..17, 19, 20, names, defaults", ok);
     bad += check("MENU_DESC (1.0.5): after the names each item's tab, index and name (DISPLAY CONTROL AUDIO SYSTEM)", ok);
     {   /* an older editor reads the names and stops: the tab is past them, nothing it reads moved */
         uint32_t m = menu_desc(3, &it), p = 14, q;
@@ -946,12 +979,12 @@ static int menu_protocol(void)
         bad += check("MENU_DESC: the tab comes after every byte of the 1.0.4 reply (older editors ignore it)", ok);
     }
     ok = 1;
-    for (i = 0; i < 17u; i++) {
+    for (i = 0; i < MENU_NI; i++) {
         menu_desc(i, &it);
         ok &= strcmp(it.name, "CALIBRATION") && strcmp(it.name, "ABOUT");
     }
-    n = menu_desc(17, &it);
-    ok &= n == 2u && it.index == 17 && it.id == 127;
+    n = menu_desc(MENU_NI, &it);
+    ok &= n == 2u && it.index == MENU_NI && it.id == 127;
     n = menu_desc(127, &it);
     bad += check("MENU_DESC: no CALIBRATION / ABOUT; an index past the list answers index, 127 (no item)",
                  ok && n == 2u && it.index == 127 && it.id == 127);
@@ -985,12 +1018,14 @@ static int menu_protocol(void)
     ok &= menu_set(17, 0) == 3 && scr_get() == 0u && menu_set(17, 9) == 3 && scr_get() == 4u &&   /* (clamped) */
           menu_set(17, 2) == 3 && scr_get() == 2u && ui_scr == 1u;
     ok &= menu_set(19, 1) == 3 && ui_ph_line == 1u;    /* ((Skiff #27) PLAYHEAD LINE) */
-    for (i = 0; i < 17u; i++) {                         /* MENU_DESC reads them back */
-        static const int32_t SET[17] = {2, 1, 1, 1, 3, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1};
+    favorites.factory[15][24] = 0xA5u;                  /* ((2.0) RETURN: a byte bank.c freed, a unit past its first */
+    ok &= menu_set(20, 0) == 3 && ret_mode() == RET_SNAP;   /* boot; SNAP) */
+    for (i = 0; i < MENU_NI; i++) {                     /* MENU_DESC reads them back */
+        static const int32_t SET[18] = {2, 1, 1, 1, 3, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 0};
         menu_desc(i, &it);
-        ok &= it.value == SET[i];
+        ok &= it.value == SET[MENU_I(i)];
     }
-    bad += check("MENU_SET: every setting applied as the menu does (palette, EQ, USB LEVEL, CLICK, COUNT-IN at once, RESTORE LAST, SCALE LEDS, SCREEN OFF, PLAYHEAD), read back", ok);
+    bad += check("MENU_SET: every setting applied as the menu does (palette, EQ, USB LEVEL, CLICK, COUNT-IN at once, RESTORE LAST, SCALE LEDS, SCREEN OFF, PLAYHEAD, (2.0) RETURN), read back", ok);
     ok = menu_set(3, 0) == 3 && !(ui_prefs & PREF_ANIM_OFF) && (ui_prefs & PREF_LARGE) && menu_set(10, 0) == 3 &&
          !fx_usb_fixed;
     bad += check("MENU_SET: a flag back to its default leaves the other flags", ok);
@@ -1024,6 +1059,7 @@ static int menu_protocol(void)
     bad += check("MENU_SET while the MENU page is shown: the page redraws (ui.force)", ui.force && ui.menu == 1);
     ui.menu = 0;
 
+#if FELUCCA_CDC
     /* USB SERIAL: the reply first, the re-enumeration 200 ms later (usb_serial_apply, called every frame). (usb.up
      * stays 0 here: the host has no USB registers; usb.config 0 = the device off the bus, enumerated afresh) */
     {
@@ -1055,6 +1091,10 @@ static int menu_protocol(void)
         ok &= usb_cdc_on && usb.config;
         bad += check("MENU_SET USB SERIAL ON: applied later (with the MENU open: when it closes); unchanged: no drop", ok);
     }
+#else
+    bad += check("(Skiff 2.0) FELUCCA_CDC=0 (release): MENU_SET of USB SERIAL (id 11): rc 1, no such setting",
+                 menu_set(11, 1) == 1u);
+#endif
     reset();
     return bad;
 }
@@ -1071,7 +1111,7 @@ static int drum_kit_retired(void)
     reset();
     a[0] = 1; a[1] = G_ENGSEL; a[2] = (8192 + ENGI_DRUM) & 127; a[3] = (8192 + ENGI_DRUM) >> 7;
     request(ED_SET, a, 4);
-    a[0] = 0; a[1] = P_E0;
+    a[0] = P_E0 > 127u ? 2 : 0; a[1] = P_E0 & 127u;     /* ((2.0, #36) P_E0 135: scope 2, wide) */
     request(ED_DESC, a, 2);
     {   /* scope, id, fmt, min, max, def (v14 each), "KIT", "", then the 9 names */
         const char *n = (const char *)host_wire + 5 + 3 + 6;
@@ -1083,7 +1123,7 @@ static int drum_kit_retired(void)
     bad += check("DESC of DRUM KIT: STD 66 10 77 80 10 66 55 77 (1..3 as the kits they play)", ok);
     for (r = 1, ok = ed_eng(TSEL) == ENGI_DRUM; r < 4u; r++) {
         uint32_t u = r + 8192u;
-        a[0] = 0; a[1] = P_E0; a[2] = u & 127u; a[3] = u >> 7;
+        a[0] = P_E0 > 127u ? 2 : 0; a[1] = P_E0 & 127u; a[2] = u & 127u; a[3] = u >> 7;
         request(ED_SET, a, 4);
         ok &= TSEL->p[P_E0] == MAP[r] && (int32_t)(host_wire[7] | host_wire[8] << 7) - 8192 == MAP[r];
     }
@@ -1126,7 +1166,7 @@ static int light_tracks(void)
     uint32_t k = NTRK - 1u, light = k >= NHEAVY, e0, p0, i, n, total, e, ok;
     int bad = 0;
     reset();
-    song.sel = (uint8_t)k;
+    sel_set((uint8_t)k);
     e0 = TSEL->eng_req; p0 = TSEL->preset;
     a[0] = 1; a[1] = G_ENGSEL; a[2] = (8192u + ENGI_PHYS) & 127u; a[3] = (8192u + ENGI_PHYS) >> 7;
     request(ED_SET, a, 4);
@@ -1134,7 +1174,7 @@ static int light_tracks(void)
                : TSEL->eng_req == ENGI_PHYS;
     bad += check("the last track: SET G_ENGSEL PHYS refused when light (the sound unchanged, said)", ok);
     reset();
-    song.sel = (uint8_t)k;
+    sel_set((uint8_t)k);
     e0 = TSEL->eng_req; p0 = TSEL->preset;
     a[0] = ENGI_GRAIN; a[1] = 1;
     request(ED_PRESET, a, 2);
@@ -1144,7 +1184,7 @@ static int light_tracks(void)
     set_engine_of(&trk[0], ENGI_GRAIN);
     (void)up_store(5, "GRN");                             /* (3: RAM only, this build has no flash) */
     ok = up_used(5) && up_engine(5) == ENGI_GRAIN;
-    song.sel = (uint8_t)k;
+    sel_set((uint8_t)k);
     e0 = TSEL->eng_req;
     a[0] = 5;
     request(ED_UP_LOAD, a, 1);
@@ -1152,7 +1192,7 @@ static int light_tracks(void)
     reset();
     set_engine_of(&trk[0], ENGI_PHYS);
     (void)up_store(6, "PHY");
-    song.sel = (uint8_t)k;
+    sel_set((uint8_t)k);
     preset_pos(&total);
     for (n = 0, ok = 1; n < total; n++) {
         uint32_t pk;
@@ -1226,7 +1266,7 @@ static int transport_names(void)
     transport_req = 0; song.playing = 1;
     ok &= request(ED_TRANSPORT, play, 1) == 12u && host_wire[6] == 1 && !host_wire[8] && !transport_req;
     ok &= request(ED_TRANSPORT, stop, 1) == 12u && host_wire[8] == 2 && transport_req == 2;
-    transport_req = 0; song.playing = 0; song.sel = 2;
+    transport_req = 0; song.playing = 0; sel_set(2);
     ok &= request(ED_TRANSPORT, rec, 1) == 12u && host_rec_taps == 1 && host_wire[9] == 4 && host_wire[10] == 2;
     ok &= !request(ED_TRANSPORT, op5, 1) && !request(ED_TRANSPORT, op0, 1) && !request(ED_TRANSPORT, two, 2);
     bad += check("TRANSPORT: the state; PLAY (none while playing), STOP, REC as its button; bad ops unanswered", ok);
@@ -1310,9 +1350,9 @@ static int song_cmds(void)
     ok &= !request(ED_LIST, a, 4);
     a[0] = 5; a[2] = 0; a[3] = 17;
     ok &= !request(ED_LIST, a, 4);
-    a[0] = 6; a[1] = 2;
+    a[0] = 6; a[1] = 3;                                                                      /* ((2.0) 2: ONCE) */
     ok &= !request(ED_LIST, a, 2);
-    a[0] = 7; a[1] = 0;
+    a[0] = 9; a[1] = 0;                                                                      /* ((2.0) 7 NEW, 8 COPY+) */
     ok &= !request(ED_LIST, a, 3);
     bad += check("LIST: CLEAR (refused playing, then done); bad track, entry, REPS, SONG, op unanswered", ok);
     a[0] = 1; a[1] = 0; a[2] = 5; a[3] = PAT_REST;
@@ -1337,7 +1377,7 @@ static int song_cmds(void)
     ok &= request(ED_POOL, a, 2) && host_wire[6] == 1;                                       /* nothing to clear */
     a[1] = 64;
     ok &= !request(ED_POOL, a, 2);
-    a[0] = 2; a[1] = 0;
+    a[0] = 4; a[1] = 0;                                                                      /* ((2.0) 2 EMPTY, 3 CLEAR UNUSED) */
     ok &= !request(ED_POOL, a, 2);
     bad += check("POOL: CLEAR only an unused pattern, stopped; nothing to clear said; bad ids, ops unanswered", ok);
     n = request(ED_PERFORM, 0, 0);
@@ -1367,6 +1407,101 @@ static int song_cmds(void)
     ok &= !request(ED_PERFORM, a, 2);
     bad += check("PERFORM: scenes kept, STORE, RECALL (empty said), MUTE (at once, staged), CANCEL, LAUNCH; bad unanswered", ok);
     ui_launch = 0;
+    return bad;
+}
+
+/* (2.0, INFO 58 01 bit 0) LIST2 (82): SONG 0..2 and each REPS byte as kept (16: CHAIN); LIST's REPS 0 CHAIN (one with
+ * an entry after it, else rc 1), SONG 2 ONCE, 7 NEW, 8 COPY+ (a chain: all of it); 79's reply as before (SONG on, a
+ * chain's REPS 1x); POOL 2 EMPTY (in use too: it and its entries stay), 3 CLEAR UNUSED; bad requests unanswered */
+static int song2_cmds(void)
+{
+    uint8_t a[4];
+    int bad = 0, ok;
+    uint32_t n, p1, p2, c;
+    step_t s;
+    reset();
+    memset(bk_ram, 0xFF, sizeof bk_ram);
+    bank_boot();
+    lists_clear();
+    ed_fresh(0, 50); ok = !bank_put(0, 0, 0);        /* T1: A (50), B (60), the track on B */
+    ed_fresh(0, 60); ok &= !bank_put(0, 1, 0);
+    p1 = ent_pat(0, 0); p2 = ent_pat(0, 1);
+    a[0] = 5; a[1] = 0; a[2] = 0; a[3] = 0;
+    ok &= request(ED_LIST, a, 4) && !host_wire[6] && lists.ent[0][0][1] == REPS_CHAIN && !host_wire[12];   /* A on CHAIN: */
+    n = request(ED_LIST2, 0, 0);                                                                            /* 79 says 1x */
+    ok &= n == 411u && host_wire[12] == REPS_CHAIN && !host_wire[16] && !host_wire[7];   /* ((#30) 4 bytes an entry) */
+    a[2] = 2;
+    ok &= request(ED_LIST, a, 4) && host_wire[6] == 1 && !lists.ent[0][2][1];             /* an empty entry can't chain */
+    lists.ent[0][15][0] = (uint8_t)(p1 + 1u);
+    a[2] = 15;
+    ok &= request(ED_LIST, a, 4) && host_wire[6] == 1 && !lists.ent[0][15][1];            /* nor P: none after it */
+    lists.ent[0][15][0] = 0;
+    a[0] = 6; a[1] = 2;
+    ok &= request(ED_LIST, a, 2) && host_wire[7] == 1 && lists.song == SONG_ONCE &&         /* SONG ONCE: 79 says on, */
+          request(ED_LIST2, 0, 0) && host_wire[7] == SONG_ONCE;                              /* 82 ONCE */
+    bad += check("(2.0) LIST REPS 0 CHAIN (not an empty entry, nor P), SONG 2 ONCE; LIST2 says them as kept, LIST as before",
+                 ok);
+    a[0] = 7; a[1] = 0; a[2] = 2;
+    ok = request(ED_LIST, a, 3) && !host_wire[6] && (c = host_wire[15]) != 0u && pool_used(c - 1u) && c - 1u != p1 &&
+         c - 1u != p2;                                                                       /* NEW in C */
+    a[0] = 8; a[2] = 0;
+    ok &= request(ED_LIST2, a, 3) && !host_wire[6] && host_wire[23] && host_wire[27] && host_wire[24] == REPS_CHAIN &&
+          host_wire[23] - 1u != p1 && host_wire[27] - 1u != p2 && ent_pat(0, 0) == p1;       /* COPY+ on A: A-B to D-E */
+    a[2] = 5;
+    ok &= request(ED_LIST, a, 3) && host_wire[6] == 1;                                       /* COPY+ on an empty entry */
+    bad += check("(2.0) LIST NEW (a new pattern in C); COPY+ on a chain (A-B to D-E, a chain again); on an empty one rc 1",
+                 ok);
+    a[0] = 2; a[1] = (uint8_t)p1;
+    ok = request(ED_POOL, a, 2) && !host_wire[6] && pool_used(p1) && !pat_read(p1, bk_rec) &&
+         step_get9(&s, bk_rec + BK_STEPS) && !s.n && ent_pat(0, 0) == p1;                   /* EMPTY A's 01: in use */
+    lists.ent[0][2][0] = 0;                                                                  /* (C's NEW: unused now) */
+    a[0] = 3;
+    ok &= request(ED_POOL, a, 1) && !host_wire[6] && !pool_used(c - 1u) && request(ED_POOL, a, 1) && host_wire[6] == 1;
+    song.playing = 1;
+    a[0] = 2; a[1] = (uint8_t)p2;
+    ok &= request(ED_POOL, a, 2) && host_wire[6] == 3;                                       /* playing */
+    song.playing = 0;
+    a[0] = 3;
+    ok &= !request(ED_POOL, a, 2);
+    a[0] = 2;
+    ok &= !request(ED_POOL, a, 1);
+    a[0] = 8; a[1] = 0; a[2] = 0; a[3] = 1;
+    ok &= !request(ED_LIST, a, 4);
+    bad += check("(2.0) POOL EMPTY (in use too), CLEAR UNUSED (then nothing unused), playing refused; bad unanswered", ok);
+    {   /* ((2.0, #30) INFO 58 01 bit 1) LIST2: each entry's sound after its REPS byte; op 9 SOUND puts one on (an engine
+         * + 1 and its preset; 64 + a user slot), 0 0 takes it off; rc 1 for an empty entry or a sound it can't carry */
+        uint8_t b[5] = {9, 0, 0, 1, 2};               /* (T1 A: ANALOG's preset 3) */
+        ok = request(ED_LIST2, b, 5) && !host_wire[6] && lists.snd[0][0][0] == 1u && lists.snd[0][0][1] == 2u &&
+             host_wire[13] == 1u && host_wire[14] == 2u && strstr(ui.msg, "T1 A SOUND SQR BASS");
+        up_store(3, "EDSND");                         /* (a user sound in slot 4) */
+        b[2] = 1; b[3] = 64 + 3; b[4] = 0;
+        ok &= request(ED_LIST2, b, 5) && !host_wire[6] && lists.snd[0][1][0] == (0x80u | 3u) && !lists.snd[0][1][1] &&
+              host_wire[17] == 64u + 3u && !host_wire[18] && strstr(ui.msg, "T1 B SOUND EDSND");
+        bad += check("(2.0, #30) LIST2: an entry's sound after its REPS; op 9 puts a preset (1 2) or a user sound (64 + "
+                     "slot) on, said", ok);
+        b[2] = 5; b[3] = 1; b[4] = 0;                 /* F: empty */
+        ok = request(ED_LIST2, b, 5) && host_wire[6] == 1u && !lists.snd[0][5][0];
+        b[2] = 0;
+        b[3] = 63;                                    /* (no engine 62) */
+        ok &= request(ED_LIST2, b, 5) && host_wire[6] == 1u;
+        b[3] = 2;                                     /* (DIGITAL, retired) */
+        ok &= request(ED_LIST2, b, 5) && host_wire[6] == 1u;
+        b[3] = 1; b[4] = 127;                         /* (no preset 128) */
+        ok &= request(ED_LIST2, b, 5) && host_wire[6] == 1u;
+        b[3] = 64 + 20; b[4] = 0;                     /* (slot 21 empty) */
+        ok &= request(ED_LIST2, b, 5) && host_wire[6] == 1u;
+        lists.ent[4][0][0] = (uint8_t)(p1 + 1u);      /* (T5 A: a light track's entry, PHYS) */
+        b[1] = 4; b[3] = ENGI_PHYS + 1u;
+        ok &= request(ED_LIST2, b, 5) && host_wire[6] == 1u && lists.snd[0][0][0] == 1u && !lists.snd[4][0][0];
+        b[1] = 0; b[3] = 0; b[4] = 0;
+        ok &= request(ED_LIST2, b, 5) && !host_wire[6] && !lists.snd[0][0][0] && !lists.snd[0][0][1] && strstr(ui.msg, "T1 A NO SOUND");
+        ok &= !request(ED_LIST2, b, 4) && !request(ED_LIST, b, 5) && request(ED_LIST, 0, 0) == 219u;
+        bad += check("  refused (rc 1): an empty entry, no such engine, DIGITAL, no such preset or user sound, PHYS on a "
+                     "light track; 0 0 takes it off; LIST has no op 9, its reply as before", ok);
+        lists.ent[4][0][0] = 0;
+        up_put(3, 0);
+    }
+    lists.song = 0;
     return bad;
 }
 
@@ -1427,10 +1562,9 @@ static int custom_colors(void)
     uint16_t bad_c[CPAL_N];
     uint8_t a[4] = {0, 0, 0, 0};
     menu_item_t it;
-    persist_t p;
+    sks_t p;
     uint32_t i;
     reset();
-    SCENE_FREED = SCENE_FREED_V;                            /* (every unit since phase 5) */
     ok = colors_req(255, 0, 0, 0) == 0 && host_wire[6] == 0 && host_wire[7] == 0;
     ok &= palettes_listed() == NPALETTES && menu_n(MI_COLOR) == NPALETTES && (request(ED_UI_STATE, 0, 0), host_wire[5] & ED_UI_COLORS);
     bad += check("(#27) COLORS: none stored (flags 0), the 22 bytes in pack7; THEME lists its six; UI_STATE's caps say COLORS", ok);
@@ -1482,12 +1616,12 @@ static int custom_colors(void)
     bad += check("(#27) COLORS: a wrong length, look, op or pack7 answers rc 1, nothing changed", ok);
 
     settings_export(&p);                                    /* the settings record a unit keeps */
-    ok = p.palette == palette_to_stored(UI_NEON_INDEX) && p.favorites.factory[15][14] == CPAL_BYTE &&
-         !memcmp(&p.favorites.factory[14][8], &favorites.factory[14][8], 22);
+    ok = p.palette == palette_to_stored(UI_NEON_INDEX) && p.s.cpal == CPAL_BYTE &&
+         !memcmp(p.cpal_cols, &favorites.factory[14][8], 22);   /* ((2.0) SKS1: CPAL_BYTE and the colours by name) */
     memset(&favorites, 0, sizeof favorites); memset(&settings, 0, sizeof settings); settings_init();
     ok &= tokens_builtin(0) && settings_import(&p, sizeof p) == 1 && settings_init() == 0 && cpal_on() && tokens_are(CC) &&
           ux.neon;
-    bad += check("(#27) the set kept with the settings: its THEME field the look (firmware before shows NEON), read back in use", ok);
+    bad += check("(#27) the set kept with the settings: its THEME field the look, read back in use", ok);
 
     ok = colors_req(2, 0, 0, 1) == 3 && host_wire[6] == 0 && !CPAL_BYTE && settings.palette == UI_NEON_INDEX &&
          tokens_builtin(UI_NEON_INDEX) && palettes_listed() == NPALETTES && menu_n(MI_COLOR) == NPALETTES;
@@ -1501,11 +1635,18 @@ static int custom_colors(void)
     ok = settings.palette == UI_SKIFF_INDEX && tokens_builtin(0) && cpal_stored() && !cpal_on() && !ui_ph_line;
     bad += check("(#27) RESET SETTINGS: THEME SKIFF, the set kept (CUSTOM still listed), PLAYHEAD THEME", ok);
 
-    SCENE_FREED = 0;                                        /* (a unit not migrated yet: those bytes may be old scenes) */
-    CPAL_BYTE = 3u | UI_QUARK_INDEX << 2; settings.palette = UI_QUARK_INDEX; theme_apply();
-    ok = !cpal_stored() && tokens_builtin(UI_QUARK_INDEX) && menu_n(MI_COLOR) == NPALETTES &&
-         colors_req(255, 0, 0, 0) == 0 && host_wire[6] == 0;
-    bad += check("(#27) before the old scenes are freed (SCENE_FREED) the bytes are no set", ok);
+    {   /* ((2.0) another firmware's settings: its bytes where the set lives are no set; settings_persist.c clears them) */
+        static persist_t f;
+        memset(&f, 0, sizeof f);
+        f.magic = PERSIST_MAGIC; f.palette = palette_to_stored(UI_QUARK_INDEX); f.panel = panel;
+        f.favorites.factory[15][14] = 3u | UI_QUARK_INDEX << 2;   /* (no Skiff mark at [15][24]) */
+        memset(&f.favorites.factory[14][8], 0x5A, 22);
+        settings_import(&f, (int)sizeof f);
+        theme_apply();
+        ok = !cpal_stored() && !CPAL_COLS[0] && tokens_builtin(UI_QUARK_INDEX) && menu_n(MI_COLOR) == NPALETTES &&
+             colors_req(255, 0, 0, 0) == 0 && host_wire[6] == 0;
+    }
+    bad += check("(#27) another firmware's settings: no set read from its bytes", ok);
     return bad;
 }
 
@@ -1513,7 +1654,7 @@ int main(void)
 {
     int bad = preferences() + motion_locks() + wide_ids() + framing() + uart_recovery() + steps() + samples() + smp_mix() + song_protocol() + malformed_saves() +
               fm6_patches() + user_preset_roundtrip() + live_sync() + usb_burst() + menu_protocol() + drum_kit_retired() +
-              light_tracks() + preset_more() + transport_names() + song_cmds() + custom_colors();
+              light_tracks() + preset_more() + transport_names() + song_cmds() + song2_cmds() + custom_colors();
     printf("%s\n", bad ? "EDITOR TEST FAILED" : "editor test passed");
     return bad != 0;
 }

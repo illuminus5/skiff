@@ -13,7 +13,10 @@
  *    values out of range (a crafted record) play at full level;
  * 4. REV / DLY: a sound's own sends reach the REVERB and DELAY sums as the track's would by as much (with the track's,
  *    127 at most), at the track's LEVEL; none from a sound without them, none from a built-in set's, none while the
- *    FX layer mutes the track; the dry mix as before. */
+ *    FX layer mutes the track; the dry mix as before;
+ * 5. (2.0, #35) a slot as DRUM's KIT (USR1..3): each lane its sample to its end, a lane without one silent; TUNE, the
+ *    lane's DECAY, the closed hat's choke, a lane's mute; an empty slot silent; STD after it; a lane struck again while
+ *    it rings starts its sample again, without a click. */
 #include <stdarg.h>
 #include <stdint.h>
 static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3, as the flash at 0xA0000 */
@@ -174,6 +177,221 @@ static run_t run(int16_t set, uint32_t note, int16_t rev, int16_t dly, int16_t l
     return r;
 }
 static int close_to(double a, double b, double tol) { return b > 0 ? fabs(a / b - 1.0) <= tol : a == 0; }
+
+/* ---- (2.0, #35, the user's pick A of design/mockups/v2_kits.png) a user slot as DRUM's KIT (USR1..3): each lane plays
+ * the slot's sample on its note, a lane without one is silent; PITCH and TUNE its speed, DECAY and the lane's its fall,
+ * the closed hat chokes the open one, a muted lane rings on unheard; an empty slot: every lane silent ---- */
+static const uint8_t KIT_NOTE[7] = {36, 38, 39, 42, 46, 45, 37};   /* KICK SNARE CLAP CL HAT OP HAT TOM RIM: no BELL */
+static const uint32_t KIT_ZB[7] = {2000, 200, 400, 300, 3000, 800, 150};   /* (their ADPCM bytes: 2 samples each) */
+static void kit_put(uint32_t k)
+{
+    uint8_t *b = (uint8_t *)host_slots + k * SMP_USER_SIZE;
+    smp_user_hdr_t h;
+    uint32_t i, off = 0;
+    memset(b, 0xFF, SMP_USER_SIZE);
+    memset(&h, 0, sizeof h);
+    h.magic = SMP_USER_MAGIC;
+    h.version = 1;
+    h.nz = 7;
+    memcpy(h.name, "MY KIT", 6);
+    for (i = 0; i < 7u; i++) {
+        smp_zone_t *z = &h.zone[i];
+        z->off = off;
+        z->n = 2u * KIT_ZB[i];
+        z->le = z->n - 1u;
+        z->rate = 65536u;
+        z->root16 = (int16_t)(KIT_NOTE[i] * 16);
+        z->lo = z->hi = KIT_NOTE[i];
+        off += KIT_ZB[i];
+    }
+    h.data_len = off;
+    for (i = 0; i < off; i++)
+        b[SMP_USER_DATA + i] = (i & 2u) ? 0xFFu : 0x77u;
+    h.crc = st_crc32(b + SMP_USER_DATA, h.data_len);
+    memcpy(b, &h, sizeof h);
+}
+/* track 1 on DRUM (its first preset, no sends), KIT kit */
+static track_t *kit_track(int16_t kit)
+{
+    track_t *t = &trk[0];
+    uint32_t k, j;
+    for (k = 0; k < NTRK; k++)
+        for (j = 0; j < NVOICE; j++)
+            trk[k].v[j].active = trk[k].v[j].gate = 0;
+    host_tracks_init();
+    song.g[G_RTYPE] = 0;
+    host_preset(t, ENGI_DRUM, 0);
+    t->p[P_E0] = kit;
+    t->p[P_REV] = t->p[P_DLY] = t->p[P_CHOR] = t->p[P_DIST] = 0;
+    memset(drum_mute, 0, sizeof drum_mute);
+    {
+        int32_t o[2 * CTL];
+        mix_block(o, CTL);                               /* (the engine in) */
+    }
+    return t;
+}
+/* note struck on t (then a second note at block at2, 0 none): of nb blocks, how many have the dry mix above 64 */
+static uint32_t kit_blocks(track_t *t, uint32_t note, uint32_t nb, uint32_t note2, uint32_t at2)
+{
+    uint32_t k, i, n = 0;
+    trk_note_on(t, note, 100);
+    for (k = 0; k < nb; k++) {
+        int32_t o[2 * CTL], pk = 0;
+        if (note2 && k == at2)
+            trk_note_on(t, note2, 100);
+        mix_block(o, CTL);
+        for (i = 0; i < CTL; i++)
+            pk = abs(mix_l[i]) > pk ? abs(mix_l[i]) : pk;
+        n += pk > 64;
+    }
+    trk_note_off(t, note);
+    if (note2)
+        trk_note_off(t, note2);
+    return n;
+}
+static int drumkit_test(void)
+{
+    track_t *t;
+    uint32_t kick, kick_up, kick_short, snare, bell, oh, oh_cut, muted, empty, std, i;
+    int has = 1;
+    voice_t *v;
+    kit_put(2);
+    memset((uint8_t *)host_slots + 1u * SMP_USER_SIZE, 0xFF, SMP_USER_SIZE);   /* (USR2 empty) */
+    smp_user_scan(1);
+    smp_user_scan(2);
+    t = kit_track(DK_USR3);
+    kick = kit_blocks(t, 36, 400, 0, 0);
+    snare = kit_blocks(kit_track(DK_USR3), 38, 400, 0, 0);
+    bell = kit_blocks(kit_track(DK_USR3), 56, 400, 0, 0);
+    check("(#35) KIT USR3: KICK and SNARE their samples to their ends, BELL (none) silent",
+          kick + 2u >= 4000u / CTL && kick <= 4000u / CTL + 2u && snare + 2u >= 400u / CTL && snare <= 400u / CTL + 2u && !bell,
+          "%u %u %u blocks", kick, snare, bell);
+    t = kit_track(DK_USR3);
+    t->p[P_LTUNE0] = 127;                                /* (KICK's TUNE: +11.8 semitones, about twice as fast) */
+    kick_up = kit_blocks(t, 36, 400, 0, 0);
+    t = kit_track(DK_USR3);
+    t->p[P_LDECAY0] = -40;                               /* (KICK's DECAY below its middle: a fall) */
+    kick_short = kit_blocks(t, 36, 400, 0, 0);
+    check("  TUNE up: faster (half as long); the lane's DECAY down: shorter", kick_up * 2u <= kick + 4u &&
+          kick_up * 2u + 4u >= kick && kick_short < kick / 2u, "%u %u of %u", kick_up, kick_short, kick);
+    t = kit_track(DK_USR3);
+    oh = kit_blocks(t, 46, 400, 0, 0);
+    t = kit_track(DK_USR3);
+    oh_cut = kit_blocks(t, 46, 400, 42, 10);
+    check("  the closed hat chokes the open one", oh >= 6000u / CTL - 2u && oh_cut < 10u + 600u / CTL + 4u,
+          "%u, %u with CL HAT at 10", oh, oh_cut);
+    t = kit_track(DK_USR3);
+    drum_mute[0] = 1u << 0;                              /* (KICK muted) */
+    trk_note_on(t, 36, 100);
+    {
+        int32_t o[2 * CTL];
+        for (i = 0; i < 20u; i++)
+            mix_block(o, CTL);
+    }
+    v = drum_reuse(t, 36);
+    muted = kit_blocks(t, 36, 20, 0, 0);
+    check("  a muted lane rings on unheard (its voice playing)", !muted && v && v->active && !v->s[6], "%u", muted);
+    empty = kit_blocks(kit_track(DK_USR2), 36, 100, 0, 0);
+    std = kit_blocks(kit_track(DK_STD), 36, 100, 0, 0);
+    t = kit_track(DK_USR3);
+    for (i = 0; i < 7u; i++)
+        has &= drum_lane_has(t, i);
+    has &= !drum_lane_has(t, 7);
+    t->p[P_E0] = DK_STD;
+    has &= drum_lane_has(t, 7);
+    check("  an empty slot (USR2): silent; STD after: its own KICK; LANES: BELL without a sample", !empty && std > 0 && has,
+          "%u %u", empty, std);
+    memset(drum_mute, 0, sizeof drum_mute);
+    return 0;
+}
+
+/* IMA ADPCM of x as sampleio.ima_encode (from predictor 0 / index 0, low nibble first) */
+static void ima_enc(const int16_t *x, uint32_t n, uint8_t *out)
+{
+    int32_t pred = 0, idx = 0;
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        int32_t step = IMA_STEP[idx], diff = x[i] - pred, code = 0, vd = step >> 3;
+        if (diff < 0) {
+            code = 8;
+            diff = -diff;
+        }
+        if (diff >= step) {
+            code |= 4;
+            diff -= step;
+            vd += step;
+        }
+        if (diff >= step >> 1) {
+            code |= 2;
+            diff -= step >> 1;
+            vd += step >> 1;
+        }
+        if (diff >= step >> 2) {
+            code |= 1;
+            vd += step >> 2;
+        }
+        pred = clamp(pred + ((code & 8) ? -vd : vd), -32768, 32767);
+        idx = clamp(idx + IMA_IDX[code & 7], 0, 88);
+        out[i >> 1] = (i & 1u) ? (uint8_t)(out[i >> 1] | code << 4) : (uint8_t)code;
+    }
+}
+/* (#35, the unit 2026-10-24: "a subtle click on all the sounds", "the bass drum has to ring out before it can retrigger")
+ * KICK a 110 Hz sine falling over 4000 samples, struck, then struck again at block 30 while it rings: the second hit
+ * starts the sample again (its position back at its start, as long again), and its steepest step there is no larger
+ * than the first hit's from silence (its ADPCM catching up with the sine) plus the sine's own steepest after it: not
+ * the jump from where the first hit was to the second's start */
+static int drumkit_retrig_test(void)
+{
+    static int16_t x[4000];
+    uint8_t *b = (uint8_t *)host_slots + 2u * SMP_USER_SIZE;
+    smp_user_hdr_t h;
+    track_t *t;
+    voice_t *v = 0;
+    int32_t prev = 0, step0 = 0, step1 = 0, step2 = 0;
+    uint32_t i, k, n2 = 0, pos = 0;
+    kit_put(2);
+    for (i = 0; i < 4000u; i++)
+        x[i] = (int16_t)(20000.0 * sin(i * 2.0 * 3.14159265 * 110.0 / 22050.0) * exp(-(double)i / 2500.0));
+    memcpy(&h, b, sizeof h);
+    ima_enc(x, 4000u, b + SMP_USER_DATA + h.zone[0].off);
+    h.crc = st_crc32(b + SMP_USER_DATA, h.data_len);
+    memcpy(b, &h, sizeof h);
+    smp_user_scan(2);
+    t = kit_track(DK_USR3);
+    trk_note_on(t, 36, 100);
+    for (k = 0; k < 400u; k++) {
+        int32_t o[2 * CTL];
+        if (k == 30u) {
+            trk_note_on(t, 36, 100);
+            v = drum_reuse(t, 36);
+        }
+        mix_block(o, CTL);
+        if (k == 30u)
+            pos = v ? v->ph[0] : 99999u;
+        for (i = 0; i < CTL; i++) {
+            int32_t d = abs(mix_l[i] - prev);
+            prev = mix_l[i];
+            if (k < 3u)
+                step0 = d > step0 ? d : step0;
+            else if (k < 30u)
+                step1 = d > step1 ? d : step1;
+            else if (k < 33u)
+                step2 = d > step2 ? d : step2;
+        }
+        {
+            int32_t pk = 0;
+            for (i = 0; i < CTL; i++)
+                pk = abs(mix_l[i]) > pk ? abs(mix_l[i]) : pk;
+            n2 += k >= 30u && pk > 64;
+        }
+    }
+    trk_note_off(t, 36);
+    check("(#35) a lane struck again while it rings: its sample from the start, as long again, no click",
+          pos <= 2u * CTL && n2 + 2u >= 4000u / CTL && step2 <= step0 + step1,
+          "position %u after the second hit's block, %u blocks after it, step %d at it vs %d + %d", pos, n2, step2, step0,
+          step1);
+    return 0;
+}
 
 int main(void)
 {
@@ -346,6 +564,8 @@ int main(void)
         mix_set(0, 1, 127, 0, 0);
     }
 
+    drumkit_test();
+    drumkit_retrig_test();
     printf("%s\n", fails ? "SMPMIX TEST FAILED" : "smpmix test passed");
     return fails != 0;
 }

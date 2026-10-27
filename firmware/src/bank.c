@@ -16,7 +16,9 @@
  *   632..887   the motion, 64 x (step (bit 6: the id's bit 7), id (bit 7: a lock), value low, value high)
  * (Skiff 1.3) A record whose motion names an id from 128 on (P_COUNT passed 127: only one written with r[1] = P_COUNT,
  * a parameter added since phase 9 named) is version 2 (BK_VER2), its ids' bit 7 in bit 6 of their step byte; every
- * other one version 1 as before, which firmware before reads (it shows a version 2 as empty)
+ * other one version 1 as before, which firmware before reads (it shows a version 2 as empty).
+ * (Skiff 2.0, #25) A record with a step's per-note ties (core.h step_ties: byte 7 of a step without hits) is version 3
+ * (BK_VER3, BK_VER2's ids too): 1.4 shows it as empty; one without any stays version 1 or 2, byte for byte as before
  * Phase 5: the records are one pool, ids 0..BK_POOL-1 (pool_put, pat_decode); id = track x 16 + slot, so a chunk is
  * still one track's A..D, E..H, I..L or M..P and every bank saved before reads the same by id.
  * Flash: BK_CHUNKS chunks of BK_PER patterns (ids 4c .. 4c+3), each written whole to one
@@ -30,7 +32,8 @@
 #define BK_SLOTS 16u
 #define BK_VER 1u
 #define BK_VER2 2u                                 /* (Skiff 1.3) an id from 128 on (see the top) */
-static int bk_ver(uint32_t v) { return v == BK_VER || v == BK_VER2; }
+#define BK_VER3 3u                                 /* (Skiff 2.0, #25) per-note ties (see the top) */
+static int bk_ver(uint32_t v) { return v == BK_VER || v == BK_VER2 || v == BK_VER3; }
 #define BK_PER 4u
 #define BK_POOL NPAT                               /* the patterns, ids 0 .. 63 (every track's: phase 5) */
 #define BK_CHUNKS (BK_POOL / BK_PER)
@@ -215,7 +218,7 @@ static int bk_write(uint32_t c)
  * automation on or not: 0 for a step no format can hold (none the UI makes) */
 static int bk_pack_raw(uint8_t *r, uint32_t k, const step_t *st, const int16_t *tv, const motion_store_t *ms, int on)
 {
-    uint32_t i, n = 0, np = PROJ_NP;
+    uint32_t i, n = 0, np = PROJ_NP, ties = 0;
     /* ((Skiff phase 9) the motion's ids as a store of PROJ_NP has them, which firmware before reads; today's when it
      * names a parameter added since) */
     for (i = 0; i < ms->count && i < MOTION_MAX; i++)
@@ -226,16 +229,18 @@ static int bk_pack_raw(uint8_t *r, uint32_t k, const step_t *st, const int16_t *
     r[1] = (uint8_t)np;
     for (i = 0; i < 5u; i++)
         r[2u + i] = (uint8_t)(tv[i] + 64);
-    for (i = 0; i < NSTEP; i++)
+    for (i = 0; i < NSTEP; i++) {
         if (!step_put9(r + BK_STEPS + i * 9u, &st[i]))
             return 0;
+        ties |= step_ties(&st[i]);
+    }
     nudge_pack(r + BK_NUDGE, st, NSTEP);
     for (i = 0; i < ms->count && n < MOTION_MAX; i++) {
         const motion_event_t *e = &ms->event[i];
         uint8_t *m = r + BK_MOT + n * 4u;
         if ((e->place >> 6) != k)
             continue;
-        uint32_t id = np == P_COUNT || MOTION_ID(e) < P_E0 ? MOTION_ID(e) : MOTION_ID(e) - PROJ_NX;
+        uint32_t id = np == P_COUNT || MOTION_ID(e) < P_E0 ? MOTION_ID(e) : MOTION_ID(e) - PROJ_ESHIFT;
         m[0] = (uint8_t)((e->place & 63u) | (id >> 7) << 6);   /* ((1.3) the id's bit 7: BK_VER2) */
         m[1] = (uint8_t)((id & 127u) | (e->lock ? MOTION_LOCK : 0u));
         if (id > 127u)
@@ -245,6 +250,8 @@ static int bk_pack_raw(uint8_t *r, uint32_t k, const step_t *st, const int16_t *
         n++;
     }
     r[7] = (uint8_t)(n | (on ? 128u : 0u));
+    if (ties)
+        r[0] = BK_VER3;                            /* ((2.0) its ids as BK_VER2's too) */
     return 1;
 }
 /* track t's pattern as it is (the sound's own timing, its automation and locks) -> record r */
@@ -383,6 +390,19 @@ static uint32_t pool_alloc(void)
             return id;
     return NPAT;
 }
+/* (2.0, #34, the user's pick 2A) a copy's number: the first free after its original's (06's copy is 08 when 07 is
+ * used), round to the first free before it, ((#44) none of taken's: a chain's copies before it); NPAT: the pool full */
+static uint32_t pool_free_after(uint32_t orig, uint64_t taken)
+{
+    uint32_t i, id;
+    for (i = 1; i <= BK_POOL; i++) {
+        id = (orig + i) % BK_POOL;
+        if (!pool_used(id) && pend_at(id) == PEND_N && !((taken >> id) & 1u))
+            return id;
+    }
+    return NPAT;
+}
+static uint32_t pool_alloc_after(uint32_t orig) { return pool_free_after(orig, 0); }
 /* a pattern whose record is r (the LENs compared first); NPAT none */
 static uint32_t pool_find(const uint8_t *r)
 {
@@ -450,6 +470,261 @@ static uint32_t pool_len(uint32_t id)               /* pattern id's LEN, 0 empty
 }
 static int bank_used(uint32_t k, uint32_t e) { uint32_t id = ent_pat(k, e); return id != PAT_NONE && pool_used(id); }
 static int ent_on(uint32_t k, uint32_t e) { return bank_used(k, e) || ent_rest(k, e); }   /* (#28) a pattern or a REST */
+/* (2.0, #44, the user's pick 3A and the join sheet's A) a chain: track k's entries on CHAIN (REPS_CHAIN) into the
+ * next, each a pattern or a REST: one pattern wherever the track plays them (song_poll, bank_switch), edited as one
+ * (chain_cursor). Entry e chains into e + 1 */
+static int ent_link(uint32_t k, uint32_t e)
+{
+    return e + 1u < NENT && lists.ent[k][e][1] == REPS_CHAIN && ent_on(k, e) && ent_on(k, e + 1u);
+}
+/* .. the chain track k's entry e is in: its first and last (*b0, *b1: e when in none); 1: two parts or more */
+static int ent_block(uint32_t k, uint32_t e, uint32_t *b0, uint32_t *b1)
+{
+    uint32_t a = e % NENT, z = a;
+    k %= NTRK;
+    while (a && ent_link(k, a - 1u))
+        a--;
+    while (ent_link(k, z))
+        z++;
+    *b0 = a;
+    *b1 = z;
+    return z > a;
+}
+/* (2.0, #33) COPY+'s entries: the first empty ones in a row after track k's entry e's chain (e alone: one), as many as
+ * it has parts (an empty entry between patterns, a rest, counts); NENT none */
+static uint32_t ent_free_after(uint32_t k, uint32_t e)
+{
+    uint32_t b0, b1, f, i;
+    ent_block(k, e, &b0, &b1);
+    for (f = b1 + 1u; f + (b1 - b0) < NENT; f++) {
+        for (i = 0; i <= b1 - b0 && !ent_on(k, f + i); i++)
+            ;
+        if (i > b1 - b0)
+            return f;
+    }
+    return NENT;
+}
+/* (2.0, #33, #44) COPY+'s numbers for track k's entry e's chain (e alone: its one), part by part as song_put takes
+ * them: ids[i] the id + 1 (a REST's 0; NPAT + 1: the pool full); how many parts */
+static uint32_t copy_ids(uint32_t k, uint32_t e, uint8_t *ids)
+{
+    uint32_t b0, b1, j, n;
+    uint64_t taken = 0;
+    ent_block(k, e, &b0, &b1);
+    for (j = b0; j <= b1; j++) {
+        n = ent_pat(k, j);
+        ids[j - b0] = 0;
+        if (n == PAT_NONE)
+            continue;
+        if ((n = pool_free_after(n, taken)) < NPAT)
+            taken |= (uint64_t)1 << n;
+        ids[j - b0] = (uint8_t)(n + 1u);
+    }
+    return b1 - b0 + 1u;
+}
+/* (2.0, #44) the entry track k is on: its pattern's, or a REST it rests on; NENT none */
+static uint32_t trk_ent(uint32_t k)
+{
+    uint32_t e = bank_cur(k), c = lists.cur[k % NTRK] % NENT;
+    return e < NENT || trk_pid[k % NTRK] || !ent_rest(k % NTRK, c) ? e : c;
+}
+/* .. NOTES, FEEL, START: the steps before track k's entry e in its chain (its parts' LENs: the track's own for e and a
+ * REST) and (*all) the whole chain's, in u's (1: steps; 16: the grid's pages, a part's last one whole); in none, 0
+ * and the track's */
+static uint32_t chain_off(uint32_t k, uint32_t e, uint32_t *all, uint32_t u)
+{
+    uint32_t b0, b1, j, l, off = 0, n = 0, id;
+    k %= NTRK;
+    ent_block(k, e, &b0, &b1);
+    for (j = b0; j <= b1; j++) {
+        id = ent_pat(k, j);
+        l = ((j == e % NENT || id == PAT_NONE ? (uint32_t)trk[k].p[P_SLEN] : pool_len(id)) + u - 1u) / u;
+        off += j < e % NENT ? l : 0u;
+        n += l;
+    }
+    *all = n;
+    return off;
+}
+/* .. a chain's place (the main loop's): the passes its last part has started it again (SONG: its last entry's REPS
+ * repeat it, song_poll; bank_poll_trk counts them), and a LOOP launch waiting for its end (entry + 1, 0 none:
+ * bank_switch); (ui.c chain_p0, chain_pl: the passes its first part came in on, TAKE's) */
+static uint8_t chain_rep[NTRK] __attribute__((section(".pool")));
+static uint8_t chain_go[NTRK] __attribute__((section(".pool")));
+
+/* ---- (2.0, #44) a note going on from a chain's part into the next (as from a step into the next: seq.c, launch.c
+ * launch_next): its tail is that part's first steps tying it on. NOTES' LENGTH sets it, PITCH takes it along, an edit
+ * that leaves the note short of its part's end takes it out (ed_close); ui_take.c's TAKE writes one ---- */
+#define CT_N NSTEP                                 /* ((2.0.2, #58) a note up to 128 steps: its tail through all of the
+                                                    * next part; 16 before, when a note was 16 steps at most) */
+/* the part after the one track k is on in its chain (its first after its last), both going forward: its pattern (the
+ * record in bk_rec, *e2 its entry), its first steps unfolded into u (*un: CT_N, or its LEN); PAT_NONE: none (not on a
+ * chain, a REST next or the same pattern again, a swap not kept yet) */
+static uint32_t chain_next(uint32_t k, uint32_t *e2, step_t *u, uint32_t *un)
+{
+    uint32_t e = trk_ent(k), b0, b1, id, i;
+    k %= NTRK;
+    if (e >= NENT || !ent_block(k, e, &b0, &b1) || trk[k].p[P_DIR] != DIR_FWD || launch_q[k].done)
+        return PAT_NONE;
+    *e2 = e < b1 ? e + 1u : b0;
+    id = ent_pat(k, *e2);
+    if (id == PAT_NONE || id == trk_pat(k) || pat_read(id, bk_rec) || bk_rec[6] != DIR_FWD + 64u)
+        return PAT_NONE;
+    *un = bk_rec[2] - 64u < CT_N ? bk_rec[2] - 64u : CT_N;
+    memset(u, 0, CT_N * sizeof *u);
+    for (i = 0; i < *un; i++)
+        if (!step_get9(&u[i], bk_rec + BK_STEPS + i * 9u))
+            return PAT_NONE;
+    for (i = 0; i < *un; i++)
+        ed_unfold(&u[i], &u[i], i ? &u[i - 1u] : 0);
+    return id;
+}
+/* .. how many of u's first steps tie pitch p on, in a row */
+static uint32_t tail_len(const step_t *u, uint32_t un, uint32_t p)
+{
+    uint32_t j;
+    int32_t x;
+    for (j = 0; j < un && (x = note_at(&u[j], p)) >= 0 && step_tied(&u[j], (uint32_t)x); j++)
+        ;
+    return j;
+}
+static void tail_out(step_t *u, uint32_t un, uint32_t p)
+{
+    uint32_t j, n = tail_len(u, un, p);
+    for (j = 0; j < n; j++)
+        ed_del(&u[j], (uint32_t)note_at(&u[j], p));
+}
+/* the tails of cnt notes: o[i]'s out, p[i] tied on n[i] of the next part's first steps (CT_SAME: as many as o[i]'s);
+ * last (the part's last step unfolded; 0 none): a tail of a pitch not sounding there goes too (a note deleted, moved,
+ * shortened). Written: the record waiting to be kept (pat_keep_rec), its copy staged to come in the same. 0 done, 1 no
+ * next part, 2 no room for all of a tail (it goes as far as it can) */
+static int chain_tails(uint32_t k, const step_t *last, uint32_t cnt, const uint8_t *o, const uint8_t *p, const uint8_t *n)
+{
+    step_t u[CT_N];
+    uint8_t l[4];
+    uint32_t e2, un, id, i, j, ch = 0;
+    int rc = 0;
+    launch_t *q = &launch_q[k % NTRK];
+    if ((id = chain_next(k, &e2, u, &un)) == PAT_NONE)
+        return 1;
+    for (i = 0; i < cnt && i < 4u; i++) {
+        l[i] = (uint8_t)tail_len(u, un, o[i]);
+        tail_out(u, un, o[i]);
+        ch |= l[i];
+    }
+    for (i = 0; last && i < u[0].n;)               /* (a tail of a pitch not at the part's end) */
+        if (step_tied(&u[0], i) && note_at(last, u[0].note[i]) < 0) {
+            tail_out(u, un, u[0].note[i]);
+            ch = 1;
+        } else
+            i++;
+    for (i = 0; i < cnt && i < 4u; i++)
+        for (j = 0; j < (n[i] == CT_SAME ? l[i] : n[i]); j++, ch = 1)
+            if (j >= un || !ed_add(&u[j], p[i], 1)) {
+                rc = 2;
+                break;
+            }
+    if (!ch)
+        return rc;
+    for (i = 0; i < un; i++)
+        if (!step_put9(bk_rec + BK_STEPS + i * 9u, &u[i]))
+            return 2;
+    bk_rec[0] = BK_VER3;                           /* (ties in it) */
+    if (pat_keep_rec(id, bk_rec))
+        return 2;
+    if (q->armed && q->slot == e2 && !q->done) {   /* (playing: the copy coming in next, the same) */
+        fm1_irq_off();
+        for (i = 0; i < un; i++) {
+            u[i].nudge = q->step[i].nudge;
+            q->step[i] = u[i];
+        }
+        fm1_irq_on();
+    }
+    bk.gen++;
+    return rc;
+}
+/* .. NOTES' LENGTH: the steps pitch p goes on into the next part */
+static uint32_t chain_tail_len(uint32_t k, uint32_t p)
+{
+    step_t u[CT_N];
+    uint32_t e2, un;
+    return chain_next(k, &e2, u, &un) == PAT_NONE ? 0u : tail_len(u, un, p);
+}
+/* (2.0, #44) a knob move into store ms (a part's own automation, not the track's: as motion_put): 1 no room */
+static uint32_t ms_put(motion_store_t *ms, const track_t *t, uint32_t step, uint32_t id, int16_t v)
+{
+    uint32_t i, place = trk_index(t) << 6 | step;
+    const param_desc_t *d;
+    if (step >= NSTEP || !motion_param(id))
+        return 0;
+    d = param_desc_of(eng_idx(t->eng_req), id);
+    if (v < d->min || v > d->max || v < -64 || v > 127)
+        return 0;
+    for (i = 0; i < ms->count && !(ms->event[i].place == place && MOTION_ID(&ms->event[i]) == id); i++)
+        ;
+    if (i == MOTION_MAX)
+        return 1;
+    ms->event[i].place = (uint16_t)place;
+    ms->event[i].id = (uint8_t)id;
+    ms->event[i].lock = 0;
+    ms->event[i].value = (int8_t)param_fit(d, v);
+    if (i == ms->count)
+        ms->count++;
+    ms->on |= (uint8_t)(1u << trk_index(t));
+    return 0;
+}
+/* .. a TAKE on a chain (ui_take.c take_commit): pass `pass` of track k's log into its part j (not the one it is on), as
+ * take_commit puts one into the track: an undo copy of the part first (SAVE held on that part puts it back), its record
+ * then waiting to be kept, the copy staged to come in the same; its notes and knob moves counted on (*full: a move
+ * found no room); tmp: the caller's scratch */
+static __attribute__((noinline)) void take_part(uint32_t k, uint32_t j, uint32_t pass, step_t *tmp, uint32_t *notes,
+                                                uint32_t *moves, uint32_t *full)
+{
+    track_t *t = &trk[k % NTRK];
+    launch_t *q = &launch_q[k % NTRK];
+    uint32_t id = ent_pat(k, j), len, i, nn, mm = 0, tied = 0;
+    int16_t v[5];
+    int own;
+    motion_store_t ms;
+    k %= NTRK;
+    if (id == PAT_NONE || pat_decode(t, id, tmp, v, &ms))
+        return;                                    /* (a REST: nothing) */
+    len = v[0] > 0 && v[0] < (int16_t)NSTEP ? (uint32_t)v[0] : NSTEP;
+    own = trk_vmode(t) == V_POLY && v[4] == DIR_FWD && !drum_track(t);   /* (as rec_poly, the part's DIR) */
+    for (i = 0; own && i < len; i++)
+        ed_unfold(&tmp[i], &tmp[i], i ? &tmp[i - 1u] : 0);
+    nn = take_notes(k, tmp, len, pass, own, 1, &tied);
+    for (i = 0; i < (take_kv_n < TAKE_KV ? take_kv_n : TAKE_KV); i++)
+        if (take_kv[i].trk == k && take_kv[i].pass == pass && take_kv[i].step < len) {
+            mm++;
+            *full |= ms_put(&ms, t, take_kv[i].step, take_kv[i].param, take_kv[i].value);
+        }
+    if (!nn && !mm && !tied)
+        return;
+    undo_label = "TAKE";                           /* (the part as it was: its own undo copy) */
+    undo_push(UNDO_PAT);
+    undo.trk = (uint8_t)(k + 1u);
+    undo.what = UNDO_PAT;
+    undo.keep = 0;
+    memcpy(undo.p, t->p, sizeof undo.p);
+    undo.pid = (uint8_t)(id + 1u);
+    if (!bk_pack_raw(bk_rec, k, tmp, v, &ms, (ms.on >> k) & 1u) || pat_decode(t, id, undo.step, v, &undo.motion_backup) ||
+        pat_keep_rec(id, bk_rec)) {
+        undo.trk = 0;                              /* (not kept: nothing to undo) */
+        return;
+    }
+    for (i = 0; i < 5u; i++)
+        undo.p[BK_TIME[i]] = v[i];
+    if (q->armed && q->slot == j && !q->done) {    /* (playing: the copy coming in next, the same) */
+        fm1_irq_off();
+        memcpy(q->step, tmp, sizeof q->step);
+        q->motion = ms;
+        fm1_irq_on();
+        q_sig[k] = proj_hash(bk_rec, BK_REC);
+    }
+    *notes += nn;
+    *moves += mm;
+    bk.gen++;
+}
 static void rec_motion_of(uint8_t *r, uint32_t id)  /* pattern id's stored automation into record r (motion_lost) */
 {
     if (!pat_read(id, bk_buf)) {
@@ -561,9 +836,79 @@ static int pat_load(track_t *t, uint32_t id)
     bk.gen++;
     return full ? 2 : 0;
 }
+/* ---- (2.0, #30) a song entry's sound (b: lists.snd's two bytes: 0 0 none; engine + 1 and its preset; 0x80 + a user
+ * slot, 0), as PRESETS or USER loads it: all but the track's own values (param_kept). Made into s for track k; 0: none
+ * (none set, its user slot erased since, an engine the track may not play: the track's sound stays) ---- */
+static int esnd_make(uint32_t k, const uint8_t *b, esnd_t *s)
+{
+    uint32_t eng = b[0] - 1u, u = b[0] & 127u, pi;
+    s->kit = s->fm6 = 0;
+    if (b[0] & 128u) {
+        if (u >= UP_SLOTS || !up_used(u) || !eng_allowed(k, up_engine(u)))
+            return 0;
+        up_values(up_rec(u), s->p);
+        s->eng = (uint8_t)up_engine(u);
+        s->preset = 0;
+        s->user = (uint8_t)(u + 1u);
+        if (s->eng == ENGI_FM6) {                  /* (its own patch, SLOT as up_load shows it) */
+            upf_patch(u, s->p[P_E7], s->f6);
+            s->p[P_E7] = (int16_t)fm6_match(s->f6, s->p[P_E7]);
+            s->fm6 = 1;
+        }
+        return 1;
+    }
+    if (!eng_ok(eng) || !ENGINES[eng]->npresets || !eng_allowed(k, eng))   /* (eng_ok: not DIGITAL's, retired) */
+        return 0;
+    pi = preset_orig(ENGINES[eng], b[1] % ENGINES[eng]->npresets);
+    preset_fill(s->p, ENGINES[eng], pi);
+    s->eng = (uint8_t)eng;
+    s->preset = (uint8_t)pi;
+    s->user = 0;
+    if (eng == ENGI_DRUMX)
+        s->kit = DRUMX_PKIT[pi % NELEM(DRUMX_PKIT)];
+    if (eng == ENGI_FM6 && s->p[P_E7] >= 0 && s->p[P_E7] < (int32_t)FM6_NFACTORY) {
+        fm6_unpack(FM6_FACTORY[s->p[P_E7]], s->f6);
+        s->fm6 = 1;
+    }
+    return 1;
+}
+/* .. (the user's pick 2A) the track's sound as an entry's (b): its user sound or factory preset, as it was loaded (its
+ * values, an FM6 patch, a DRUM-X preset's kit as they came); 0: none such (edited since: SAVE > USER keeps it as a user
+ * sound; an FM6 patch of its own, a sample set of the user's: the same) */
+static int snd_of(uint32_t k, uint8_t *b)
+{
+    esnd_t s;                                      /* (the main loop's stack: 448 B, once) */
+    const track_t *t = &trk[k % NTRK];
+    uint32_t i, u = user_of(t);
+    b[0] = (uint8_t)(u < UP_SLOTS ? 0x80u | u : t->eng_req + 1u);
+    b[1] = (uint8_t)(u < UP_SLOTS ? 0u : t->preset);
+    if (!esnd_make(k, b, &s))
+        return 0;
+    for (i = 0; i < P_COUNT; i++)
+        if (!param_kept(i) && motion_base_value(t, i) != s.p[i])
+            return 0;
+    if (s.fm6 && memcmp(fm6_patch[k % NTRK], s.f6, FP_SIZE))
+        return 0;
+    return !s.kit || !memcmp(dx_kit, DX_KITS[s.kit - 1u], sizeof dx_kit);
+}
+/* .. stopped: track k onto entry e brings its sound now. No undo step (the song's, as the pattern) */
+static void esnd_go(uint32_t k, uint32_t e)
+{
+    track_t *t = &trk[k % NTRK];
+    if (!esnd_make(k, lists.snd[k % NTRK][e % NENT], &esnd[k % NTRK]))
+        return;
+    mom_back(t);
+    motion_restore(t);
+    fm1_irq_off();
+    esnd_put(t, &esnd[k % NTRK]);
+    fm1_irq_on();
+    motion_rebase(t);
+    if (t == TSEL)
+        sync_reload = 1;
+}
 /* track k on its entry e now (stopped): what the track had kept, then the entry's pattern ((#28) a REST: no steps, no
- * automation, on no pattern, its LEN DIV as they were: a song's rest, stage_entry). 0, 1 an empty entry, 2 without
- * its automation, 4 PATTERNS FULL (nowhere to keep what the track had) */
+ * automation, on no pattern, its LEN DIV as they were: a song's rest, stage_entry), ((2.0, #30) its sound first). 0, 1
+ * an empty entry, 2 without its automation, 4 PATTERNS FULL (nowhere to keep what the track had) */
 static int ent_go(uint32_t k, uint32_t e)
 {
     uint32_t id = ent_pat(k, e);
@@ -573,9 +918,12 @@ static int ent_go(uint32_t k, uint32_t e)
     if (trk_keep(k))
         return 4;
     lists.cur[k] = (uint8_t)(e % NENT);
+    esnd_go(k, e);
     if (id != PAT_NONE)
         return pat_load(&trk[k], id);
     track_defaults_steps(&trk[k]);                 /* (its automation too, motion_lost with it: motion_clear) */
+    trk[k].p[P_SGATE] = TP[P_SGATE].def;           /* ((2.0.2) notes put here start at 1 STEP, whatever pattern's 50 %
+                                                    * GATE the track had; its LEN DIV stay: a rest's length) */
     trk_pid[k] = 0;
     bk.gen++;
     return 0;
@@ -630,7 +978,7 @@ static int bank_put(uint32_t k, uint32_t e, int erase)
             trk_pid[k] = 0;
             track_defaults_steps(&trk[k]);         /* (its automation too: motion_clear, motion_lost with it) */
         }
-        lists.ent[k][e][0] = 0;
+        lists.ent[k][e][0] = lists.snd[k][e][0] = lists.snd[k][e][1] = 0;   /* ((2.0, #30) its sound with it) */
     } else {
         if (trk_pid[k] && trk_pid[k] != id + 1u && trk_keep(k))
             return 4;                              /* (the pattern it is on kept first) */
@@ -688,7 +1036,15 @@ static void bank_poll_trk(uint32_t k)
         q->adv = 0;
         return;
     }
-    if (!q->done || (q->done == 2u && transport_busy()))
+    if (!q->done)
+        return;
+    if (q->snd) {                                  /* ((2.0, #30) the entry's sound came in: MOMENTARY's values for */
+        q->snd = 0;                                /* the sound before stay out of it) */
+        mom_drop(t);
+        if (t == TSEL)
+            sync_reload = 1;
+    }
+    if (q->done == 2u && transport_busy())
         return;
     if ((trk_pid[k] || !q_empty(q)) && bk_pack_raw(bk_rec, k, q->step, q->time, &q->motion, (q->motion.on >> k) & 1u)) {
         id = trk_pid[k] ? trk_pid[k] - 1u : pool_alloc();   /* (a new pattern went out: the first free id) */
@@ -708,6 +1064,20 @@ static void bank_poll_trk(uint32_t k)
             trk_name(k, id);
     }
     q->done = 0;
+    {   /* ((2.0, #44) a chain's own next from one of its parts: its passes go on (its first after its last: one more);
+         * else in a chain anew. Its first coming in: the pass it starts on, and (round from its last) the one its pass
+         * before started on: TAKE's) */
+        uint32_t b0, b1, e = q->slot % NENT, o = lists.cur[k] % NENT, in = (uint32_t)ent_block(k, e, &b0, &b1);
+        uint32_t own = in && q->adv && o >= b0 && o <= b1;
+        if (!own)
+            chain_rep[k] = 0;
+        else if (e == b0 && o == b1 && chain_rep[k] < 255u)
+            chain_rep[k]++;
+        if (in && e == b0) {
+            chain_pl[k] = own && o == b1 ? chain_p0[k] : 0u;
+            chain_p0[k] = (uint16_t)(take_p0[k] + 1u);
+        }
+    }
     q->adv = 0;
     trk_pid[k] = (uint8_t)(q->id == PAT_NONE ? 0u : q->id + 1u);   /* ((1.2.1, #12) a rest: on no pattern) */
     trk_sig[k] = q_sig[k];
@@ -737,11 +1107,12 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
     uint32_t id = ent_pat(k, e), full = 0, i;
     if (q->done || (!trk_pid[k] && !seq_is_empty(t) && pool_alloc() == NPAT))
         return 4;
-    if (!bank_used(k, e) && (adv || ent_rest(k, e))) {
+    if ((adv == 2u || !bank_used(k, e)) && (adv || ent_rest(k, e))) {   /* ((2.0) adv 2: SONG ONCE's end, a rest on e
+                                                                            * whatever it names: song_poll) */
         for (i = 0; i < NSTEP; i++)
             step_clear(&q->step[i]);
-        for (i = 0; i < 5u; i++)
-            q->time[i] = motion_base_value(t, BK_TIME[i]);
+        for (i = 0; i < 5u; i++)                   /* ((2.0.2) GATE the default, as ent_go's) */
+            q->time[i] = BK_TIME[i] == P_SGATE ? TP[P_SGATE].def : motion_base_value(t, BK_TIME[i]);
         memset(&q->motion, 0, sizeof q->motion);
         id = PAT_NONE;
     } else if (id == PAT_NONE || pat_decode(t, id, q->step, q->time, &q->motion))
@@ -764,27 +1135,56 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
     q->adv = (uint8_t)adv;
     q->reps = (uint8_t)reps;
     q->done = 0;
+    q->snd = (uint8_t)(adv != 2u && esnd_make(k, lists.snd[k][e % NENT], &esnd[k]));   /* ((2.0, #30) its sound, made
+                                                                                       * now: in at the swap) */
     RING_PUBLISH();
     q->armed = 1;
     bk.gen++;
     return full ? 2 : 0;
 }
+/* (2.0, #44) a LOOP launch of entry e for track k, playing: on a chain's part before its last, it waits for the chain's
+ * end as for a pattern's (song_poll stages it on the last part), one of the user's staged before dropped, the chain's
+ * own next kept; 1 waiting */
+static int chain_wait(uint32_t k, uint32_t e)
+{
+    uint32_t b0, b1, c;
+    bank_poll_trk(k);                              /* (a swap just made: the track on what came in) */
+    c = lists.cur[k] % NENT;
+    if (!ent_block(k, c, &b0, &b1) || c == b1)
+        return 0;
+    if (launch_q[k].armed && !launch_q[k].adv) {
+        launch_q[k].armed = 0;
+        RING_PUBLISH();
+    }
+    chain_go[k] = (uint8_t)(e + 1u);
+    bk.gen++;
+    return 1;
+}
 /* entry e of track k ((#28) a REST too): stopped (a count-in too), at once (ent_go); playing, staged for its launch
  * point (ui.c launch_mode), one staged before replaced (an empty entry leaves it staged). 0 done or staged, 1 an empty
- * entry, 2 .. without its automation (AUTOMATION FULL), 4 PATTERNS FULL (stage_entry) */
+ * entry, 2 .. without its automation (AUTOMATION FULL), 4 PATTERNS FULL (stage_entry). ((2.0, #44) A chain: from its
+ * first part; LOOP, the track on a chain: at the chain's end, chain_wait) */
 static int bank_switch(uint32_t k, uint32_t e)
 {
     launch_t *q;
+    uint32_t b0, b1;
     k %= NTRK;
     e %= NENT;
     q = &launch_q[k];
     if (!ent_on(k, e))
         return 1;
+    if (ent_block(k, e, &b0, &b1))                 /* ((2.0, #44) a chain: from its first part) */
+        e = b0;
+    chain_go[k] = 0;
+    if (song.playing && launch_mode() == LAUNCH_LOOP && chain_wait(k, e))
+        return 0;
     q->armed = 0;                                  /* (from here the ISR leaves it alone) */
     RING_PUBLISH();
     bank_poll();                                   /* (a swap just made: kept first) */
     if (!song.playing)
         return ent_go(k, e);
+    if (launch_mode() == LAUNCH_LOOP && chain_wait(k, e))   /* (a chain's first came in meanwhile) */
+        return 0;
     return stage_entry(k, e, launch_mode(), 0, 0);
 }
 /* ---- (phase 5) the song (SONG on: lists.song): each track plays its list in turn, after the last the first; an entry's
@@ -797,35 +1197,88 @@ static int bank_switch(uint32_t k, uint32_t e)
 /* each frame (ui_input, after bank_poll): SONG on and playing, each track's next entry staged for its pass end (one
  * there; a list of one entry: none), waiting while there is no room to keep what would go out; SONG off: a song's
  * staging dropped */
+/* (2.0, #47, the user's pick 4A) SONG ONCE: each track plays its list once, from its first entry (PLAY starts there:
+ * ui_input.c play_press), its last entry's REPS too; then its end, a rest (on the empty entry after its last, or on its
+ * last when its list is full: stage_entry adv 2), silent; when every track with a list has ended, the transport stops
+ * and each is on its first entry again. song_end: the tracks whose end is staged or in (this playing) */
+static uint8_t song_end __attribute__((section(".pool")));
+static uint8_t sp_was __attribute__((section(".pool")));   /* ((2.0, #44) playing at the last poll) */
+static void song_rewind(void);
 static void song_poll(void)
 {
-    uint32_t k, e, cur, first, last;
+    uint32_t k, e, cur, first, last, b0, b1, rp, live = 0, ended = 0;
+    int blk, wait;
+    if (!song.playing)
+        song_end = 0;
     for (k = 0; k < NTRK; k++) {
         launch_t *q = &launch_q[k];
-        if (!lists.song) {
-            if (q->armed && q->adv) {
+        blk = ent_block(k, cur = lists.cur[k] % NENT, &b0, &b1);
+        wait = chain_go[k] && (!blk || cur == b1);  /* ((2.0, #44) a LOOP launch waiting for the chain's end: here */
+        if (song.playing && !sp_was) {             /* (PLAY: a chain on pass 1, none whole yet; kept stopped: TAKE) */
+            chain_pl[k] = 0;
+            chain_p0[k] = 1;
+        }
+        if (!song.playing) {                       /* (stopped: it comes in now, as a staged one; a chain anew) */
+            if (chain_go[k])
+                (void)ent_go(k, chain_go[k] - 1u);
+            chain_go[k] = chain_rep[k] = 0;
+        } else if (wait && !q->done) {             /* (on the chain's last part: it comes in at its end, not the
+                                                    * chain's first) */
+            q->armed = 0;
+            RING_PUBLISH();
+            bank_poll_trk(k);
+            if (lists.cur[k] % NENT == cur && stage_entry(k, chain_go[k] - 1u, LAUNCH_LOOP, 0u, 0u) != 4)
+                chain_go[k] = 0;
+            bk.gen++;
+            blk = ent_block(k, cur = lists.cur[k] % NENT, &b0, &b1);
+            wait = chain_go[k] && (!blk || cur == b1);
+        }
+        if (!lists.song) {                         /* SONG off: a song's next dropped; ((2.0, #44) a chain loops: its
+                                                    * next part, its first after its last) */
+            e = blk ? (cur < b1 ? cur + 1u : b0) : NENT;
+            if (q->armed && q->adv && q->slot != e) {
                 q->armed = 0;
                 bk.gen++;
             }
+            if (song.playing && e < NENT && !wait && !q->armed && !q->done)
+                (void)stage_entry(k, e, LAUNCH_LOOP, 1u, 1u);
             continue;
         }
-        if (!song.playing || q->armed || q->done)
-            continue;
-        cur = lists.cur[k] % NENT;
         for (first = 0; first < NENT && !ent_on(k, first); first++)
             ;
         if (first == NENT)
             continue;
+        live |= 1u << k;
+        if (q->armed && !q->adv)                   /* (a launch of its own staged: its list goes on from there) */
+            song_end &= (uint8_t)~(1u << k);
+        ended |= (uint32_t)((song_end >> k) & 1u && !q->armed && !q->done) << k;
+        if (!song.playing || wait || q->armed || q->done || ((song_end >> k) & 1u))
+            continue;
         for (last = NENT - 1u; !ent_on(k, last); last--)
             ;
+        if (blk && (cur < b1 || chain_rep[k] + 1u < ent_reps(k, b1))) {   /* ((2.0, #44) a chain: its next part; after
+                                                                          * its last, its first again: its last's REPS
+                                                                          * repeat it */
+            (void)stage_entry(k, cur < b1 ? cur + 1u : b0, LAUNCH_LOOP, 1u, 1u);
+            continue;
+        }
+        rp = blk ? 1u : ent_reps(k, cur);          /* (the passes before what comes after it: a chain's last, one) */
+        if (lists.song == SONG_ONCE && cur >= last) {   /* (its end: a rest after its last REPS) */
+            if (stage_entry(k, cur > last || last + 1u == NENT ? cur : last + 1u, LAUNCH_LOOP, 2u,
+                            cur > last ? 1u : rp) != 4)   /* (4: no room yet, as below) */
+                song_end |= (uint8_t)(1u << k);
+            continue;
+        }
         e = cur >= first && cur < last ? cur + 1u : first;   /* (the entries between: a pattern or a rest) */
         if (e != cur)
-            (void)stage_entry(k, e, LAUNCH_LOOP, 1u, lists.ent[k][cur][1] + 1u);
+            (void)stage_entry(k, e, LAUNCH_LOOP, 1u, rp);
     }
+    sp_was = song.playing;
+    if (lists.song == SONG_ONCE && song.playing && live && ended == live)
+        song_rewind();                             /* (the last track's end came in: the song is over) */
 }
-/* GLO + PLAY with SONG on: from the top, each track on its list's first entry (playing: stopped there and then, what
- * is staged dropped, a mute staged turned); then PLAY */
-static void song_top(void)
+/* every track on its list's first entry, stopped (what is staged dropped, a mute staged turned) */
+static void song_rewind(void)
 {
     uint32_t k, e;
     transport_stop_now();
@@ -838,15 +1291,66 @@ static void song_top(void)
         if (e < NENT)
             (void)ent_go(k, e);
     }
+    song_end = 0;
+}
+/* GLO + PLAY with SONG on ((2.0) PLAY with SONG ONCE): from the top, each track on its list's first entry (playing:
+ * stopped there and then); then PLAY */
+static void song_top(void)
+{
+    song_rewind();
     transport_req = 1;
 }
-/* the entry staged for track k (BK_NONE: none) */
-static uint32_t bank_next(uint32_t k) { return launch_q[k % NTRK].armed ? launch_q[k % NTRK].slot : BK_NONE; }
-/* track k's staged pattern not to come in after all: 1 there was one */
+/* (2.0, #44) PLAY from stopped: a track on a chain's part past its first (NOTES' cursor went there) plays the chain
+ * from its first, as a pattern from its start. ((#30, the unit 2026-10-24: A's sound a user sound, ARCADE then put on
+ * the track for D, PLAY on A: ARCADE until the song came round) a track on an entry with a sound plays that sound from
+ * the start, unless it is on it already (its knobs turned since kept) */
+static void chain_top(void)
+{
+    uint32_t k, e, b0, b1, u;
+    const uint8_t *s;
+    for (k = 0; k < NTRK; k++) {
+        if ((e = trk_ent(k)) >= NENT)
+            continue;
+        if (ent_block(k, e, &b0, &b1) && e != b0) {
+            (void)ent_go(k, b0);
+            continue;
+        }
+        s = lists.snd[k][e];
+        u = user_of(&trk[k]);
+        if (s[0] && (u < UP_SLOTS ? s[0] != (0x80u | u) : s[0] != trk[k].eng_req + 1u || s[1] != trk[k].preset))
+            esnd_go(k, e);
+    }
+}
+/* .. NOTES, FEEL, the grid, stopped: the cursor at c, past the end of the pattern the selected track is on (c >= its
+ * LEN) or before its start, on a chain: the track on the chain's next part (its first after its last) or the one
+ * before (its last before its first), c the same place counted on into it; else c as it was */
+static int32_t chain_cursor(int32_t c)
+{
+    uint32_t k = song.sel % NTRK, e = trk_ent(k), b0, b1;
+    int32_t len = trk[k].p[P_SLEN];
+    if (song.playing || seq_counting() || e >= NENT || !ent_block(k, e, &b0, &b1))
+        return c;
+    if (ent_go(k, c < 0 ? (e > b0 ? e - 1u : b1) : (e < b1 ? e + 1u : b0)) & ~2)   /* (0, 2: on it) */
+        return c;
+    return c < 0 ? c + trk[k].p[P_SLEN] : c - len;
+}
+/* the entry staged for track k ((2.0, #44) a launch waiting for a chain's end first); BK_NONE: none */
+static uint32_t bank_next(uint32_t k)
+{
+    k %= NTRK;
+    return chain_go[k] ? chain_go[k] - 1u : launch_q[k].armed ? launch_q[k].slot : BK_NONE;
+}
+/* .. one of the user's: a launch, not a song's or a chain's own next */
+static int user_staged(uint32_t k) { return chain_go[k % NTRK] || (launch_q[k % NTRK].armed && !launch_q[k % NTRK].adv); }
+/* track k's staged pattern not to come in after all ((2.0) a song's or a chain's own next stays: song_poll would stage
+ * it again): 1 there was one */
 static int bank_cancel(uint32_t k)
 {
-    int was = launch_q[k % NTRK].armed;
-    launch_q[k % NTRK].armed = 0;
+    int was = user_staged(k);
+    k %= NTRK;
+    if (!launch_q[k].adv)
+        launch_q[k].armed = 0;
+    chain_go[k] = 0;
     bk.gen++;
     return was;
 }
@@ -857,7 +1361,7 @@ static int stage_cancel(void)
     uint32_t k;
     int was = 0;
     for (k = 0; k < NTRK; k++) {
-        if (launch_q[k].armed && !launch_q[k].adv)
+        if (user_staged(k))
             was |= bank_cancel(k);
         was |= mute_arm[k] != 0u;
         mute_arm[k] = 0;
@@ -912,14 +1416,9 @@ static void mute_switch(uint32_t k)
  * MUTE bits; then 2 bytes, a bit for each scene kept; (phase 6) then 2 bytes a scene for T5 and T6: 5 bits each, their
  * MUTEs at bits 10 and 11, bit 15 set when the scene holds them (one stored with four tracks, SKF2's: T5 and T6 left as
  * they are). (Before phase 5 they were the settings', in favorites bytes no engine uses, factory[14][0] ..
- * factory[15][17]: proj_migrate frees them, once: (Skiff phase 7) row 14 is DRUM-X's favourites since, so SCENE_FREED
- * says it is done) */
+ * factory[15][17]; (2.0) settings_persist.c clears them from a record of before Skiff's mark at [15][24]) */
 #define SCENES 16u
 #define SCENE_MEM(i) (lists.scene[(i)])
-static uint8_t *scene_old(void) { return (uint8_t *)favorites.factory + 14u * 32u; }   /* (a pointer: the bytes */
-#define SCENE_OLD(i) (scene_old()[(i)])                 /* run over the rows of factory[][]) */
-#define SCENE_FREED (favorites.factory[15][24])        /* SCENE_FREED_V: the old scene bytes freed (a byte no engine uses) */
-#define SCENE_FREED_V 0xA5u
 _Static_assert(5u * SCENES + 2u == PROJ_SCENES && 3u * SCENES + 2u == PROJ_SC2, "the scenes' bytes");
 static uint8_t scene_last = 0xFFu;                 /* the scene recalled or stored last (its key lit); 0xFF none */
 static void scene_forget(void) { scene_last = 0xFFu; }   /* (a project load: its own scenes) */
@@ -983,13 +1482,14 @@ static int scene_recall(uint32_t s)
     if (!scene_used(s))
         return 1;
     for (k = 0; k < NTRK; k++) {
-        uint32_t c = scene_slot(s, k), e = scene_trk(s, k);
+        uint32_t c = scene_slot(s, k), e = scene_trk(s, k), b0, b1, on = trk_ent(k);
         if (e == SCENE_NOT)
             continue;                              /* ((phase 6) T5, T6: a scene of before holds nothing of them) */
         if (c == BK_NONE)
             ;                                      /* (the track left as it is, what is staged for it too) */
-        else if (c == bank_cur(k))
-            (void)bank_cancel(k);                  /* (it plays that one already: nothing else to come) */
+        else if (c == bank_cur(k) || (ent_block(k, c, &b0, &b1) && on >= b0 && on <= b1))
+            (void)bank_cancel(k);                  /* (it plays that one ((2.0, #44) or its chain) already: nothing else
+                                                    * to come) */
         else if ((r = bank_switch(k, c)) == 4 || (r == 2 && rc != 4))
             rc = r;
         mute_to(k, e >> 5);
@@ -1037,7 +1537,7 @@ static int stage_pending(void)
 {
     uint32_t k;
     for (k = 0; k < NTRK; k++)
-        if ((launch_q[k].armed && !launch_q[k].adv) || mute_arm[k])
+        if (user_staged(k) || mute_arm[k])
             return 1;
     return 0;
 }
@@ -1047,8 +1547,9 @@ static int stage_pending(void)
  * had is kept); bank_switch's rc */
 static int entry_go(uint32_t k, uint32_t e)
 {
-    char b[8] = {'T', (char)('1' + k % NTRK), ' ', (char)('A' + e % NENT), 0};
-    int staged = song.playing, rc = bank_switch(k, e);
+    uint32_t b0, b1;
+    char b[8] = {'T', (char)('1' + k % NTRK), ' ', (char)('A' + (ent_block(k, e, &b0, &b1) ? b0 : e % NENT)), 0};
+    int staged = song.playing, rc = bank_switch(k, e);   /* ((2.0, #44) a chain: its first part's, said) */
     if (rc == 1) {
         ui_say(b, " EMPTY");
         return rc;
@@ -1077,12 +1578,22 @@ static uint32_t pool_refs(uint32_t id)
     return n;
 }
 /* .. pattern id cleared (its dialog's OCT+: nothing uses it; stopped: an erase); said */
+/* the waiting copies written, stopped (a clear's, (2.0) an empty's): 0, else said (rc 4: the keep found no room) */
+static int pool_flush_said(int rc)
+{
+    while (!rc && pend_free() < PEND_N)
+        if (pat_flush_one())
+            rc = 2;
+    bk.gen++;
+    ui.force = 1;
+    if (rc)
+        ui_way(rc == 4 ? "PATTERNS FULL" : "CLEAR FAILED", rc == 4 ? WAY_PATTERNS : "");
+    return rc;
+}
 static void pool_clear(uint32_t id)
 {
-    char b[16], c[4];
-    int rc = 0;
+    char b[16];
     id %= BK_POOL;
-    pat_num(c, id);
     if (!BK_ON) {
         ui_message("STORAGE ERROR");
         return;
@@ -1092,19 +1603,85 @@ static void pool_clear(uint32_t id)
         return;
     }
     memset(bk_rec, 0, BK_REC);
-    if (pat_keep_now(id, bk_rec))
-        rc = 4;
-    while (!rc && pend_free() < PEND_N)
-        if (pat_flush_one())
-            rc = 2;
-    bk.gen++;
-    ui.force = 1;
-    if (rc) {
-        ui_way(rc == 4 ? "PATTERNS FULL" : "CLEAR FAILED", rc == 4 ? WAY_PATTERNS : "");
+    if (pool_flush_said(pat_keep_now(id, bk_rec) ? 4 : 0))
+        return;
+    str_cpy(b, "CLEARED ", sizeof b);
+    pat_num(b + 8, id);
+    ui_message(b);
+}
+/* (2.0, #46) SAVE > PATTERNS' ACTION: the patterns nothing uses (CLEAR UNUSED's count) */
+static uint32_t pool_unused(void)
+{
+    uint32_t id, n = 0;
+    for (id = 0; id < BK_POOL; id++)
+        n += pool_used(id) && !pool_refs(id);
+    return n;
+}
+/* (2.0) record r emptied: no steps, NUDGEs or automation, the version every firmware reads; its LEN DIV SWING GATE DIR
+ * kept, or track t's (NEW) */
+static void rec_empty(uint8_t *r, const track_t *t)
+{
+    step_t e;
+    uint32_t i;
+    for (i = 0; t && i < 5u; i++)                  /* ((2.0.2) GATE the default, 1 STEP: the track's can be a 1.x
+                                                    * pattern's 50 %) */
+        r[2u + i] = (uint8_t)((BK_TIME[i] == P_SGATE ? TP[P_SGATE].def : motion_base_value(t, BK_TIME[i])) + 64);
+    memset(&e, 0, sizeof e);
+    step_clear(&e);
+    (void)step_put9(r + BK_STEPS, &e);
+    for (i = 1; i < NSTEP; i++)
+        memcpy(r + BK_STEPS + i * 9u, r + BK_STEPS, 9u);
+    memset(r + BK_NUDGE, 0, BK_REC - BK_NUDGE);
+    r[0] = BK_VER;
+    r[1] = PROJ_NP;
+    r[7] = 0;
+}
+/* .. EMPTY (its dialog's OCT+, stopped): pattern id's steps, NUDGEs and automation gone, its number, LEN DIV SWING GATE
+ * DIR and every entry naming it kept; a track on it now empties too (its steps are what is kept of it). Said */
+static void pool_empty(uint32_t id)
+{
+    char b[16];
+    uint32_t k;
+    id %= BK_POOL;
+    if (!BK_ON || transport_busy() || pat_read(id, bk_rec)) {
+        ui_message(!BK_ON ? "STORAGE ERROR" : transport_busy() ? "STOP TO EMPTY" : "NOTHING TO EMPTY");
         return;
     }
+    rec_empty(bk_rec, 0);
+    for (k = 0; k < NTRK; k++)
+        if (trk_pid[k] == id + 1u) {
+            track_defaults_steps(&trk[k]);
+            trk_sig[k] = 0;
+        }
+    if (pool_flush_said(pat_keep_now(id, bk_rec) ? 4 : 0))
+        return;
+    str_cpy(b, "EMPTIED ", sizeof b);
+    pat_num(b + 8, id);
+    ui_message(b);
+}
+/* .. CLEAR UNUSED (its dialog's OCT+, stopped): every pattern nothing uses, cleared. Said: how many */
+static void pool_clear_unused(void)
+{
+    char b[24];
+    uint32_t id, n = 0;
+    int rc = 0;
+    if (!BK_ON || transport_busy()) {
+        ui_message(!BK_ON ? "STORAGE ERROR" : "STOP TO CLEAR");
+        return;
+    }
+    memset(bk_rec, 0, BK_REC);
+    for (id = 0; id < BK_POOL && !rc; id++)
+        if (pool_used(id) && !pool_refs(id)) {
+            if (pat_keep_now(id, bk_rec))
+                rc = 4;
+            else
+                n++;
+        }
+    if (pool_flush_said(rc))
+        return;
     str_cpy(b, "CLEARED ", sizeof b);
-    str_cpy(b + 8, c, sizeof b - 8u);
+    fmt_int(b + 8, (int32_t)n);
+    str_cpy(b + str_len(b), n == 1u ? " PATTERN" : " PATTERNS", sizeof b - str_len(b));
     ui_message(b);
 }
 static uint32_t bank_gen(void) { return bk.gen; }
@@ -1121,41 +1698,128 @@ static void song_tag(char *b, uint32_t k, uint32_t e)
 }
 /* OCT+: KNOB 2's pick into the entry (a pattern; the track on the entry: it comes in, at once stopped, at LAUNCH
  * playing), COPY: a new pattern, a copy of the entry's (the track's edits in it first), the entry's then (the track on
- * it: on the copy); no pick: the entry played (entry_ui). What happened, said */
+ * it: on the copy); no pick: the entry played (entry_ui). What happened, said. (2.0, #32, the user's pick 1A) NEW: a
+ * new empty pattern (the first free number, the track's LEN .. DIR), then as a pattern put in; (#33) COPY+: the copy
+ * into the first empty entry after the entry (its REPS too), the entry as it was; ((#44) on a chain: every part's,
+ * into as many empty entries in a row after it, a chain again) */
 /* (Skiff W3) .. into track k's entry e (the editor's LIST SET, COPY too): 0 done, else entry_go's rc (the track on the
- * entry), 1 NOTHING TO COPY, 4 PATTERNS FULL */
+ * entry), 1 NOTHING TO COPY (COPY+: NO EMPTY ENTRY AFTER), 4 PATTERNS FULL */
 static int song_put(uint32_t k, uint32_t e, uint32_t p)
 {
-    uint32_t id = ent_pat(k, e), n;
+    uint32_t id = ent_pat(k, e), n = NPAT, f = p == SPICK_COPYP ? ent_free_after(k, e) : e, b0, b1, j;
+    uint8_t nid[NENT];
     char b[24], c[4];
-    if (p != SPICK_COPY) {
+    if (p == SPICK_NEW) {
+        bank_poll();
+        rec_empty(bk_rec, &trk[k]);
+        if ((n = pool_alloc()) == NPAT || pat_keep_now(n, bk_rec)) {
+            ui_way("PATTERNS FULL", WAY_PATTERNS);
+            return 4;
+        }
+    }
+    if (p != SPICK_COPY && p != SPICK_COPYP) {
+        if (p == SPICK_NEW)
+            p = n + 1u;
         lists.ent[k][e][0] = (uint8_t)p;           /* (p: the id + 1, as the entry keeps it; (#28) PAT_REST) */
         bk.gen++;
         if (lists.cur[k] == e)
             return entry_go(k, e);
         song_tag(b, k, e);
         pat_num(c, p - 1u);
-        str_cpy(b + 4, " SET ", sizeof b - 4u);
+        str_cpy(b + 4, n < NPAT ? " NEW " : " SET ", sizeof b - 4u);
         str_cpy(b + 9, p == PAT_REST ? "REST" : c, sizeof b - 9u);
         ui_message(b);
         return 0;
     }
-    bank_poll();
-    if (id == PAT_NONE || (trk_pid[k] == id + 1u && trk_keep(k)) || (n = pool_alloc()) == NPAT || pat_read(id, bk_rec) ||
-        pat_keep_now(n, bk_rec)) {
-        ui_way(id == PAT_NONE ? "NOTHING TO COPY" : "PATTERNS FULL", id == PAT_NONE ? "" : WAY_PATTERNS);
-        return id == PAT_NONE ? 1 : 4;
+    if (f == NENT) {
+        ui_message("NO EMPTY ENTRY AFTER");
+        return 1;
     }
-    lists.ent[k][e][0] = (uint8_t)(n + 1u);
-    if (trk_pid[k] == id + 1u && lists.cur[k] == e)
-        trk_pid[k] = (uint8_t)(n + 1u);            /* (the copy the track's from here: the same steps, the same sig) */
+    if (id == PAT_NONE) {
+        ui_way("NOTHING TO COPY", "");
+        return 1;
+    }
+    bank_poll();
+    if (p == SPICK_COPYP) {                        /* ((2.0, #44) COPY+ on a chain: all of it, a chain again */
+        ent_block(k, e, &b0, &b1);
+        (void)copy_ids(k, e, nid);
+    } else {
+        b0 = b1 = e;
+        nid[0] = (uint8_t)(pool_alloc_after(id) + 1u);
+    }
+    for (j = b0; j <= b1; j++) {                   /* (each part's copy, a REST as it is; the entries named after) */
+        uint32_t o = ent_pat(k, j);
+        if (!nid[j - b0]) {
+            nid[j - b0] = (uint8_t)PAT_REST;
+            continue;
+        }
+        n = nid[j - b0] - 1u;
+        if ((trk_pid[k] == o + 1u && trk_keep(k)) || n == NPAT || pat_read(o, bk_rec) || pat_keep_now(n, bk_rec)) {
+            ui_way("PATTERNS FULL", WAY_PATTERNS);
+            return 4;
+        }
+    }
+    for (j = b0; j <= b1; j++) {
+        lists.ent[k][f + j - b0][0] = nid[j - b0];
+        lists.ent[k][f + j - b0][1] = lists.ent[k][j][1];
+        memcpy(lists.snd[k][f + j - b0], lists.snd[k][j], 2);   /* ((2.0, #30) its sound too) */
+    }
+    if (trk_pid[k] == id + 1u && lists.cur[k] == f)
+        trk_pid[k] = nid[0];                       /* (the copy the track's from here: the same steps, the same sig) */
     bk.gen++;
     str_cpy(b, "COPIED ", sizeof b);
-    pat_num(b + 7, id);
-    str_cpy(b + 9, " TO ", sizeof b - 9u);
-    pat_num(b + 13, n);
+    if (b1 > b0) {                                 /* "COPIED A-B TO F-G" */
+        b[7] = (char)('A' + b0), b[8] = '-', b[9] = (char)('A' + b1);
+        str_cpy(b + 10, " TO ", sizeof b - 10u);
+        b[14] = (char)('A' + f), b[15] = '-', b[16] = (char)('A' + f + b1 - b0), b[17] = 0;
+    } else {
+        pat_num(b + 7, id);
+        str_cpy(b + 9, " TO ", sizeof b - 9u);
+        pat_num(b + 13, n);
+        if (f != e) {                              /* "COPIED 06 TO 22 AT F" */
+            str_cpy(b + 15, " AT ", sizeof b - 15u);
+            b[19] = (char)('A' + f);
+            b[20] = 0;
+        }
+    }
     ui_message(b);
     return 0;
+}
+/* (2.0, #30) .. sound b (lists.snd's two bytes; 0 0 none) onto track k's entry e, said ("T2 C SOUND STRINGS", "T2 C NO
+ * SOUND"); 1 refused (a sound on an empty entry, or one it can't carry: esnd_make's none, a preset past the engine's) */
+static int song_snd_put(uint32_t k, uint32_t e, const uint8_t *b)
+{
+    esnd_t s;                                      /* (the main loop's stack: 448 B, once) */
+    char m[28], n[16];
+    k %= NTRK;
+    e %= NENT;
+    if (b[0] && (!ent_on(k, e) || (!(b[0] & 128u) && b[1] >= ENGINES[(b[0] - 1u) % NENGINES]->npresets) ||
+                 !esnd_make(k, b, &s)))
+        return 1;
+    lists.snd[k][e][0] = b[0];
+    lists.snd[k][e][1] = b[1];
+    bk.gen++;
+    song_tag(m, k, e);
+    if (b[0]) {
+        esnd_name(b, n);
+        str_cpy(m + 4, " SOUND ", sizeof m - 4u);
+        str_cpy(m + 11, n, sizeof m - 11u);
+    } else {
+        str_cpy(m + 4, " NO SOUND", sizeof m - 4u);
+    }
+    ui_message(m);
+    return 0;
+}
+/* (the user's pick 2A) .. SOUND or NO SOUND picked: the selected track's sound onto entry e, or the entry's taken off;
+ * 1 refused (the sound edited since its load: the way, SAVE > USER) */
+static int song_snd(uint32_t k, uint32_t e, int set)
+{
+    uint8_t b[2] = {0, 0};
+    if (set && !snd_of(k, b)) {
+        ui_way("SOUND EDITED", "SAVE > USER FIRST");
+        return 1;
+    }
+    return song_snd_put(k, e, b);
 }
 static void song_oct(void)
 {
@@ -1163,6 +1827,8 @@ static void song_oct(void)
     sg.pick = 0;
     if (!p)
         entry_ui(sg.entry % NENT);
+    else if (p >= SPICK_SOUND)
+        (void)song_snd(song.sel, sg.entry, p == SPICK_SOUND);
     else
         (void)song_put(song.sel % NTRK, sg.entry % NENT, p);
 }
@@ -1173,7 +1839,7 @@ static void song_back(void)
     if (song_pick()) {
         sg.pick = 0;
         ui_message("CANCELLED");
-    } else if (launch_q[k].armed && !launch_q[k].adv && bank_cancel(k)) {
+    } else if (user_staged(k) && bank_cancel(k)) {
         ui_message("CANCELLED");
     }
 }
@@ -1235,7 +1901,7 @@ static int song_clear_at(uint32_t k, uint32_t e)
     char b[8];
     int rc = 0;
     if (ent_rest(k, e))
-        lists.ent[k][e][0] = 0;
+        lists.ent[k][e][0] = lists.snd[k][e][0] = lists.snd[k][e][1] = 0;   /* ((2.0, #30) its sound with it) */
     else
         rc = bank_put(k, e, 1);
     song_tag(b, k, e);
@@ -1321,13 +1987,14 @@ static int bank_restore(uint32_t c, const uint8_t *b, uint32_t len)
     return 0;
 }
 
+#if FELUCCA_LEGACY
 /* ---- (phase 5) the projects of before SKF2 (the four slots, the autosave) become SKF2 ((phase 6) SKF3 with six
  * tracks): each track's steps, timing and automation a pool pattern (one the same there already: that one; an
  * empty track: none), its entry A; their old scenes none (the settings' old scene bytes freed). After a clean boot
  * (main.c: never after a crash, a hang or a failed boot) and after a backup's restore (editor_backup.c). The patterns
  * are written before the project naming them: a power cut on the way leaves the record before, and the next time
  * finds those patterns again. The pool full: that project stays as it is (it loads as before, its steps its own). 1:
- * something written ---- */
+ * something written. (2.0) The converter's alone (FELUCCA_LEGACY, web/conv): 2.0 reads none of them ---- */
 #if FELUCCA_FLASH
 static void fm1_wdt_feed(void);                    /* (fm1_sys.h; the host tests' own) */
 #endif
@@ -1347,7 +2014,7 @@ static int proj_migrate(int allowed)
         proj_wire_gen++;
         len = st_load(obj, &proj_wire, sizeof proj_wire);
         if (len <= 0 || proj_fmt_of(&proj_wire, len) || !proj_import(p, &proj_wire, len))
-            continue;                              /* (none, SKF2 or SKF3 already, or no project) */
+            continue;                              /* (none, SKF2 .. SKF4 already, or no project) */
         proj_bound(p);
         proj_drums_to_part(p);                     /* (what a load converts, here first: a pattern's automation */
         proj_phys(p);                              /* comes as it is stored) */
@@ -1377,14 +2044,9 @@ static int proj_migrate(int allowed)
             memcpy(&proj_slot[o], &proj_wire, sizeof proj_wire);
         wrote = 1;
     }
-    if (SCENE_FREED != SCENE_FREED_V) {            /* (the settings' old scenes, once: their 50 bytes ((phase 6) the
-                                                    * favorites after them stay); (phase 7) later, row 14's are DRUM-X's) */
-        memset(scene_old(), 0, PROJ_SC2);
-        SCENE_FREED = SCENE_FREED_V;
-        settings_save();
-    }
 #else
     (void)allowed;
 #endif
     return wrote;
 }
+#endif

@@ -65,7 +65,7 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | --- | --- | --- |
 | `FELUCCA_FLASH` | 1 | settings, presets and projects in flash |
 | `FELUCCA_OTA` | 1 | update entry (needs `FELUCCA_FLASH`) |
-| `FELUCCA_CDC` | 1 | USB serial console |
+| `FELUCCA_CDC` | 1 | USB serial console and MENU > SYSTEM > USB SERIAL (a `--release` build: 0, unless set to 1) |
 | `FELUCCA_CDC_DEFAULT` | 1 | `0`: the console is built in but left out of USB from boot (as MENU > USB SERIAL OFF) |
 | `FELUCCA_UAC` | 1 | USB audio input (the master output, stereo, 44.1 or 48 kHz) |
 | `FELUCCA_UAC_48K` | 1 | `0`: the USB audio input at 44.1 kHz only, as up to 1.0.5.2 (`firmware/src/usb.c`) |
@@ -120,7 +120,12 @@ The regression suite (`tests/regress.c`) renders every engine and preset and com
 hash of each render with `tests/golden.txt`; it also checks levels, voices and the CPU
 cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). After an intended change of
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
-does the same for the cost files.
+does the same for the cost files. The UI renders (`tests/ui_render.c`) do the same for the screen: a hash of every
+picture in `tests/ui_golden.txt`, rewritten by `UI_GOLDEN_UPDATE=1` after an intended change of the look.
+
+What a change costs in flash and RAM: build the commit before it in a folder of its own (`git archive`), then
+`python3 tools/size_diff.py OLD/build/felucca.elf build/felucca.elf` lists the sections, symbols and source files
+that grew or shrank.
 
 ## Install
 

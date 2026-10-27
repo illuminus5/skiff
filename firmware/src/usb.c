@@ -1138,7 +1138,8 @@ static inline int32_t uac_s16(int32_t v)
 #if FELUCCA_UAC_48K
 /* 44.1 -> 48 kHz (x 160 / 147), one block: each input frame enters the history, then the 1 or 2 output
  * frames whose newest input it is: phase ph, the window of UAC_FIR_N frames ending at it, the taps of
- * phase ph (or of 159 - ph backwards: the prototype is symmetric), Q30 into 64-bit sums. */
+ * phase ph (or of 159 - ph backwards: the prototype is symmetric), Q15 ((Skiff 2.0) was Q30) into
+ * 64-bit sums. */
 static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
 {
     uint32_t w = ua_w, i, j, k = 0, h = rs.w, ph = rs.ph;
@@ -1158,14 +1159,14 @@ static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
             int64_t al = 0, ar = 0;
             int32_t yl, yr;
             if (ph < UAC_FIR_L / 2u) {
-                const int32_t *c = UAC_FIR[ph];
+                const int16_t *c = UAC_FIR[ph];
                 for (j = UAC_FIR_N; j; j--, x++) {
                     int32_t t = *c++;
                     al += (int64_t)t * x[0];
                     ar += (int64_t)t * x[2u * RS_H];
                 }
             } else {
-                const int32_t *c = &UAC_FIR[UAC_FIR_L - 1u - ph][UAC_FIR_N - 1u];
+                const int16_t *c = &UAC_FIR[UAC_FIR_L - 1u - ph][UAC_FIR_N - 1u];
                 for (j = UAC_FIR_N; j; j--, x++) {
                     int32_t t = *c--;
                     al += (int64_t)t * x[0];

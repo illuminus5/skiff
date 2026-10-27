@@ -5,7 +5,8 @@
  * it is let go (ui_input.c opens the layer and shows the map). The 14 white keys from the left (F3 .. E5):
  *   REPEAT 1/8 1/16 1/32, REVERSE, LPF | HPF, TAPE STOP, FREEZE, OCT UP, OCT DN, (Skiff phase 9) GATE, DUB,
  *   FLANGE, VINYL;  the other 2 white keys do nothing; black keys 1..6 (F#3 G#3 A#3 C#4 D#4 F#4): tracks 1..6
- *   muted while held (not P_MUTE, never saved).
+ *   cut while held (not P_MUTE, never saved; (2.0, D 1A) as GLO's and PERFORM's, a tap their MUTE: ui_layer.c
+ *   mute_keys).
  * REPEAT and REVERSE start on the next 1/16 (at once while stopped); the others at once; all end when let go,
  * with a 2.9 ms ramp. Effects of different kinds stack; of the buffer ones (REPEAT, REVERSE, TAPE STOP,
  * FREEZE, OCT UP, OCT DN, FLANGE, VINYL) the last pressed plays, and letting it go returns to the one held before.
@@ -57,8 +58,10 @@ static volatile uint32_t perf_mask;   /* main: the FX button's bit while its lay
 static volatile uint32_t kb_mask;     /* main: the button bits whose hold makes keys a layer's (ui_layer.c), 0 = none */
 static volatile uint8_t kb_lock;      /* main: a layer locked open (#83, no button held): 1 keys are the layer's, 2 FX's */
 static volatile uint8_t perf_solo;    /* main: tracks soloed in the GLO layer (the others muted as by a black key) */
+static volatile uint8_t perf_cut __attribute__((section(".pool")));   /* main: ((2.0, D 1A) ui_layer.c mute_keys) the
+                                       * tracks cut by a black key held in GLO or PERFORM (FX's: perf_held, here) */
 static volatile uint8_t perf_kill;    /* main: every effect off (the menu, a dialog, UBOOT) */
-static volatile int8_t perf_k[4];     /* main: the knob macros, 0 = untouched: FILTER -100..100 (- LPF, + HPF),
+static volatile int16_t perf_k[4];    /* main: the knob macros, 0 = untouched: FILTER -100..100 (- LPF, + HPF),
                                        * CRUSH 0..100, THROW 0..100, DEPTH cut 0..100 (the buffer effects' level) */
 static volatile uint32_t kb_layer;    /* ISR: the keys held that are the layer's, a bit per key */
 static volatile uint32_t perf_held;   /* ISR: the effects held (PF_*) */
@@ -132,10 +135,14 @@ static void perf_press(uint32_t e, int down)
 {
     if (e >= PF_N)
         return;
-    if (perf_latch_on) {                  /* FX LATCH: a press turns it on or off, letting go does nothing */
+    if (perf_latch_on && e < PF_M1) {     /* FX LATCH: a press turns it on or off, letting go does nothing ((2.0, D 1A)
+                                           * not a black key: its tap is the track's MUTE, held a cut, as unlatched) */
         if (down) {
             perf_latched ^= PF_BIT(e);
             perf_ord[e] = ++perf_seq;
+        } else if (perf_held & PF_BIT(e)) {   /* ((2.0.2, #57) held as the layer locked: let go, it stays on, latched, */
+            perf_latched |= PF_BIT(e);        /* so its next press or the layer closing turns it off (it stayed held */
+            perf_held &= ~PF_BIT(e);          /* for good before, on every page) */
         }
         return;
     }
@@ -248,7 +255,7 @@ static void perf_buf_select(uint32_t e)
  * Returns 1 when a stage has something to do */
 static __attribute__((noinline)) AUDIO_RAM int perf_begin(uint32_t n)
 {
-    uint32_t held = perf_kill ? 0u : (perf_held | perf_latched |
+    uint32_t held = perf_kill ? 0u : (perf_held | perf_latched | (uint32_t)perf_cut << PF_M1 |
                     (perf_solo ? (~(uint32_t)perf_solo & ((1u << NTRK) - 1u)) << PF_M1 : 0u)) & AUDIO_FAR(perf_avail)();
     uint32_t q, k, ph0, bnd;
     int32_t m;
@@ -306,19 +313,18 @@ static __attribute__((noinline)) AUDIO_RAM int perf_begin(uint32_t n)
             pf.hk[k] = (int16_t)(PF_SVF[j][k] + (((PF_SVF[j < 63 ? j + 1 : 63][k] - PF_SVF[j][k]) * g) >> 8));
         }
     }
-    pf.mute = 0;
-    for (k = 0; k < NTRK; k++)
-        if (((held >> (PF_M1 + k)) & 1u) || pf.mg[k] != 32768)
-            pf.mute |= (uint8_t)(1u << k);
-    pf.busy = 1;
+    pf.mute = (uint8_t)(held >> PF_M1);             /* ((2.0) the cuts held; a MUTE and a ramp back: fx.c mix_part, */
+    pf.busy = 1;                                    /* not this layer's: busy no longer for them) */
     return 1;
 }
 
-/* a track muted by its black key: its signal ramps to 0 and back (fx.c mix_part, after the SLICER) */
+/* a track muted: its signal ramps to 0 and back (fx.c mix_part, after the SLICER). (2.0, D 1A) Its MUTE (latched) and a
+ * black key held (FX's, GLO's, PERFORM's; GLO's solo) alike: muted is silent now (a MUTE alone refused new notes and
+ * let the sounding ones ring out) */
 static __attribute__((noinline)) AUDIO_RAM void perf_mute(uint32_t k, int32_t *b, uint32_t n)
 {
     uint32_t i;
-    int32_t g = pf.mg[k], t = (pf.act >> (PF_M1 + k)) & 1u ? 0 : 32768;
+    int32_t g = pf.mg[k], t = ((pf.act >> (PF_M1 + k)) & 1u) || trk[k].p[P_MUTE] ? 0 : 32768;
     for (i = 0; i < n; i++) {
         g += clamp(t - g, -SL_SLOPE, SL_SLOPE);
         b[i] = mulq16(b[i], (uint32_t)g << 1);

@@ -108,8 +108,8 @@ static void name_rename(void)
 {
     int user = cur_page()->graph == GR_USER;
     uint32_t k = user ? ui.uslot : (uint32_t)song.g[G_SLOT] - 1u;
-    if (!(user ? up_used(k) : project_used(k)))
-        ui_message("EMPTY SLOT");
+    if (!(user ? up_used(k) : project_used(k) && !proj_old(k)))
+        ui_message((user ? up_old(k) : proj_old(k)) ? "OLD FORMAT" : "EMPTY SLOT");   /* ((2.0) kept, not renamed) */
     else if (transport_busy())
         ui_message("STOP TO RENAME");
     else

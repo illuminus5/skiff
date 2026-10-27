@@ -19,6 +19,7 @@
  *    sounds with a noisy feedback (FDBK 28: DIGITAL's op 4 turns to noise whatever its index, FM6's feedback
  *    follows its operator's level) are printed, not checked: a known limit of the conversion.
  * 4. demos into DEMODIR: each sound as <name>_digital.wav and <name>_fm6.wav. */
+#define FELUCCA_LEGACY 1                        /* ((2.0) the formats of before: the converter's build, core.h) */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main

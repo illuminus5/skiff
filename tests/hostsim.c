@@ -116,8 +116,13 @@ static void host_preset_values(track_t *t, uint32_t e, uint32_t pi, const preset
 }
 static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)
 {
-    uint32_t n = ENGINES[e]->npresets;
-#if !FELUCCA_FM4
+    uint32_t n;
+#if !FELUCCA_FM4 && !FELUCCA_LEGACY
+    if (e == ENGI_DIGITAL)                        /* ((2.0) DIGITAL (retired): FM6's preset pi, as ui.c set_engine_of) */
+        e = ENGI_FM6;
+#endif
+    n = ENGINES[e]->npresets;
+#if !FELUCCA_FM4 && FELUCCA_LEGACY
     if (e == ENGI_DIGITAL) {                      /* DIGITAL preset pi (retired): converted, as ui.c fm4_load_preset */
         uint8_t v[FP_SIZE + 1u];
         uint32_t tr = (uint32_t)(t - trk) % NTRK;
@@ -287,7 +292,7 @@ static int tracks_demo(const char *dir, const char *name, uint32_t solo)
         }
         /* (c) the keys, track 2 selected: two keys at once into the empty pad step 14 */
         if (song.rec && !keys_on && !keys_t && t2->seq_idx == 14u && t2->seq_pos < period / 4u) {
-            song.sel = 1;
+            sel_set(1);
             fm1_in.notes = (1u << 7) | (1u << 11);
             keys_on = 1;
             keys_t = f;
@@ -556,6 +561,63 @@ static int xfade_test(const char *dir)
     return bad || !late_ok;
 }
 
+/* (#41) PHASE's bend moving must not click: PD BRASS (ENV -> DCW 90, ATK 8, REL 40: DCW moves fast in the attack and
+ * the release), no sends, three low notes, then one held while the DCW knob is turned 0 .. 127. A bend switched at a
+ * block's start stepped the wave there (eng_phase.c pd_wave fades it now): the second difference at the block
+ * boundaries against the largest one inside the blocks (the wave's own), the first boundary of each note left out (the
+ * attack's start from silence). Writes DIR/phase_dcw.wav. */
+static int phase_test(const char *dir)
+{
+    static const uint8_t N[4] = {36, 43, 48, 36};
+    const uint32_t frames = 4u * FS, B = FS / 10u / CTL * CTL;   /* B: 0.1 s in whole blocks */
+    char path[512];
+    FILE *w;
+    int32_t *L = calloc(frames + CTL, sizeof *L), at = 0, in = 1;
+    uint32_t f, i, k;
+    track_t *t = &trk[0];
+    snprintf(path, sizeof path, "%s/phase_dcw.wav", dir);
+    if (!L || !(w = fopen(path, "wb")))
+        return 1;
+    host_tracks_init();
+    host_preset(t, 2, 0);                              /* PHASE PD BRASS */
+    t->p[P_DIST] = t->p[P_CHOR] = t->p[P_DLY] = t->p[P_REV] = 0;
+    t->p[P_VOICE] = V_POLY;
+    wav_hdr(w, frames);
+    for (f = 0; f < frames; f += CTL) {
+        int32_t o[2 * CTL];
+        for (k = 0; k < 4u; k++) {
+            if (f == (1u + 7u * k) * B)
+                trk_note_on(t, N[k], 100);
+            if (f == (5u + 7u * k) * B + (k == 3u ? 10u * B : 0u))
+                trk_note_off(t, N[k]);
+        }
+        if (f >= 24u * B && f < 34u * B)              /* the knob, a step every ~12 ms */
+            t->p[P_E2] = (int16_t)((f - 24u * B) * 128u / (10u * B));
+        mix_block(o, CTL);
+        for (i = 0; i < CTL; i++) {
+            L[f + i] = o[2 * i];
+            wav_put(w, o[2 * i], o[2 * i + 1]);
+        }
+    }
+    fclose(w);
+    for (i = 2; i < frames; i++) {
+        int32_t e = abs(L[i] - 2 * L[i - 1] + L[i - 2]), on = 0;
+        for (k = 0; k < 4u; k++)
+            on |= i - (1u + 7u * k) * B < 2u;
+        if (i % CTL < 2u) {
+            if (!on && e > at)
+                at = e;
+        } else if (e > in) {
+            in = e;
+        }
+    }
+    printf("tracks: PHASE PD BRASS low notes, DCW turned: the largest second difference at a block boundary %d, inside "
+           "the blocks %d (%.2f x; a bend switched at once: over 5 x) %s\n", at, in, (double)at / in,
+           at <= 2 * in ? "ok" : "FAIL");
+    free(L);
+    return at > 2 * in;
+}
+
 /* Skiff: the parts' shared engine area (engines.c eng_mem). Track 1 plays three PHYS notes (its three slots in its
  * area), then switches to GRAIN: the switch zeroes the area, so past GRAIN's own part it stays zero (PHYS's third
  * slot is gone); GRAIN sounds; back on PHYS a note sounds again; track 2's area (ANALOG: no one's) is never touched */
@@ -752,7 +814,7 @@ static int trs_test(void)
         trk[i].p[P_VOICE] = V_POLY;
         trk[i].p[P_SUS] = 127;
     }
-    song.sel = 1;
+    sel_set(1);
     trs_bytes((const uint8_t[]){0x90, 60, 100, 65, 0xF8, 100, 0x91, 62, 100, 0x92, 64, 100, 0x93, 48, 100, 0x99, 36, 110,
                                 0x94, 67, 90}, 21);
     ok_parts = trs_held(&trk[0], 60) && trs_held(&trk[0], 65) && trs_held(&trk[1], 62) && trs_held(&trk[2], 64) &&
@@ -767,7 +829,7 @@ static int trs_test(void)
     trs_bytes((const uint8_t[]){0x90, 60, 0, 65, 0, 0x81, 62, 0, 0x82, 64, 64, 0x83, 48, 0, 0x89, 36, 0}, 17);   /* vel 0 = off, 0x8n */
     ok_off = !trs_held(&trk[0], 60) && !trs_held(&trk[0], 65) && !trs_held(&trk[1], 62) && !trs_held(&trk[2], 64) &&
              !trs_held(&trk[3], 48) && !trs_held(&trk[1], 36);
-    song.sel = 2;                                   /* another track selected while ch 5's note is down */
+    sel_set(2);                                   /* another track selected while ch 5's note is down */
     trs_bytes((const uint8_t[]){0x84, 67, 0}, 3);
     ok_hang = !trs_held(&trk[1], 67);
     song.rec = 1u << 2;                             /* track 3 armed, transport on: ch 3 records */
@@ -854,8 +916,19 @@ static int tracks_test(const char *dir)
         waitpid(pid, &st, 0);
         if (!WIFEXITED(st) || WEXITSTATUS(st))
             fail++;
+        fflush(stdout);
+        pid = fork();
+        if (!pid) {
+            int rc = phase_test(dir);
+            fflush(stdout);
+            _exit(rc);
+        }
+        waitpid(pid, &st, 0);
+        if (!WIFEXITED(st) || WEXITSTATUS(st))
+            fail++;
     }
-    printf("tracks: WAVs in %s: %s (mix), %s, %s, %s, %s, steal.wav, engine_switch.wav\n", dir, SOLO[0], SOLO[1], SOLO[2], SOLO[3], SOLO[4]);
+    printf("tracks: WAVs in %s: %s (mix), %s, %s, %s, %s, steal.wav, engine_switch.wav, phase_dcw.wav\n", dir, SOLO[0],
+           SOLO[1], SOLO[2], SOLO[3], SOLO[4]);
     /* one part: every preset with 8 held notes (the engine's cap: VOICE 4); the worst one */
     for (e = 0; e < NENGINES; e++)
         for (pi = 0; pi < ENGINES[e]->npresets; pi++) {

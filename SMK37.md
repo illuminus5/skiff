@@ -14,7 +14,7 @@ keyboard; the Starrykey 37 Play is not supported yet.
    its Bluetooth pairings, which no download can replace. Skiff never writes them, but a backup is the way back if
    anything else goes wrong.
 3. **Install:** the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) (Chrome or Edge) finds the
-   keyboard and picks its build, or `python tools/fm1_install.py skiff-1.4-smk37.fwsc` (`-elite`, `-mke` for those
+   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.0.2-smk37.fwsc` (`-elite`, `-mke` for those
    models, not tried on a keyboard yet). About two minutes.
 
 Keep it plugged in and switched on while it writes. If the cable or the power is cut anyway, the keyboard stays in
@@ -29,7 +29,7 @@ This needs a computer with Windows or Linux, Python 3, this repository's `tools/
 reads the whole 1 MiB through the chip's built-in boot mode:
 
 1. With the keyboard on M-VAVE's V016 (or on Skiff) and connected:
-   `python tools/fm1_install.py --uboot skiff-1.4-smk37.fwsc`. The keyboard starts Skiff's update loader without
+   `python tools/fm1_install.py --uboot skiff-2.0.2-smk37.fwsc`. The keyboard starts Skiff's update loader without
    writing the firmware, then switches to the chip's boot mode: the computer sees a USB disk named `WL82 UBOOT1.00`.
    **If Windows offers to format it, cancel.**
 2. In an **administrator** terminal (on Linux: with `sudo`, and `/dev/sgN` as the device), from jl-uboot-tool's folder,
@@ -62,9 +62,11 @@ Skiff, can erase it: see "Back to stock" below). The calibration and the Bluetoo
 The rest of this page is how the SMK-37 build is made and what it was tested on.
 
 **Status:** since 2026-10-19 it runs on one SMK-37 Pro (below: "Bring-up so far"): installs both ways, a pulled cable
-and a power cut mid-write, the calibration checked byte for byte after each. Known in 1.4: an update loader started
-cold (by switching on after a power cut mid-write) can reset itself during the write; the installer resumes it
-until the write finishes. Its start record (below) names the reset: the watchdog. The controls beyond the FM-1's (pads, faders, wheels, outer keys, the extra buttons, the pad colours)
+and a power cut mid-write, the calibration checked byte for byte after each; 2.0 installed over 1.4 the same way
+(2026-10-24). Known in 2.0: an update loader started cold (by switching on after a power cut mid-write) is still reset
+by the watchdog about 40 to 45 s into each run, though its flash now runs at the app's speed; the installer resumes it
+until the write finishes. Its start record (below) names the reset. The sustain pedal's hold is tested on the host
+only. The controls beyond the FM-1's (pads, faders, wheels, outer keys, the extra buttons, the pad colours)
 follow the directions picked from the mockups in [design/SMK37_UX.md](design/SMK37_UX.md).
 
 The SMK-37 Pro has the FM-1's chip (JieLi AC791N), audio path and 240 x 240 screen. Only the panel wiring and the flash
@@ -89,9 +91,9 @@ sh tests/run_tests.sh
 Everything SMK sits behind `BOARD_SMK37` (default 0). The FM-1 app, package and loader stay byte-identical. Release
 builds take `--release X.Y` as on the FM-1: identity `SMK-37 Pro_7XY`, `skiff-smk37-X.Y.fwsc`.
 
-Sizes (Pro, 1.4 with the controls and the app's own copy of the loader): app 595,824 B of the SMK's 619,520 B slot
-(about 23 KB to spare); RAM .data+.bss 86,932 of 98,304 B; pool 347,016 of 356,352 B; the update
-loader 7,740 B (the limit: 7,936 B, below).
+Sizes (Pro, 2.0 dev with the controls, the pedal hold and the app's own copy of the loader): app 571,388 B of the SMK's
+619,520 B slot (about 47 KB to spare); RAM .data+.bss 83,668 of 98,304 B; pool 347,088 of 356,352 B; the update
+loader 7,859 B (the limit: 7,936 B, below).
 
 ## What the build has
 
@@ -122,8 +124,11 @@ loader 7,740 B (the limit: 7,936 B, below).
   LEVEL, PAN, REVERB and DELAY, and the header names the bank. A fader takes over only once it reaches the value,
   and again after something else has set it, so nothing jumps.
 - **Wheels and pedal:** as MIDI in on the selected track's channel: a pitch bend (2 semitones, or what RPN set), the
-  mod wheel as CC1 (the MOD matrix's MODW), the pedal as CC64 sustain. The wheels calibrate themselves (after
-  genkigenki's layer). When another track is selected, the one before gets them back at rest.
+  mod wheel as CC1 (the MOD matrix's MODW), the pedal as CC64 sustain. The pedal holds the keys too: while it is
+  down, a note played on the keys keeps sounding after its key is let go, until the pedal goes up or the key is
+  struck again (MIDI OUT gets its note-off then). A DRUM track's keys ignore it. The wheels calibrate themselves
+  (after genkigenki's layer). When another track is selected, the one before gets them back at rest, and the notes
+  the pedal held on it end.
 - **Battery:** the SMK's own thresholds (530 / 560 / 602 raw), not yet checked on a unit.
 - **Button LEDs:** on or off. The FM-1's glow, breath and mid levels have no SMK hardware: lit or breathing shows
   on, and the glow and the mid level show dark. MENU > LEDS is hidden. KNOB BANK is lit while held, and FADER BANK
@@ -155,10 +160,11 @@ loader 7,740 B (the limit: 7,936 B, below).
   and whether M-UPGRADE looks for that is not checked (a hardware check).
 - **The loader's size:** the stock app stages a loader at 0xBD000 below its record at 0xBEF00, 7,936 B. Skiff's SMK
   loader must fit that (the stock app staged genkigenki's smaller one without touching BTIF or USRTRIM), and the build
-  fails above it (`build.py` LDR_MAX). It is 7,740 B, with the UPDATE MODE screen. The loader is compiled at `-Oz`,
+  fails above it (`build.py` LDR_MAX). It is 7,859 B, with the UPDATE MODE screen. The loader is compiled at `-Oz`,
   its flash helpers are calls rather than inlined copies (it all runs from RAM), and the flash entry points it never
-  calls are left out (`fm1_flash.h`). The FM-1's loader is built the same way and held to the same limit until the
-  stock V15 app's own gap is measured; it also writes the app's header last.
+  calls are left out (`fm1_flash.h`). The FM-1's loader is built the same way and held to the same limit: stock V15
+  stages a loader at 0xE6000 below its record at 0xE7F00, the same 7,936 B (a V15 dump, 2026-10-20). It also writes
+  the app's header last.
 - **The loader's start record:** each start of Skiff's SMK loader keeps, in RAM a reset keeps (0x01C7FD20, 48 B at
   the top of the app's NOINIT; `app.ld` leaves it free): the chip's reset reason, whether the app started it (warm)
   or the boot stage did from the flash record (cold), a count of starts, and how far each run got (its stage, the
@@ -167,7 +173,8 @@ loader 7,740 B (the limit: 7,936 B, below).
   same framing as the identity query (`00 59 cmd`, no body, 7-bit packed):
   - `F0 00 32 6D 03 00 00 40 7F F7` (cmd 0x7B): the start record, 32 bytes;
   - `F0 00 32 71 03 00 00 40 7F F7` (cmd 0x7C): the clock registers, 8 words (SYS_DIV, CLK_CON0, CLK_CON2, PLL_CON,
-    PLL2_CON0, PLL2_CON1, SFC_BAUD, USB_CLK), to set a cold start against a warm one.
+    PLL2_CON0, PLL2_CON1, SFC_BAUD now, and SFC_BAUD as the loader found it at its start), to set a cold start
+    against a warm one.
   The reply comes back as `00 59 cmd 20 00 00`, the 32 bytes, then a checksum, packed the same way.
 - **Installers:** `tools/fm1_install.py` and the web installer's `web/fm1ota.js` install a package only on exactly
   its model (Pro, Elite, MKE-P37, FM-1), also when finishing a write a unit is stuck in (resume). Without the
@@ -178,7 +185,8 @@ loader 7,740 B (the limit: 7,936 B, below).
   as well as the FM-1's V15. A write cut short is resumed when the same model's loader answers again (up to five
   tries, two minutes each), and the bar moves forward only. `fm1_install.py --info` on an SMK loader prints its
   start record and clocks in words.
-- **Console** (MENU > USB SERIAL): `smk` (inputs, the store's owner state, the calibration marker), `padtest`,
+- **Console** (MENU > USB SERIAL, in a build without `--release`: Skiff 2.0's releases have no console): `smk`
+  (inputs, the store's owner state, the calibration marker), `padtest`,
   `leds`, `flr 0xC1224 8` (should read `trimdat`).
 
 ## The flash layout (the storage remap)
@@ -255,7 +263,7 @@ Left for the unit, because the host can't show them:
 
 1. A full flash backup, verified, before anything (the kit's recovery notes). Then install with
    `tools/fm1_install.py build/skiff-smk37.fwsc` (the Pro; `-elite` / `-mke` for those models).
-2. Turn on MENU > USB SERIAL, restart, open the console.
+2. Turn on MENU > USB SERIAL, restart, open the console (a build without `--release`: a release has none).
 3. Check, in order: `smk` (adc_ok rising, adc_miss near 0; buttons and knobs one step a detent; pads idle at their
    base; faders 0..127; wheels move), `padtest` (the bottom row's first four: red, green, blue, white), every key
    C3..C6, a project saved and found again after a power cycle, `flr 0xC1224 8` still reading `trimdat`. Then the
@@ -294,15 +302,26 @@ Left for the unit, because the host can't show them:
   stock to Skiff (the stock app staged Skiff's 7,655 B loader): the factory calibration byte-identical at every step.
 - **A power cut mid-write is safe:** switched off at about 14 % of a stock-to-Skiff write, the unit came back in
   Skiff's loader from the record, never in a half-written app.
-- **Open: a loader started cold resets itself.** The loader the boot stage started from the flash record after that
+- **A loader started cold reset itself.** The loader the boot stage started from the flash record after that
   power-on reset itself during each resume, at random points 15 to 34 s into the write pass, and came back as the
-  loader within about a second. The fourth resume finished. Loaders the app started never did this. Nothing in
-  Skiff sets the clock, the core voltage or the LVD, so a cold start differs only in what the boot stage leaves; the
-  watchdog (about 8 s) is fed between sectors, and one sector's longest stretch without a feed is under 2 s. The start
-  record above tells which reset it is (the watchdog, a supply drop or a soft reset) and how far the run got.
+  loader within about a second. The fourth resume finished. Loaders the app started never did this.
 - **The launch build (2026-10-20, grv e5150d7):** installed on the SMK-37 Pro and on an FM-1 next to it (the
   installers pick each unit by its model). A power cut 7 s into the SMK's write pass: the start record said the
   next, cold, loader was reset by the watchdog 20 s into its write pass (sector 0x47000), and that a cold start
   leaves the flash controller's divider (SFC_BAUD) at 0xB9 where a warm one has 1; the second cold start finished,
   the calibration byte-identical. The FM-1's loader, power cut 9 s into a stock-to-Skiff write pass, came back in
   UPDATE MODE and finished in one resume.
+- **Its cause, from the start record:** the watchdog, about 20 s into a cold write pass. Of the clock registers, only
+  the flash controller's divider differs: SFC_BAUD 0xB9 on a cold start (HSB / 186, about 1 MHz), 1 on a warm one
+  (HSB / 2). The cold write pass ran about half as fast again per sector. The boot stage sets the app's divider on its
+  way to the app, and the app's reset keeps it for a loader the app starts; a loader started cold gets the boot
+  ROM's. Skiff's loaders (SMK and FM-1) now set it back to 1 at their start, when the clock tree is the app's, and
+  feed the watchdog before every flash operation; 0x7C's last word reports the divider the loader found.
+- **On the unit (2026-10-24, 1.4 launch build to 2.0 dev 0daf4b6, a power cut at 52 % of the write):** the divider
+  part works (the cold loader's slowest 4 KiB erase 8 ms), but the cold-started loader was still reset by the
+  watchdog about 40 to 45 s into each run: three cold runs, the start record after the last one `p3_rst 0x04`
+  (watchdog), `starts 3`, the run before it writing sector 0x5F000 at 40.4 s. The installer resumed by itself each
+  time and finished (exit 0); the calibration 0xC0000..0xC1FFF byte-identical to the backup. Warm-started loaders
+  still never reset. Open: the loader arms P3's watchdog itself (0x0D, about 8 s) and feeds it about 2,000 times a
+  second, so a cold start probably leaves that watchdog on another clock; the next step is to read P3's clock and
+  watchdog settings on a cold and a warm start.

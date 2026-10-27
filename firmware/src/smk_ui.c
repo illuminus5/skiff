@@ -9,6 +9,7 @@
  *   faders A the LEVEL of the four tracks the screen shows, FADER BANK stepping LEVEL PAN REVERB DELAY, each fader
  *            taking over once it reaches the value;
  *   wheels A, the pedal: as MIDI in on the selected track's channel (bend, CC1: the MOD matrix's MODW; CC64 sustain);
+ *            the pedal holds the track's keys too (seq.c);
  *   < >      the selected track's entry before and after (as PERFORM's keys: at once stopped, at LAUNCH playing);
  *   MASTER   K1, kept with the settings; KEY VELOCITY (MENU > CONTROL).
  * KNOB BANK is SHIFT (ui_input.c); the button LEDs on or off (ui_input.c smk_leds_out). Main loop only. */
@@ -63,8 +64,8 @@ static void smk_pads_steps(void)
         if (drum)
             c = (step_lanes(st) >> ui.lane) & 1u ? col : SMK_PAD_FAINT;
         else
-            c = step_on(st) ? col : st->time == ST_TIE ? smk_rgb(T_TRK(song.sel), SMK_PAD_FULL / 2u) : SMK_PAD_FAINT;
-        if (edit && i == ui.cursor && !song.playing)
+            c = step_on(st) ? col : step_tie(st) ? smk_rgb(T_TRK(song.sel), SMK_PAD_FULL / 2u) : SMK_PAD_FAINT;
+        if (edit && i >= sel_lo() && i <= sel_hi() && !song.playing)   /* ((2.0) the selection's range) */
             c = SMK_PAD_WHITE << 16 | SMK_PAD_WHITE << 8 | SMK_PAD_WHITE;
         if (p == ph)
             c = smk_mixw(c, 128u);
@@ -188,7 +189,8 @@ static void smk_midi(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)   /* as
 /* the wheels, self-calibrating (after genkigenki's layer: the pitch wheel's rest is its centre, taken at power-on and
  * followed while it rests; each range grows to what it reached; the travel is short, raw ~445..640 pitch, ~474..629 mod,
  * up = lower). Sent on the selected track's channel when they change: a bend, CC1; the track before gets them back to
- * rest when another is selected. The pedal (mux C 6, ~985 open): its rest at power-on, a press well away from it */
+ * rest when another is selected. The pedal (mux C 6, ~985 open): its rest at power-on, a press well away from it;
+ * down, it holds the selected track's keys too (smk_pedal: seq.c kb_up) */
 static void smk_wheels(void)
 {
     enum { DEAD = 12, SPAN0 = 80, MOD_LO = 485, MOD_HI = 615 };
@@ -249,6 +251,7 @@ static void smk_wheels(void)
         smk_midi(0xB0u, (uint32_t)ch, 64, pd ? 127u : 0u);
         sp = pd;
     }
+    smk_pedal = (uint8_t)pd;                         /* (the keys: seq.c kb_up) */
 }
 
 /* ------------------------------------------------------------------------------------------ < > , MASTER --- */

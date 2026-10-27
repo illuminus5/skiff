@@ -17,6 +17,7 @@
  * step accent as the hits' accents; other tracks' steps stay as they were (no hits). A SAMPLE track of the retired
  * PERC set (SET 4) loads as DRUM with its default kit, in any format (proj_perc).
  * Run by tests/run_tests.sh (needs build/gen from one firmware build). */
+#define FELUCCA_LEGACY 1                        /* ((2.0) the formats of before: the converter's build, core.h) */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -45,6 +46,23 @@ static int pow_on(const project_t *q)
             ok &= !q->ent[t][k][0];
     }
     return ok;
+}
+
+/* (2.0) SKF4 record s as another firmware's layout of it: n bytes put in at at (n > 0, values + 9 each) or taken out
+ * (n < 0), the count at c changed by dc, the hash made again */
+static void skf4_edit(project_store_t *o, const project_store_t *s, uint32_t at, int n, uint32_t c, int dc)
+{
+    uint32_t end = PROJ_NAME_AT(&PROJ_SKF4), m = (uint32_t)(n < 0 ? -n : n), sum;
+    *o = *s;
+    if (n > 0) {
+        memmove(o->raw + at + m, o->raw + at, end - at - m);
+        memset(o->raw + at, 64u + 9u, m);
+    } else {
+        memmove(o->raw + at, o->raw + at + m, end - at - m);
+        memset(o->raw + end - m, 0, m);
+    }
+    o->raw[c] = (uint8_t)(o->raw[c] + dc);
+    sum = proj_hash(o->raw, PROJ_STORE4 - 4u); memcpy(o->raw + PROJ_STORE4 - 4u, &sum, 4);
 }
 
 /* the value parameter k (old id) of track t had in the old project */
@@ -208,8 +226,9 @@ int main(void)
     bad += check("layout: SLICER after DETUNE, then the matrix just before P_E0 ((Skiff) DIR, the ducking after the lane levels)",
                  P_SLCR == P_DETUNE + 1 && P_SLDEPTH + 1 == P_M1SRC && P_M4AMT + 1 == P_FM1_ATK && P_FM4_LEVEL + 1 == P_CHRD && P_VOIC + 1 == P_LN0 &&
                  P_LN7 + 1 == P_DIR && P_DIR + 1 == P_DKSRC && P_DKREL + 1 == P_DTYPE && P_LDECAY7 + 1 == P_LSYNC &&
-                 P_ESYNC + 1 == P_E0 && P_E0 == 127 &&   /* ((1.3) LFO SYNC .. ENV SYNC: P_COUNT past 127) */
-                 P_COUNT == PROJ_NP_V3 + 78u && PROJ_NP == 103u && PROJ_NX == 32u && PROJ_NX == PROJ_PX_MAX &&
+                 P_ESYNC + 1 == P_LPAN0 && P_LPAN7 + 1 == P_E0 && P_E0 == 135 &&   /* ((1.3) LFO SYNC .. ENV SYNC: P_COUNT
+                                                                                * past 127; (2.0, #36) the lane pans) */
+                 P_COUNT == PROJ_NP_V3 + 86u && PROJ_NP == 103u && PROJ_NX == 32u && PROJ_NX == PROJ_PX_MAX &&
                  PROJ_NP_V3 == PROJ_NP_V2 + 4u);
     bad += check("SKF1 fits one flash object, the retained cache in NOINIT", sizeof(project_store_t) <= 4096u - 256u &&
                  sizeof(project_store_t) == 3840u && 0xC8u + 4u * sizeof(project_store_t) <= 0x3D50u);
@@ -862,11 +881,12 @@ int main(void)
 #define SKF2_BAD(off, v) (st2 = st, st2.raw[(off)] = (v), sum = proj_hash(st2.raw, PROJ_STORE2 - 4u), \
                           memcpy(st2.raw + PROJ_STORE2 - 4u, &sum, 4), !proj_import(&c, &st2, (int)PROJ_STORE2))
         e = 68u + PROJ_NT * (PROJ_NP + 2u);           /* the lists */
-        ok &= SKF2_BAD(e, PAT_REST + 1u) && SKF2_BAD(e + 1u, 16u) && SKF2_BAD(e + PROJ_NT * NENT * 2u, 16u) &&
-              SKF2_BAD(65u, 2u) && !SKF2_BAD(e, NPAT) && !SKF2_BAD(e, PAT_REST) && !SKF2_BAD(e + 1u, 15u);
+        ok &= SKF2_BAD(e, PAT_REST + 1u) && SKF2_BAD(e + 1u, REPS_CHAIN + 1u) && SKF2_BAD(e + PROJ_NT * NENT * 2u, 16u) &&
+              SKF2_BAD(65u, 3u) && !SKF2_BAD(65u, SONG_ONCE) && !SKF2_BAD(e, NPAT) && !SKF2_BAD(e, PAT_REST) &&
+              !SKF2_BAD(e + 1u, 15u) && !SKF2_BAD(e + 1u, REPS_CHAIN);
 #undef SKF2_BAD
-        bad += check("  refused: a damaged hash, an id past the pool and REST, repeats past 16, an entry past 16, SONG 2; "
-                     "(#28) a REST read", ok);
+        bad += check("  refused: a damaged hash, an id past the pool and REST, repeats past CHAIN, an entry past 16, SONG 3; "
+                     "(#28) a REST read, ((2.0) SONG ONCE, a CHAIN)", ok);
         a.t[0].step[0].n = 1; a.t[0].step[0].note[0] = 60; a.t[0].step[0].time = ST_NOTE;
         ok = proj_pack(&st, &a) && proj_import(&c, &st, (int)sizeof st) && c.t[0].step[0].note[0] == 60u &&
              !c.ent[0][0][0] && !c.ent[0][0][1] && !c.cur[0] && !c.song && !c.scene[0];
@@ -880,8 +900,9 @@ int main(void)
         for (t = 0; t < NTRK; t++) {
             a.t[t].engine = (uint8_t)(t == 3u || t == 5u ? ENGI_DRUM : t == 4u ? ENGI_FM6 : 0u);   /* (not SAMPLE: E0 4 is PERC) */
             a.t[t].preset = (uint8_t)t;
-            for (i = 0; i < P_COUNT; i++)
-                a.t[t].p[i] = (int16_t)clamp(param_desc_of(a.t[t].engine, i)->def + (int32_t)t, -64, 127);
+            for (i = 0; i < P_COUNT; i++)                 /* ((2.0, #36) the lane pans: SKF4's alone, their defaults) */
+                a.t[t].p[i] = (int16_t)clamp(param_desc_of(a.t[t].engine, i)->def +
+                                             (i >= P_LPAN0 && i < P_E0 ? 0 : (int32_t)t), -64, 127);
         }
         a.parts = PROJ_PARTS; a.phys = PROJ_PHYS; a.sel = (uint8_t)k; a.g[G_BPM] = 97;
         a.ent[k][15][0] = 63 + 1; a.ent[k][15][1] = 7; a.cur[k] = 15; a.song = 1;
@@ -946,6 +967,82 @@ int main(void)
         ok = proj_pack2(&st, &a, &PROJ_SKF2) && proj_import(&c, &st, (int)PROJ_STORE2) && !c.dx_on;
         bad += check("  (phase 7) SKF2 holds no DRUM-X kit (SKF3 does)", ok);
     }
+    {   /* (2.0, Tier B 5) SKF4: 2560 bytes, the parameters by stored id; the lists at 10, the counted parts after */
+        static project_t a, c, d;
+        static project_store_t st, st2;
+        uint32_t sum, k = NTRK - 1u, g0, p0, p1;
+        memset(&a, 0, sizeof a);
+        for (t = 0; t < NTRK; t++) {
+            a.t[t].engine = (uint8_t)(t == 3u || t == 5u ? ENGI_DRUM : t == 4u ? ENGI_FM6 : 0u);
+            a.t[t].preset = (uint8_t)t;
+            for (i = 0; i < P_COUNT; i++)
+                a.t[t].p[i] = (int16_t)clamp(param_desc_of(a.t[t].engine, i)->def + (int32_t)t, -64, 127);
+        }
+        for (i = 20u; i < G_COUNT; i++)
+            a.g[i] = (int16_t)(GP[i].def + 1);           /* (G_CMODE 1: not the CHORUS reset of older formats) */
+        a.parts = PROJ_PARTS; a.phys = PROJ_PHYS; a.sel = (uint8_t)k; a.g[G_BPM] = 97;
+        a.ent[k][15][0] = 63 + 1; a.ent[k][15][1] = REPS_CHAIN; a.ent[0][1][0] = PAT_REST; a.cur[k] = 15;
+        a.song = SONG_ONCE;
+        a.scene[0] = 0x21; a.scene[PROJ_SCENES - 1u] = 0x80;
+        memcpy(a.name, "SKF4 TEST", 9);
+        a.fm6[k][5] = 77;
+        memcpy(a.dx, DX_KIT_DEF, sizeof a.dx); a.dx[DV_SNARE].b[DXP_COLOR] = 9; a.dx_on = 1;
+        ok = proj_pack2(&st, &a, PROJ_SKF) && proj_import(&c, &st, (int)PROJ_STORE4);
+        for (t = 0; t < NTRK; t++)
+            ok &= c.t[t].engine == a.t[t].engine && c.t[t].preset == a.t[t].preset &&
+                  !memcmp(c.t[t].p, a.t[t].p, sizeof a.t[t].p) && !c.t[t].step[0].n;
+        bad += check("(2.0) SKF4: sounds, globals, lists (REST, CHAIN), SONG ONCE, scenes, kit, FM6, name round trip",
+                     ok && !memcmp(c.g, a.g, sizeof a.g) && !memcmp(c.ent, a.ent, sizeof a.ent) &&
+                     !memcmp(c.cur, a.cur, sizeof a.cur) && c.song == SONG_ONCE && c.sel == k &&
+                     !memcmp(c.scene, a.scene, sizeof a.scene) && !memcmp(c.name, a.name, sizeof a.name) &&
+                     c.dx_on && !memcmp(c.dx, a.dx, sizeof a.dx) && c.fm6[k][5] == 77u && c.parts == PROJ_PARTS &&
+                     c.phys == PROJ_PHYS);
+        g0 = PROJ_ENT4 + NTRK * (NENT * 4u + 1u) + PROJ_SCENES + 2u + 1u + DV_NLANE * 11u + NTRK * FM6_PACKED;
+        p0 = g0 + 1u + 2u * G_COUNT + 3u;                /* T1's parameters (its count first) */
+        p1 = p0 + 1u + SID_COUNT + 3u;                   /* T2's */
+        ok = ((const uint32_t *)st.raw)[0] == PROJ_MAGIC4 && ((const uint32_t *)st.raw)[1] == 2560u && st.raw[8] == 1u &&
+             st.raw[PROJ_ENT4 + (k * NENT + 15u) * 4u] == 64u && st.raw[PROJ_ENT4 + (k * NENT + 15u) * 4u + 1u] == 16u &&
+             st.raw[g0] == G_COUNT && st.raw[p0] == SID_COUNT && st.raw[p1 - 3u] == a.t[1].engine &&
+             st.raw[p1 + 1u + P_LEVEL] == (uint8_t)(a.t[1].p[P_LEVEL] + 64) &&
+             p1 + 4u * (1u + SID_COUNT + 3u) + 1u + SID_COUNT <= 2544u && !memcmp(st.raw + 2544u, "SKF4 TEST", 9);
+        bad += check("  2560 bytes: layout 1, the lists at 10 (4 bytes an entry), globals and tracks by count, name at "
+                     "2544", ok);
+        bad += check("  read from a retained 3840-byte slot too; loaded and saved again: byte for byte",
+                     proj_import(&c, &st, (int)sizeof st) && proj_pack2(&st2, &c, PROJ_SKF) && !memcmp(&st, &st2, sizeof st));
+        ok = proj_pack2(&st2, &a, &PROJ_SKF3) && proj_import(&c, &st2, (int)PROJ_STORE3) && proj_pack2(&st, &c, PROJ_SKF) &&
+             proj_import(&d, &st, (int)PROJ_STORE4) && !memcmp(&c, &d, sizeof c);
+        bad += check("  an SKF3 project saved as SKF4: the same project", ok);
+        (void)proj_pack2(&st, &a, PROJ_SKF);
+        (void)proj_import(&d, &st, (int)PROJ_STORE4);
+        skf4_edit(&st2, &st, p0 + 1u + SID_COUNT, 5, p0, 5);                 /* (a newer firmware's: 5 more on T1, */
+        skf4_edit(&st2, &st2, g0 + 1u + 2u * G_COUNT, 4, g0, 2);             /* 2 more globals) */
+        ok = proj_import(&c, &st2, (int)PROJ_STORE4) && !memcmp(&c, &d, sizeof c);
+        bad += check("  a newer record (more globals, more parameters): theirs passed over, the same project", ok);
+        skf4_edit(&st2, &st, p1 + 1u + 100u, -(int)(SID_COUNT - 100u), p1, -(int)(SID_COUNT - 100u));
+        skf4_edit(&st2, &st2, g0 + 1u + 2u * 20u, -2 * (int)(G_COUNT - 20u), g0, -(int)(G_COUNT - 20u));
+        ok = proj_import(&c, &st2, (int)PROJ_STORE4) && !memcmp(c.t[0].p, a.t[0].p, sizeof a.t[0].p) &&
+             !memcmp(c.t[2].p, a.t[2].p, sizeof a.t[2].p) && c.t[2].engine == a.t[2].engine;
+        for (i = 0; i < P_COUNT; i++)
+            ok &= c.t[1].p[i] == (i < 100u ? a.t[1].p[i] : param_desc_of(a.t[1].engine, i)->def);
+        for (i = 0; i < G_COUNT; i++)
+            ok &= c.g[i] == (i < 20u ? a.g[i] : GP[i].def);
+        bad += check("  an older record (20 globals, 100 parameters on T2): the rest at their defaults", ok);
+#define SKF4_BAD(off, v) (st2 = st, st2.raw[(off)] = (v), sum = proj_hash(st2.raw, PROJ_STORE4 - 4u), \
+                          memcpy(st2.raw + PROJ_STORE4 - 4u, &sum, 4), !proj_import(&c, &st2, (int)PROJ_STORE4))
+        st2 = st; st2.raw[p0 + 1u] ^= 1u;
+        ok = !proj_import(&c, &st2, (int)PROJ_STORE4) && SKF4_BAD(8u, 2u) && SKF4_BAD(p0 + 1u, 192u) &&
+             SKF4_BAD(p0 - 3u, NENGINES) && SKF4_BAD(g0 - 1u - DV_NLANE * 11u - NTRK * FM6_PACKED - 1u, 3u) &&
+             SKF4_BAD(PROJ_ENT4, PAT_REST + 1u) && SKF4_BAD(PROJ_ENT4 + 1u, REPS_CHAIN + 1u) &&
+             !SKF4_BAD(9u, 1u);
+#undef SKF4_BAD
+        bad += check("  refused: a changed byte, another layout, a value past 127, an engine past the last, SONG 3, "
+                     "an id past REST, REPS past CHAIN (flags: read)", ok);
+        memset(proj_slot, 0, sizeof proj_slot);
+        ok = proj_pack2(&proj_slot[1], &a, PROJ_SKF) && proj_slot_refs(63u) == 1u && !proj_slot_refs(62u);
+        ok &= proj_pack2(&proj_slot[3], &a, &PROJ_SKF3) && proj_slot_refs(63u) == 2u;
+        memset(proj_slot, 0, sizeof proj_slot);
+        bad += check("  pattern references: an SKF4 slot's entries counted, beside an SKF3 one's", ok);
+    }
     {   /* (phase 6) a light track holding PHYS (no firmware writes one: a crafted record) loads as at power-on, its list
          * kept; with four tracks the last plays every engine: as it is */
         static project_t a, c;
@@ -959,6 +1056,42 @@ int main(void)
         ok &= k >= NHEAVY ? c.t[k].engine == trk_def_engine(k) && c.t[k].preset == PROJ_DEF_SOUND
                           : c.t[k].engine == ENGI_PHYS && c.t[k].preset == 3u;
         bad += check("a light track holding PHYS (crafted): its power-on sound, its list kept (four tracks: as is)", ok);
+    }
+    {   /* (2.0, Tier B 4) stored parameter ids (core.h sid_put / sid_get, gsid_*): by number, a count first; a newer
+         * record's numbers passed over, an older one's missing ones left at the caller's defaults */
+        static int16_t p[P_COUNT], r[P_COUNT], g[G_COUNT], h[G_COUNT];
+        static uint8_t b[512];
+        uint32_t n;
+        for (i = 0; i < P_COUNT; i++)
+            p[i] = (int16_t)((int32_t)(i * 7u % 192u) - 64);
+        for (i = 0; i < G_COUNT; i++)
+            g[i] = (int16_t)(i * 1000u - 9000u);
+        n = sid_put(b, p);
+        for (i = 0; i < P_COUNT; i++)
+            r[i] = 99;
+        ok = n == 1u + P_COUNT && b[0] == P_COUNT && sid_get(r, b, n) == n && !memcmp(r, p, sizeof p);
+        n = gsid_put(b, g);
+        ok &= n == 1u + 2u * G_COUNT && gsid_get(h, b, n) == n && !memcmp(h, g, sizeof g);
+        bad += check("(2.0) stored ids: a track's parameters and the globals by number, back as they were", ok);
+        (void)sid_put(b, p);
+        b[0] = (uint8_t)(P_COUNT + 5u);                  /* (a newer firmware's: five more numbers, unknown here) */
+        memset(b + 1u + P_COUNT, 64u + 9u, 5);
+        for (i = 0; i < P_COUNT; i++)
+            r[i] = 99;
+        ok = sid_get(r, b, 1u + P_COUNT + 5u) == 1u + P_COUNT + 5u && !memcmp(r, p, sizeof p);
+        b[0] = 100;                                      /* (an older one: the first 100 only) */
+        for (i = 0; i < P_COUNT; i++)
+            r[i] = 99;
+        ok &= sid_get(r, b, 101u) == 101u && !memcmp(r, p, 100u * sizeof r[0]) && r[100] == 99 && r[P_COUNT - 1u] == 99;
+        ok &= !sid_get(r, b, 100u) && !gsid_get(h, b, 0u);   /* (shorter than its count says) */
+        p[3] = 128;
+        ok &= !sid_put(b, p);                            /* (a value no record holds; nor read: a byte past 191) */
+        p[3] = 0;
+        (void)sid_put(b, p);
+        b[1u + P_COUNT - 1u] = 192u;
+        ok &= !sid_get(r, b, 1u + P_COUNT);
+        bad += check("  a newer record's numbers passed over, an older one's missing ones left; too short or out of "
+                     "range refused", ok);
     }
     printf("%s\n", bad ? "PROJECT FORMAT TEST FAILED" : "project format test passed");
     return bad != 0;

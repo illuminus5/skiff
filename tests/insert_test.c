@@ -59,7 +59,7 @@ static void fresh(uint32_t pi)                       /* track 1 ANALOG preset pi
     song.playing = 0;
     song.master_q12 = MASTER_FULL;                     /* (the volume knob: full, so the mix is heard) */
     host_preset(&trk[0], 0, pi);
-    song.sel = 0;
+    sel_set(0);
     hash = 0xCBF29CE484222325ull;
 }
 

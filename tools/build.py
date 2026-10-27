@@ -7,7 +7,9 @@
 
 Outputs in build/: felucca.bin (app), loader/ota.bin (update loader),
 felucca.fwsc (package). A release build (--release X.Y) writes skiff-X.Y.fwsc and a folder
-release-X.Y/ with the package, the app, SHA256SUMS, the samples' attributions and the licence files.
+release-X.Y/ with the package, the app, SHA256SUMS, the samples' attributions and the licence files; (Skiff 2.0) it
+leaves the serial console out (FELUCCA_CDC=0, a developer tool: FELUCCA_CDC=1 keeps it), so the unit is a plain audio
++ MIDI device (macOS 13-15 see its USB audio input) and MENU has no USB SERIAL.
 See BUILDING.md for the toolchain and the SDK.
 
 BOARD=smk37 (or --board smk37) builds Skiff for the M-VAVE SMK-37 Pro (after genkigenki's SMK-37 layer for Felucca):
@@ -46,8 +48,8 @@ APP_SLOT = fm1pkg_make.APP_SLOT
 LOADER_LOAD = 0x01C0A800
 LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
 # the staged loader (its ota.bin, the package's UFW entry) must fit what the stock app leaves for one: on the SMK-37
-# its staging at 0xBD000, its update record at 0xBEF00 (SMK37.md), where a bigger one may spill into BTIF / USRTRIM.
-# The FM-1's stock V15 gap is not measured yet: the same limit holds for it until it is
+# its staging at 0xBD000, its update record at 0xBEF00 (SMK37.md), where a bigger one may spill into BTIF / USRTRIM;
+# on the FM-1 (V15) 0xE6000 and 0xE7F00, the same 7,936 B (both measured from dumps, 2026-10-20)
 LDR_MAX = 0xBEF00 - 0xBD000
 DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
 CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
@@ -113,7 +115,7 @@ def tc_all(*cmds):
 
 
 def generate():
-    """generated headers (UI fonts, icons, keycaps, palettes, tables, samples)"""
+    """generated headers (UI fonts, icons, keycaps, palettes, sprites, tables, samples)"""
     GEN.mkdir(parents=True, exist_ok=True)
     for old in ("felucca_font.h", "felucca_icons.h"):     # headers of the bitmap font and icon atlas
         (GEN / old).unlink(missing_ok=True)
@@ -123,6 +125,7 @@ def generate():
             [tools / "gen_aa_keycaps.py", GEN / "ui_keycaps.h"],
             [tools / "gen_ui_palettes.py", GEN / "ui_palettes.h"],
             [tools / "gen_pixel_font.py", GEN / "ui_pixfont.h"],
+            [tools / "gen_sprites.py", GEN / "ui_sprites.h"],
             [tools / "gen_tables.py", GEN / "felucca_tables.h"],
             [tools / "gen_fm6_patches.py", GEN / "felucca_fm6.h"],
             [tools / "gen_samples.py", GEN / "felucca_samples.h"]]
@@ -407,6 +410,7 @@ def main():
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z, X.Y.Z.W or X.Y-suffix, one digit each")
         PRODUCT = BOARD_PREFIX[BOARD] + m[1] + m[2]
         VERSION = "v" + a.release.lower()      # e.g. v1.0, v1.1-rc1
+        os.environ.setdefault("FELUCCA_CDC", "0")   # (Skiff 2.0) no serial console in a release (see the top)
         name = f"{stem}-{a.release}.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK

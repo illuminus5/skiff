@@ -2,6 +2,9 @@
 /* Skiff: throws (DESIGN.md, the PERFORM layer's KNOB 1..4). A knob turned in the PERFORM layer pushes one of the
  * selected track's parameters (throw_id: the B mockup's CUT VERB DLY DRV) away from its value for a moment: an offset
  * over it, never saved, that glides back to nothing over one bar once the knob rests (THROW_REST ms), gone at STOP.
+ * ((2.0, D 2A) one way back: over MENU > CONTROL > RETURN's time, as MOMENTARY's values and FX's macros (ui.c mom_poll
+ * sets thr_beats); OCT+ in PERFORM keeps them: throw_keep. The offsets stay here, in the ISR, over what sounds: a
+ * throw rides on automation and locks.)
  * The audio ISR puts the offsets on at the start of each block, before its events (a note starting reads them: ATK,
  * REL ..), and takes them off after the parts are mixed: the main loop never sees them (what it shows, saves and edits
  * is the parameter's own value). A value something else wrote during the block (automation, a lock) stays. The glide
@@ -16,21 +19,22 @@ static struct {
 } thr[NTRK * 4u];
 static volatile uint32_t thr_out;                       /* bit 4k + c: track k's throw c is out */
 static uint32_t thr_on;                                 /* .. put on this block (throw_off takes these off) */
+static volatile uint8_t thr_beats = 4u;                 /* main: the way back's beats (RETURN: 0 SNAP, 1, 4) */
 _Static_assert(NTRK * 4u <= 32u, "a throw a bit");
 
 /* the start of a block (mix_block, before the events): each throw on over its parameter, gliding once its knob rests */
 static __attribute__((noinline)) void throw_on(uint32_t n)
 {
-    uint32_t i, m = thr_out, on = 0, now = fm1_ms, bar = 4u * beat_samples();
+    uint32_t i, m = thr_out, on = 0, now = fm1_ms, len = thr_beats * beat_samples();
     for (i = 0; i < NTRK * 4u; i++) {
         track_t *t = &trk[i >> 2];
         const param_desc_t *d;
         if (!((m >> i) & 1u))
             continue;
-        if (now - thr[i].t > THROW_REST) {               /* back over a bar, in a line */
-            int32_t a = thr[i].off < 0 ? -thr[i].off : thr[i].off;
+        if (now - thr[i].t > THROW_REST) {               /* back over RETURN's time, in a line (SNAP, len 0: a step */
+            int32_t a = thr[i].off < 0 ? -thr[i].off : thr[i].off;   /* past it, at once) */
             if (!thr[i].dec)
-                thr[i].dec = (int32_t)((uint32_t)a * n / (bar ? bar : 1u)) + 1;
+                thr[i].dec = (int32_t)((uint32_t)a * n / (len ? len : 1u)) + 1;
             a = a > thr[i].dec ? a - thr[i].dec : 0;
             thr[i].off = thr[i].off < 0 ? -a : a;
             if (!a) {
@@ -95,6 +99,28 @@ static void throw_turn(uint32_t k, uint32_t c, int32_t s)
 #if defined(FM1_IRQ_TARGET)
     fm1_icfg_set(f);
 #endif
+}
+/* (2.0, D 2A; the main loop) OCT+ in PERFORM: every throw out kept, its value as it sounds now the parameter's own (as
+ * MOMENTARY's OCT+: not recorded, no undo); 1: some */
+static int throw_keep(void)
+{
+    uint32_t i, m;
+#if defined(FM1_IRQ_TARGET)
+    uint32_t f = fm1_icfg();
+    fm1_irq_off();
+#endif
+    m = thr_out;
+    for (i = 0; i < NTRK * 4u; i++)
+        if ((m >> i) & 1u) {
+            track_t *t = &trk[i >> 2];
+            const param_desc_t *d = param_desc_of(eng_idx(t->eng_req), thr[i].id);
+            t->p[thr[i].id] = (int16_t)clamp(t->p[thr[i].id] + thr[i].off / THR_ONE, d->min, d->max);
+        }
+    thr_out = 0;
+#if defined(FM1_IRQ_TARGET)
+    fm1_icfg_set(f);
+#endif
+    return m != 0u;
 }
 /* track k's thrown parameter c as it sounds now (its own value and its throw); *out: thrown */
 static int32_t throw_value(uint32_t k, uint32_t c, int *out)

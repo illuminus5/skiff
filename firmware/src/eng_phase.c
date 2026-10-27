@@ -22,9 +22,10 @@ static inline int32_t pd_cos(uint32_t ph16)             /* -cos, Q15, from the 1
 /* one wave's bend for a block: break points and the slopes of the bent phase
  * (Q16 reciprocals), so a sample costs a multiply instead of a divide (the
  * bent phase comes out the same or 1 lower in 65536) */
-typedef struct {
+typedef struct pd_s {
     uint32_t w, x, peak, rez;
     uint32_t k0, k1;
+    const struct pd_s *old;      /* (#41) the last block's bend, DCW having moved since (pd_bends): pd_wave fades from it */
 } pd_t;
 
 static inline uint32_t pd_slope(uint32_t span, uint32_t len) { return (span << 16) / (len ? len : 1u); }
@@ -33,6 +34,7 @@ static void pd_setup(pd_t *b, uint32_t w, uint32_t dcw)
 {
     uint32_t x;
     b->w = w;
+    b->old = 0;
     switch (w) {
     case 0:                                                  /* SAW */
         x = 32768u + ((dcw * 32767u) >> 16);
@@ -70,7 +72,7 @@ static void pd_setup(pd_t *b, uint32_t w, uint32_t dcw)
 }
 
 /* one sample at phase ph (16 bit): bipolar Q15 */
-static int32_t pd_wave(const pd_t *b, uint32_t ph)
+static inline __attribute__((always_inline)) int32_t pd_one(const pd_t *b, uint32_t ph)
 {
     uint32_t pd, x = b->x;
     switch (b->w) {
@@ -118,6 +120,39 @@ static int32_t pd_wave(const pd_t *b, uint32_t ph)
     return pd_cos(pd);
 }
 
+/* (#41) pd_one, and with b->old the old bend's wave fading into this one's over the block (i: the sample in it), as the
+ * amplitude ramps: a bend switched at the block's start steps the wave there, a click each block while ENV -> DCW moves
+ * it fast (an attack, a release; PD BRASS's low notes). The old bend has no old: one level */
+static int32_t pd_wave(const pd_t *b, uint32_t ph, uint32_t i)
+{
+    int32_t s = pd_one(b, ph), s0;
+    if (!b->old)
+        return s;
+    s0 = pd_wave(b->old, ph, i);
+    return s0 + ((s - s0) * (int32_t)(i + 1u) >> CTL_LOG2);
+}
+
+/* the block's bends: b[0] WAVE, b[1] WAVE2 (every other cycle) at the block's DCW; (#41) DCW moved since the last block
+ * (v->s[7]; -1 on a fresh note): b[2], b[3] at the last one's, as their .old */
+static __attribute__((noinline)) void pd_bends(pd_t *b, const track_t *t, voice_t *v, const vmod_t *m)
+{
+    const int16_t *p = t->p;
+    uint32_t w1 = (uint32_t)p[P_E0] & 7u, w2 = (uint32_t)p[P_E1], was = (uint32_t)v->s[7], dcw, k;
+    int32_t depth = (p[P_E2] << 8) + m->cutoff + mulq15(m->envq15, p[P_E3] * 256);
+    depth = clamp(depth + (m->shape - (64 << 8)), 0, 127 << 8);
+    dcw = (uint32_t)depth * 65535u / (127u << 8);
+    dcw = (dcw * 56000u) >> 16;                              /* the classic range of the bend */
+    v->s[7] = (int32_t)dcw;
+    for (k = 0; k < 2u; k++) {
+        uint32_t w = k && w2 ? w2 - 1u : w1;
+        pd_setup(&b[k], w, dcw);
+        if (was != dcw && was < 56000u) {
+            pd_setup(&b[k + 2u], w, was);
+            b[k].old = &b[k + 2u];
+        }
+    }
+}
+
 /* s[4] at FOLD 0: the last block had no fold (phase_render: a FOLD going on or off crossfades a block) */
 #define PD_UNFOLDED (-2147483647 - 1)
 
@@ -130,6 +165,7 @@ static void phase_note_on(track_t *t, voice_t *v)
     v->s[4] = t->p[P_E7] > 0 ? 0 : PD_UNFOLDED;   /* FOLD's DC blocker (only FOLD > 0 reads them; kept on a */
     v->s[5] = 0;                                   /* retrigger: .keep) */
     v->s[6] = 163;               /* FOLD's last gain (phase_xfade): FOLD 1's, PD_FOLD_G0, until a folded block */
+    v->s[7] = -1;                /* (#41) the last block's DCW (pd_bends): none yet (kept on a retrigger: .keep) */
 }
 
 /* FOLD's gain (Q8) for a block: 0.64x at FOLD 1 (sin(pi/2 x) then has a small-signal gain of 1: a soft saturation),
@@ -150,32 +186,27 @@ static inline __attribute__((always_inline)) void phase_loop(track_t *t, voice_t
                                                             const vmod_t *m, uint32_t fg)
 {
     const int16_t *p = t->p;
-    uint32_t w1 = (uint32_t)p[P_E0] & 7u, w2 = (uint32_t)p[P_E1], i;
-    int32_t depth = (p[P_E2] << 8) + m->cutoff + mulq15(m->envq15, p[P_E3] * 256);
-    uint32_t dcw, inc = m->inc, inc2;
+    uint32_t i, inc = m->inc, inc2;
     int32_t det = p[P_E4], line2 = det != 0 || p[P_E5], ring = p[P_E5], sub = p[P_E6] * 200;
     int32_t d16 = det * 16 / 100, rem = det * 16 - d16 * 100;   /* (cents_inc(), written out: the host
                                                                  * compiler makes the loop slower with it) */
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1], ph2 = v->ph[2];
     int32_t tg0 = v->s[0], tg1 = v->s[1];                    /* WAVE / WAVE2 toggles */
-    int32_t fx1 = fg ? v->s[4] : 0, fhp = fg ? v->s[5] : 0;  /* FOLD's DC blocker: the last fold, its output */    pd_t b1, b2;
-    depth = clamp(depth + (m->shape - (64 << 8)), 0, 127 << 8);
-    dcw = (uint32_t)depth * 65535u / (127u << 8);
-    dcw = (dcw * 56000u) >> 16;                              /* the classic range of the bend */
+    int32_t fx1 = fg ? v->s[4] : 0, fhp = fg ? v->s[5] : 0;  /* FOLD's DC blocker: the last fold, its output */
+    pd_t b[4];                                               /* WAVE, WAVE2; (#41) at the last block's DCW */
     inc2 = pitch_inc(clamp(m->pitch16 + d16, 0, 2047));
     inc2 += (uint32_t)((int32_t)(inc2 >> 12) * (rem * 2367 / 16000));
-    pd_setup(&b1, w1, dcw);
-    pd_setup(&b2, w2 ? w2 - 1u : w1, dcw);                   /* WAVE2 (every other cycle) */
+    pd_bends(b, t, v, m);
     for (i = 0; i < n; i++) {
         uint32_t old = ph0;
         int32_t s;
-        s = pd_wave(tg0 ? &b2 : &b1, ph0 >> 16);
+        s = pd_wave(tg0 ? &b[1] : &b[0], ph0 >> 16, i);
         ph0 += inc;
         if (ph0 < old)
             tg0 ^= 1;
         if (line2) {
             uint32_t old2 = ph1;
-            int32_t s2 = pd_wave(tg1 ? &b2 : &b1, ph1 >> 16);
+            int32_t s2 = pd_wave(tg1 ? &b[1] : &b[0], ph1 >> 16, i);
             ph1 += inc2;
             if (ph1 < old2)
                 tg1 ^= 1;
@@ -222,7 +253,7 @@ static __attribute__((noinline)) void phase_xfade(track_t *t, voice_t *v, int32_
                                                   uint32_t on)
 {
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1], ph2 = v->ph[2], i;
-    int32_t tg0 = v->s[0], tg1 = v->s[1], k;
+    int32_t tg0 = v->s[0], tg1 = v->s[1], dw = v->s[7], k;
     if (n > CTL)
         n = CTL;
     for (i = 0; i < n; i++)
@@ -233,6 +264,7 @@ static __attribute__((noinline)) void phase_xfade(track_t *t, voice_t *v, int32_
     v->ph[2] = ph2;
     v->s[0] = tg0;
     v->s[1] = tg1;
+    v->s[7] = dw;                                                   /* ((#41) and the same last DCW) */
     if (on) {
         v->s[4] = v->s[5] = 0;
         phase_render_f(t, v, pd_xb, n, m);
@@ -279,19 +311,19 @@ static const engine_t ENG_PHASE = {
     .name = "PHASE",
     .page_title = {"PHASE", "LINE"},
     .edit = {
-        {"WAVE", F_ENUM, 0, 7, 0, N_PD_WAVE, 0},
-        {"WAVE2", F_ENUM, 0, 8, 0, N_PD_WAVE2, 0},
-        {"DCW", F_PCT, 0, 127, 60, 0, 0},
-        {"ENV", F_PCT, 0, 127, 64, 0, 0},
-        {"DETUNE", F_INT, 0, 127, 0, 0, "ct"},
-        {"LINE", F_ENUM, 0, 1, 0, N_PD_LINE, 0},
-        {"SUB", F_PCT, 0, 127, 0, 0, 0},
-        {"FOLD", F_PCT, 0, 127, 0, 0, 0},       /* 1.5.5 (#104): 0 = off, the sound as before */
+        {"WAVE", N_PD_WAVE, 0, 7, 0, F_ENUM, 0},
+        {"WAVE2", N_PD_WAVE2, 0, 8, 0, F_ENUM, 0},
+        {"DCW", 0, 0, 127, 60, F_PCT, 0},
+        {"ENV", 0, 0, 127, 64, F_PCT, 0},
+        {"DETUNE", 0, 0, 127, 0, F_INT, U_CT},
+        {"LINE", N_PD_LINE, 0, 1, 0, F_ENUM, 0},
+        {"SUB", 0, 0, 127, 0, F_PCT, 0},
+        {"FOLD", 0, 0, 127, 0, F_PCT, 0},       /* 1.5.5 (#104): 0 = off, the sound as before */
     },
     .presets = PHASE_PRESETS,
     .npresets = NELEM(PHASE_PRESETS),
     .note_on = phase_note_on,
     .render = phase_render,
-    .keep = 0x30,                /* FOLD's DC blocker (1.5.5): a retrigger does not restart it */
+    .keep = 0xB0,                /* FOLD's DC blocker (1.5.5), (#41) the last DCW: a retrigger does not restart them */
     .knob = {P_E2, P_E3, P_E4, P_REL},
 };

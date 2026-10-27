@@ -83,6 +83,16 @@ static void ref_unpack(const aafont_t *f, const aag_t *g)
 {
     uint32_t n = (uint32_t)g->bw * g->bh, k = 0, pos = 0;
     const uint8_t *d = f->data + g->off;
+    if (f->sc) {                                         /* (Skiff 2.0) a pixel face: S's pixels, scaled, PX_BOLD */
+        uint32_t s = f->sc & 3u, b = f->sc >> 7, sw = (g->bw - b) / s;
+        for (uint32_t gy = 0; gy < g->bh; gy++)
+            for (uint32_t gx = 0; gx < g->bw; gx++, k++) {
+                uint32_t i = gy / s * sw + gx / s;
+                alpha[k] = (uint8_t)((gx / s < sw ? (d[i >> 1] >> ((i & 1u) ? 0 : 4)) & 15u : 0u) |
+                                     (b && gx ? (d[(i - 1u) >> 1] >> (((i - 1u) & 1u) ? 0 : 4)) & 15u : 0u));
+            }
+        return;
+    }
     if (!f->hc) {
         for (k = 0; k < n; k++) alpha[k] = (d[k >> 1] >> ((k & 1u) ? 0 : 4)) & 15u;
         return;

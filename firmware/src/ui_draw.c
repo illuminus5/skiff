@@ -8,7 +8,8 @@
  * free text (names, messages) is ellipsised at its size. */
 static void draw_menu(void);
 static int name_on(void);                              /* NAME (ui_name.c) */
-static uint64_t lock_held(void);                       /* parameter locks: the steps held on STEP (ui_input.c) */
+static int mom_down(void);                             /* MOMENTARY: LFO held where its turns are (ui_input.c) */
+static uint64_t lock_held(void);                       /* parameter locks: the steps held on NOTES (ui_input.c) */
 static void name_draw(void);
 
 /* --------------------------------------------------------- drawing --- */
@@ -400,12 +401,14 @@ static void draw_column_tall(uint32_t c, const char *label, const char *val, con
  * a label too long to share the card with its icon goes without it. A parameter MOTION drives (card_mot_next):
  * the motion icon in place of its own, in the theme colour; a long label moves it left, up to the card's edge;
  * a label with no room for it at all (or FELUCCA_ICONS=0): the label in the theme colour.
- * vc: the value's colour (T_THEME, T_DIM inactive, T_ACCENT the knob just turned) */
-static void draw_column(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc,
+ * vr: the value's colour, a VR_* role (ui.c: VR_LIVE the theme's, the accent while its knob is the one just turned) */
+static void draw_column(uint32_t c, const char *label, const char *val, const char *unit, uint32_t vr,
                         int32_t ratio, uint32_t icon)
 {
     char key[48];
     int hot = c == ui.hot_col && ui.hot_t, named = fmt_named, mot = card_mot_next && label[0], strip, snap;
+    uint16_t vc = vr == VR_LIVE ? (hot ? T_ACCENT : T_THEME) : vr == VR_DIM ? T_DIM : vr == VR_ACCENT ? T_ACCENT
+                : vr == VR_MID ? T_MID : T_THEME;
     uint32_t kind = large_kind();                       /* MENU > LARGE: tall (draw_column_tall), or the label in M */
     int blocks = kind != LK_TALL;                       /* Skiff: BLOCKS' tile (ui_blocks.c), its values snap; LARGE's
                                                          * tall card: the older one */
@@ -531,21 +534,20 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
 }
 
 /* an action's column (act_cols): picked, the OCT+ keycap (accent while it would do something); else "--" */
-static void draw_act_column(uint32_t c, const char *label, uint16_t vc, uint32_t icon)   /* icon: ICON_AUTO = by label */
+static void draw_act_column(uint32_t c, const char *label, uint32_t vr, uint32_t icon)   /* icon: ICON_AUTO = by label */
 {
     int picked = act_col() == c + 1u;
-    draw_column(c, label, picked ? "[OCT+]" : "--", "", picked ? (act_ready() ? T_ACCENT : T_DIM) : vc, -1, icon);
+    draw_column(c, label, picked ? "[OCT+]" : "--", "", picked ? (act_ready() ? VR_ACCENT : VR_DIM) : vr, -1, icon);
 }
 
 /* (Skiff U3, N5) a card of a page that is there but does nothing on the track's engine: dimmed. On the hits (DRUM,
- * DRUM-X) LFO DEST's PIT FLT SHP (AMP does), and (#9) LFO's PHASE and FADE (no retrigger: it runs free across the
- * hits); DRUM's KICK on a model kit (80 10 66 55 77: every lane its kit's own) */
+ * DRUM-X) (#9) LFO's PHASE and FADE (no retrigger: it runs free across the hits; (2.0) LFO DEST's PIT FLT SHP: MOD's
+ * grid, mod_dead); DRUM's KICK on a model kit (80 10 66 55 77: every lane its kit's own) */
 static int card_dead(const page_t *pg, uint32_t c)
 {
     const track_t *t = TSEL;
     uint32_t id = pg->id[c & 3u];
-    if (ENGINES[t->eng_req % NENGINES]->oneshot &&
-        (id == P_LD_PIT || id == P_LD_FLT || id == P_LD_SHP || id == P_LPHASE || id == P_LFADE || id == P_LTRIG))
+    if (ENGINES[t->eng_req % NENGINES]->oneshot && (id == P_LPHASE || id == P_LFADE || id == P_LTRIG))
         return 1;                                       /* ((#16) TRIG too: the hits' LFO runs free) */
     if (id == P_LRATE && t->p[P_LSYNC])                 /* (#16) LFO 2 SYNC on: RATE does nothing */
         return 1;
@@ -560,18 +562,21 @@ static void foot_hint(char *a, char *b)
 {
     uint32_t c = act_col();
     str_cpy(a, "OCT+ ", 8);
-    str_cpy(a + 5, c ? act_name(c - 1u) : "--", 8);
+    str_cpy(a + 5, c ? act_name(c - 1u) : "--", 19);   /* ((2.0) CLEAR 3 UNUSED, COPY 06 TO 22 AT F: a 24-byte a) */
     str_cpy(b, ui.act || ui.ev_del ? "OCT- CANCEL" : "OCT- HOME", 16);   /* ((Skiff U2) where it goes: HOME, not "BACK") */
 }
 
 /* the sound's name on the track: a user preset or the engine's preset (b holds 16); (FM6 LAB) an FM6 track on its own
- * patch (edited, INIT's): the patch's name ("INIT VOICE") */
+ * patch (edited, INIT's): the patch's name ("INIT VOICE"); ((2.0, #35) DRUM on a user kit: its slot's name, "MY KIT") */
 static void sound_name(const track_t *t, char *b)
 {
     const engine_t *e = ENGINES[t->eng_req % NENGINES];
+    uint32_t u = t->eng_req % NENGINES == ENGI_DRUM ? drum_user(t->p) : 0u;
     b[0] = 0;
     if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), b);
+    else if (u && usr_nz[u - 1u])
+        smp_user_name(u - 1u, b);
     else if (t->eng_req % NENGINES == ENGI_FM6 && t->p[P_E7] == FM6_OWN) {
         uint32_t n = 10;
         memcpy(b, fm6_patch[trk_index(t) % NTRK] + FP_NAME, 10);
@@ -590,6 +595,13 @@ static int32_t foot_hint_r(const char *ti)
 /* (#22) HOME shows its lanes, which name every track's sound (ui_home.c); MENU > LARGE's tall cards and the scope (HOME
  * tapped on HOME) have none, so there the footer names the sound instead of HOLD [HOME] SHIFT (both force a redraw) */
 static int home_lanes(void) { return ui.home && !ui.home_scope && large_kind() != LK_TALL; }
+/* (2.0, D 2A) what comes back, how (ret: 1 + RETURN) and OCT+ KEEP, side by side from the left (design/mockups/
+ * v2_mutes.png): MOMENTARY's footer, FX's with its macros out, PERFORM's with a throw out (ui_layer.c draw_layer) */
+static void ret_hints(uint32_t ret, int32_t y)
+{
+    khint_t kh[2] = {{KC_LETGO, RET_SAY[(ret - 1u) % 3u]}, {KC_OCTUP, "KEEP"}};
+    cv_key_row(8, 8 + kh_w(KC_LETGO, kh[0].act) + 14 + kh_w(KC_OCTUP, "KEEP"), y - KC_TY, kh, 2, 3u, T_BG);
+}
 static void draw_foot(void)
 {
     char s[48], pn[16], ti[20];
@@ -599,10 +611,12 @@ static void draw_foot(void)
     const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
     const char *ename = e->name;
     int32_t x, ly = foot_line_y();                     /* (BLOCKS: the one line) */
-    int tiles = !ui.home && pg->graph == GR_TILES;     /* ((Skiff, issue #3) not the page under HOME: its hints were
-                                                       * drawn under HOLD HOME SHIFT) */
+    int tiles = !ui.home && !grid_on() &&              /* ((Skiff 2.0) NOTES, FEEL, PATTERN: their hints; (issue #3) not */
+                (pg->graph == GR_ROLL || pg->graph == GR_FEEL || pg->graph == GR_STEPS);   /* under HOME's */
     int hints = act_cols() || ((grid_on() || tiles) && !ui_hints_off);   /* (the line says them, not the
                                                        * sound; (Skiff U4) MENU > HINTS OFF: the sound) */
+    uint32_t ret = mom_down() && mom_held(0) ? 1u + ret_mode() : 0u;   /* ((2.0, D 2A) MOMENTARY: how its values */
+                                                       /* come back, OCT+ KEEP, for the whole line */
     sound_name(t, pn);
     if (ui.home)
         ti[0] = 0;                                     /* ((Skiff U4, L5) the header names the page: here only where it */
@@ -621,11 +635,13 @@ static void draw_foot(void)
               ui_hints_off * 3301u;
     }
     if (act_cols()) {                                  /* the hint, and whether OCT+ would act */
-        char ha[16], hb[16];
+        char ha[24], hb[16];
         foot_hint(ha, hb);
         sig += str_hash(str_hash(act_ready() ? 7u : 3u, ha), hb) + (uint32_t)ui.act2 * 7717u + (uint32_t)ui.ev_del * 1931u;
-        if (pg->graph == GR_SONG)                      /* ((Skiff phase 5) SONG's: the whole of it, EDIT's) */
-            sig += str_hash(5u, song_act_name()) + (uint32_t)bank_used(song.sel, sg.entry) * 6007u;
+        if (pg->graph == GR_SONG)                      /* ((Skiff phase 5) SONG's: the whole of it, EDIT's; (2.0, #30) */
+            sig += str_hash(5u, song_act_name()) + (uint32_t)bank_used(song.sel, sg.entry) * 6007u +   /* the entry's */
+                   (uint32_t)lists.snd[song.sel % NTRK][sg.entry % NENT][0] * 131u +                     /* sound */
+                   (uint32_t)lists.snd[song.sel % NTRK][sg.entry % NENT][1] * 7u + up_gen * 0x3BD1u;
     }
     if (grid_on())
         sig += 0x51EDu + (uint32_t)black_held(GK_ACC) * 977u;
@@ -636,6 +652,7 @@ static void draw_foot(void)
         ml_line(ln);
         sig += str_hash(0x4C45u, ln);
     }
+    sig += ret * 0x2E7B5u;
     if (!ui.force && sig == ui.foot_sig)
         return;
     ui.foot_sig = sig;
@@ -654,15 +671,25 @@ static void draw_foot(void)
         cv_blit(0, foot_y());
         return;
     }
+    if (ret) {                                         /* ((2.0, D 2A) MOMENTARY: LET GO: BACK OVER 1 BAR, OCT+: KEEP) */
+        ret_hints(ret, ly);
+        cv_blit(0, foot_y());
+        return;
+    }
     if (act_cols() && pg->graph == GR_SONG) {         /* (Skiff phase 5) SONG: what OCT+ does, then EDIT CLEAR (not with
                                                        * a pick), side by side (the mockup's), the title right */
         khint_t kh[1] = {{KC_OCTUP, song_act_name()}};   /* ((Skiff U2) CLEAR: KNOB 2's, no EDIT) */
         uint32_t n = 1u;
         int32_t r = foot_hint_r(ti), w = kh_w(kh[0].key, kh[0].act);
+        char sn[24];
         cv_key_row(8, 8 + w < r ? 8 + w : r, ly - KC_TY, kh, n,
                    (act_ready() ? 1u : 0u) | (bank_used(song.sel, sg.entry) ? 2u : 0u), T_BG);
+        str_cpy(sn, "SOUND ", sizeof sn);              /* ((2.0, #30, the user's pick 2A) no pick: the entry's sound */
+        esnd_name(lists.snd[song.sel % NTRK][sg.entry % NENT], sn + 6);   /* named after it) */
+        if (!song_pick() && sn[6] && 8 + w + 10 < r)
+            cv_free_text(8 + w + 10, ly, &AF_S, sn, T_MID, T_BG, r - (8 + w + 10));
     } else if (act_cols()) {                          /* the OCT+ / OCT- hint ((Skiff U2) EDIT's NAME / DELETE gone) */
-        char ha[16], hb[16];
+        char ha[24], hb[16];
         khint_t kh[2];
         foot_hint(ha, hb);                            /* "OCT+ LOAD", "OCT- HOME": their words */
         kh[0] = (khint_t){KC_OCTUP, ha + 5};
@@ -685,20 +712,28 @@ static void draw_foot(void)
         }
     } else if (grid_on() && !ui_hints_off) {          /* row 1: the page, and what the keys do */
         char b[16];
-        uint32_t len = (uint32_t)t->p[P_SLEN];
+        uint32_t all, off = step_off(&all, 16);         /* ((2.0, #44) a chain's pages counted on: PAGE 5/8) */
         str_cpy(b, "PAGE ", sizeof b);
-        fmt_int(b + 5, (int32_t)ui.bank + 1);
-        str_cpy(b + str_len(b), "/", 4);
-        fmt_int(b + str_len(b), (int32_t)((len + 15u) / 16u));
+        fmt_kn(b + 5, (int32_t)(off + ui.bank) + 1, (int32_t)all);
         x = cv_text(8, ly, &AF_S, b, T_THEME) + 10;   /* (Skiff) the page, then the keys, on the line */
         if (black_held(GK_ACC))
             cv_text(x, ly, &AF_S, "ACCENT", T_ACCENT);
         else
             cv_key_hint(x, ly - KC_TY, KC_KEYS, "STEPS", 1, T_BG);
-    } else if (tiles && !ui_hints_off) {               /* (Skiff) STEP's tiles: what PRESETS does, as the mockup's */
-        x = cv_key_hint(8, ly - KC_TY, KC_PRESETS, "STEP", 1, T_BG);
-        if (!((song.rec >> song.sel) & 1u))            /* (Skiff U1) not armed, the keys only play: REC writes */
-            cv_key_hint(x + 10, ly - KC_TY, KC_REC, "WRITE", 1, T_BG);
+    } else if (tiles && !ui_hints_off) {               /* (Skiff 2.0) NOTES, FEEL: PRESETS the cursor (SHIFT + PRESETS, the
+                                                        * selection: SHIFT's map); NOTES' keys (REC off: they pick, on:
+                                                        * they write); PATTERN's PRESETS */
+        if (pg->graph == GR_STEPS) {
+            cv_key_hint(8, ly - KC_TY, KC_PRESETS, "DIR", 1, T_BG);
+        } else {
+#if BOARD_SMK37
+            x = cv_key_hint(8, ly - KC_TY, KC_K4, "STEP", 1, T_BG) + 10;   /* (K4 is PRESETS) */
+#else
+            x = cv_key_hint(8, ly - KC_TY, KC_PRESETS, "STEP", 1, T_BG) + 10;
+#endif
+            if (pg->graph == GR_ROLL)
+                cv_key_hint(x, ly - KC_TY, KC_KEYS, (song.rec >> song.sel) & 1u ? "WRITE" : "PICK", 1, T_BG);
+        }
     }
     {   /* the track's cushion, engine name, sound, page title at the right with its icon before it (MIXER, SONG,
          * CHANCE, AUTOMATION); icons: their ink on the names' capitals */
@@ -744,13 +779,12 @@ static void engine_columns(void)
     uint32_t total, cur = eng_list_pos(&total), e = TSEL->eng_req % NENGINES;
     char val[8], u[8];
     fmt_int(val, (int32_t)cur + 1);
-    str_cpy(u, "/", 8);
-    fmt_int(u + 1, (int32_t)total);
-    draw_column(0, "ENG", ENGINES[e]->name, "", VAL(0u), (int32_t)eng_rank(e) * 1000 / (NENG_SHOWN > 1 ? NENG_SHOWN - 1 : 1),
+    fmt_kn(u, -1, (int32_t)total);
+    draw_column(0, "ENG", ENGINES[e]->name, "", VR_LIVE, (int32_t)eng_rank(e) * 1000 / (NENG_SHOWN > 1 ? NENG_SHOWN - 1 : 1),
                 engine_icon(ENGINES[e]->name));
-    draw_column(1, "No.", val, u, VAL(1u), total > 1u ? (int32_t)(cur * 1000u / (total - 1u)) : 0, ICON_NONE);
-    draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
-    draw_column(3, "", "", "", T_THEME, -1, ICON_NONE);
+    draw_column(1, "No.", val, u, VR_LIVE, total > 1u ? (int32_t)(cur * 1000u / (total - 1u)) : 0, ICON_NONE);
+    draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VR_LIVE, -1, ICON_X_STAR);
+    draw_column(3, "", "", "", VR_THEME, -1, ICON_NONE);
 }
 static void draw_columns(void)
 {
@@ -765,48 +799,25 @@ static void draw_columns(void)
             param_format(d, *vp, val, &unit);
             card_mot_of(vp);
             card_span_of(d);
-            draw_column(c, d->label, val, unit, VAL(c), RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
+            draw_column(c, d->label, val, unit, VR_LIVE, RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
         }
         return;
     }
-    if (cur_page()->graph == GR_CHANCE) {              /* STEP CHANCE RATCH: the cursor step's, of all of it */
-        const step_t *cs = &TSEL->step[ui.cursor];
-        int rplays = cs->time == ST_NOTE && (cs->n || cs->hit);   /* RATCH does nothing on a REST, a TIE, empty: DIM */
-        fmt_int(val, (int32_t)ui.cursor + 1);
-        draw_column(0, "STEP", val, "", VAL(0u), -1, ICON_AUTO);
-        fmt_int(val, (int32_t)step_chance(&TSEL->step[ui.cursor]));
-        draw_column(1, "CHANCE", val, "%", VAL(1u), -1, ICON_PROB);   /* the die */
-        val[0] = 'x';                                  /* x1 .. x4, (Skiff) FLAM */
-        val[1] = (char)('0' + step_ratchet(&TSEL->step[ui.cursor]));
-        val[2] = 0;
-        if (cs->flags & SF_FLAM)
-            str_cpy(val, "FLAM", sizeof val);
-        draw_column(2, "RATCHET", val, "", rplays ? VAL(2u) : T_DIM, -1, ICON_X_REPEAT);
-        draw_column(3, "COND", TC_NAME[cs->cond % TC_COUNT], "", cs->cond ? VAL(3u) : T_DIM, -1, ICON_LOOP);   /* (Skiff) */
-        return;
-    }
-    if (cur_page()->graph == GR_PLAY) {                /* (Skiff) STEP, NUDGE (64ths of the step), DIR (the track's), GATE
-                                                        * (the step's own: its lock; else the track's, dim) */
-        const step_t *cs = &TSEL->step[ui.cursor];
-        const param_desc_t *d = track_desc(TSEL, P_DIR);
-        const char *unit;
-        int16_t v = TSEL->p[P_DIR];
-        fmt_int(val, (int32_t)ui.cursor + 1);
-        draw_column(0, "STEP", val, "", VAL(0u), -1, ICON_AUTO);
-        val[0] = cs->nudge > 0 ? '+' : 0;              /* +12 /64, -5 /64; 0 on the grid */
-        fmt_int(val + (val[0] != 0), cs->nudge);
-        draw_column(1, "NUDGE", val, cs->nudge ? "/64" : "", cs->nudge && step_on(cs) ? VAL(1u) : T_DIM, -1, ICON_TIME);
-        param_format(d, v, val, &unit);
-        card_span_of(d);
-        draw_column(2, d->label, val, unit, VAL(2u), RATIO(d, enum_rank(d, v)), param_icon(d, v));
-        d = track_desc(TSEL, P_SGATE);
-        if (!motion_lock_get(TSEL, ui.cursor, P_SGATE, &v)) {
-            v = motion_base_value(TSEL, P_SGATE);
-            cs = 0;                                    /* (the track's: dim) */
+    if (cur_page()->graph == GR_FEEL) {                /* (Skiff 2.0) FEEL: CHANCE RATCHET NUDGE TYPE of the selection's
+                                                        * first step (none: the cursor's; DIM there, or a value at rest) */
+        static const char *const FL[4] = {"CHANCE", "RATCHET", "NUDGE", "TYPE"};
+        static const uint16_t FI[4] = {ICON_PROB, ICON_X_REPEAT, ICON_TIME, ICON_AUTO};
+        uint32_t f = sel_first(TSEL);
+        const step_t *cs = &TSEL->step[f < NSTEP ? f : ui.cursor];
+        for (c = 0; c < 4u; c++) {
+            int32_t v = feel_get(cs, c);
+            const char *u = feel_text(val, cs, c);
+            if (c == 0u && !step_starts(cs)) {        /* (no note there: no chance to speak of) */
+                str_cpy(val, "--", sizeof val);
+                u = "";
+            }
+            draw_column(c, FL[c], val, u, f < NSTEP && (c == 0u || v != (c == 1u ? 1 : 0)) ? VR_LIVE : VR_DIM, -1, FI[c]);
         }
-        param_format(d, v, val, &unit);
-        card_span_of(d);
-        draw_column(3, d->label, val, unit, cs && step_on(cs) ? VAL(3u) : T_DIM, RATIO(d, v), param_icon(d, v));
         return;
     }
     if (cur_page()->graph == GR_EVENTS) {              /* AUTOMATION (ui_events.c): ROW STEP PARAM VALUE */
@@ -817,17 +828,15 @@ static void draw_columns(void)
         char nm[12];
         const param_desc_t *d;
         if (ui.ev_top) {                               /* ((Skiff U3, R5) the top row, the page's own: PLAY, CLEAR) */
-            draw_column(0, "ROW", "ALL", "", VAL(0u), -1, ICON_AUTO);
-            draw_column(1, "PLAY", motion_enabled(t) ? "ON" : "OFF", "", VAL(1u), -1, motion_icon());
-            draw_column(2, "", "", "", T_THEME, -1, ICON_NONE);
-            draw_act_column(3, "CLEAR", motion_count(t) ? T_THEME : T_DIM, ICON_X_MOTION_DEL);
+            draw_column(0, "ROW", "ALL", "", VR_LIVE, -1, ICON_AUTO);
+            draw_column(1, "PLAY", motion_enabled(t) ? "ON" : "OFF", "", VR_LIVE, -1, motion_icon());
+            draw_column(2, "", "", "", VR_THEME, -1, ICON_NONE);
+            draw_act_column(3, "CLEAR", motion_count(t) ? VR_THEME : VR_DIM, ICON_X_MOTION_DEL);
             return;
         }
         if (r < n) {
             const motion_event_t *e = &motion.event[idx[r]];
-            fmt_int(val, (int32_t)r + 1);
-            str_cpy(val + str_len(val), "/", 4);
-            fmt_int(val + str_len(val), (int32_t)n);
+            fmt_kn(val, (int32_t)r + 1, (int32_t)n);
             step = e->place & 63u;
             id = MOTION_ID(e);
             v = e->value;
@@ -838,49 +847,52 @@ static void draw_columns(void)
             id = ui.ev_id;
             v = id < P_COUNT ? motion_base_value(t, id) : 0;
         }
-        draw_column(0, "ROW", val, "", VAL(0u), -1, ICON_AUTO);
+        draw_column(0, "ROW", val, "", VR_LIVE, -1, ICON_AUTO);
         fmt_int(val, (int32_t)step + 1);
-        draw_column(1, "STEP", val, "", r < n || step < (uint32_t)t->p[P_SLEN] ? VAL(1u) : T_DIM, -1, ICON_AUTO);
+        draw_column(1, "STEP", val, "", r < n || step < (uint32_t)t->p[P_SLEN] ? VR_LIVE : VR_DIM, -1, ICON_AUTO);
         if (id >= P_COUNT || !ev_id_ok(t, id)) {
-            draw_column(2, "PARAM", "--", "", T_DIM, -1, ICON_AUTO);
-            draw_column(3, "VALUE", "--", "", T_DIM, -1, ICON_AUTO);
+            draw_column(2, "PARAM", "--", "", VR_DIM, -1, ICON_AUTO);
+            draw_column(3, "VALUE", "--", "", VR_DIM, -1, ICON_AUTO);
             return;
         }
         ev_name(t, id, nm);
         {   /* ((Skiff U4) the words spelled out: ENV ATTACK's ENV on the label's line, ATTACK the value) */
             char pl[4] = {nm[0], nm[1], nm[2], 0};
             int pre = !memcmp(nm, "ENV ", 4) || !memcmp(nm, "LFO ", 4);
-            draw_column(2, pre ? pl : "PARAM", pre ? nm + 4 : nm, "", VAL(2u), -1, ICON_AUTO);
+            draw_column(2, pre ? pl : "PARAM", pre ? nm + 4 : nm, "", VR_LIVE, -1, ICON_AUTO);
         }
         d = track_desc(t, id);
         param_format(d, v, val, &unit);
         if (r < n && ui.ev_del) {                     /* ((Skiff U2) past the lowest value: DELETE, was EDIT) */
-            draw_column(3, "DELETE", "[OCT+]", "", T_ACCENT, -1, ICON_AUTO);
+            draw_column(3, "DELETE", "[OCT+]", "", VR_ACCENT, -1, ICON_AUTO);
             return;
         }
         card_span_of(d);
         draw_column(3, r == n ? "VALUE" : motion.event[idx[r]].lock ? "LOCK" : "AUTO", val, unit,
-                    r < n ? VAL(3u) : T_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
+                    r < n ? VR_LIVE : VR_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
         return;
     }
-    if (cur_page()->graph == GR_LANES)                 /* ((Skiff U3, R6) LANES: KNOB 1 the lane, by its name) */
-        draw_column(0, "LANE", drum_lane_name(TSEL, ui.lane), "", VAL(0u), (int32_t)(ui.lane % 8u) * 1000 / 7, ICON_AUTO);
+    if (cur_page()->graph == GR_LMIX)                  /* ((2.0, #36) LANE MIX: a key struck picks its lane, as the grid's */
+        lane_follow(page_lane_p());                    /* keys and DRUM-X's sheet do (ui_dx.c) */
+    if (cur_page()->graph == GR_LANES || cur_page()->graph == GR_LMIX)   /* ((Skiff U3, R6) LANES: KNOB 1 the lane, by its
+                                                                         * name; (2.0) LANE MIX's) */
+        draw_column(0, "LANE", drum_lane_name(TSEL, page_lane()), "", VR_LIVE, (int32_t)page_lane() * 1000 / 7, ICON_AUTO);
     if (cur_page()->scope == SC_TRK) {                 /* LEVEL PAN REV MUTE of the selected track */
         const track_t *t = TSEL;
         uint32_t lvl = trk_level(song.sel);
         param_format(&TP[P_LEVEL], (int32_t)lvl, val, &unit);   /* (0: OFF) */
         card_mot_of(&TSEL->p[P_LEVEL]);
         card_span_of(&TP[P_LEVEL]);
-        draw_column(0, "LEVEL", val, unit, lvl && !t->p[P_MUTE] ? VAL(0u) : T_DIM, (int32_t)lvl * 1000 / 127, ICON_AUTO);
+        draw_column(0, "LEVEL", val, unit, lvl && !t->p[P_MUTE] ? VR_LIVE : VR_DIM, (int32_t)lvl * 1000 / 127, ICON_AUTO);
         param_format(&TP[P_PAN], t->p[P_PAN], val, &unit);
         card_mot_of(&TSEL->p[P_PAN]);
         card_span_of(&TP[P_PAN]);
-        draw_column(1, "PAN", val, unit, VAL(1u), RATIO(&TP[P_PAN], t->p[P_PAN]), param_icon(&TP[P_PAN], t->p[P_PAN]));
+        draw_column(1, "PAN", val, unit, VR_LIVE, RATIO(&TP[P_PAN], t->p[P_PAN]), param_icon(&TP[P_PAN], t->p[P_PAN]));
         param_format(&TP[P_REV], t->p[P_REV], val, &unit);
         card_mot_of(&TSEL->p[P_REV]);
         card_span_of(&TP[P_REV]);
-        draw_column(2, "REVERB", val, unit, VAL(2u), RATIO(&TP[P_REV], t->p[P_REV]), ICON_AUTO);
-        draw_column(3, "MUTE", t->p[P_MUTE] ? "ON" : "OFF", "", t->p[P_MUTE] ? T_ACCENT : VAL(3u), -1, ICON_AUTO);
+        draw_column(2, "REVERB", val, unit, VR_LIVE, RATIO(&TP[P_REV], t->p[P_REV]), ICON_AUTO);
+        draw_column(3, "MUTE", t->p[P_MUTE] ? "ON" : "OFF", "", t->p[P_MUTE] ? VR_ACCENT : VR_LIVE, -1, ICON_AUTO);
         return;
     }
     if (cur_page()->graph == GR_BROWSE) {
@@ -888,12 +900,11 @@ static void draw_columns(void)
         char u[8];
         if (cur < total) fmt_int(val, (int32_t)cur + 1);
         else str_cpy(val, "--", 8);
-        str_cpy(u, "/", 8);
-        fmt_int(u + 1, (int32_t)total);
-        draw_column(0, "No.", val, u, VAL(0u), -1, ICON_NONE);
-        draw_column(1, "ENG", ENGINES[TSEL->eng_req]->name, "", VAL(1u), -1, engine_icon(ENGINES[TSEL->eng_req]->name));
-        draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VAL(2u), -1, ICON_X_STAR);
-        draw_column(3, "LIST", LIST_NAME[list_mode()], "", VAL(3u), -1, ICON_X_FOLDER);
+        fmt_kn(u, -1, (int32_t)total);
+        draw_column(0, "No.", val, u, VR_LIVE, -1, ICON_NONE);
+        draw_column(1, "ENG", ENGINES[TSEL->eng_req]->name, "", VR_LIVE, -1, engine_icon(ENGINES[TSEL->eng_req]->name));
+        draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VR_LIVE, -1, ICON_X_STAR);
+        draw_column(3, "LIST", LIST_NAME[list_mode()], "", VR_LIVE, -1, ICON_X_FOLDER);
         return;
     }
     if (sheet_of(cur_page()->graph)) {                   /* (Skiff phase 7, 8; FM6 LAB) a sheet's window (SHEETS) */
@@ -907,45 +918,53 @@ static void draw_columns(void)
         uint32_t v = p ? p : lists.ent[k][e][0], r = (uint32_t)lists.ent[k][e][1] + 1u;
         val[0] = (char)('A' + e);
         val[1] = 0;
-        draw_column(0, "ENTRY", val, "", VAL(0u), ((int32_t)e * 2 + 1) * 1000 / 32, ICON_AUTO);
-        if (v == SPICK_COPY || v == SPICK_CLEAR || v == PAT_REST)   /* ((#28) REST: below 01, its gauge empty) */
-            str_cpy(val, v == SPICK_COPY ? "COPY" : v == PAT_REST ? "REST" : "CLEAR", sizeof val);
+        draw_column(0, "ENTRY", val, "", VR_LIVE, ((int32_t)e * 2 + 1) * 1000 / 32, ICON_AUTO);
+        if (v >= SPICK_NEW || v == PAT_REST)            /* ((#28) REST: below 01, its gauge empty; (2.0) NEW, COPY+; (#30)
+                                                         * SOUND, NO SOUND: no gauge) */
+            str_cpy(val, v == PAT_REST ? "REST" : v == SPICK_NEW ? "NEW" : v == SPICK_COPY ? "COPY" :
+                         v == SPICK_COPYP ? "COPY+" : v == SPICK_CLEAR ? "CLEAR" : v == SPICK_SOUND ? "SOUND" :
+                         "NO SOUND", sizeof val);
         else if (v)
             pat_num(val, v - 1u);
         else
             str_cpy(val, "--", sizeof val);
-        draw_column(1, "PATTERN", val, "", v ? VAL(1u) : T_DIM,
-                    v >= SPICK_COPY ? 1000 : v == PAT_REST ? 0 : v ? (int32_t)(v * 1000u / NPAT) : -1, ICON_AUTO);
+        draw_column(1, "PATTERN", val, "", v ? VR_LIVE : VR_DIM, v >= SPICK_SOUND ? -1 : v >= SPICK_NEW ? 1000 :
+                    v == PAT_REST ? 0 : v ? (int32_t)(v * 1000u / NPAT) : -1, ICON_AUTO);
         fmt_int(val, (int32_t)r);                        /* ((1.2.1, #12) an empty entry's too: a rest's length) */
-        draw_column(2, "REPS", val, "x", VAL(2u), (int32_t)(r * 1000u / 16u), ICON_AUTO);
-        draw_column(3, "SONG", lists.song ? "ON" : "OFF", "", VAL(3u), lists.song ? 1000 : 0, ICON_AUTO);
+        if (r > 16u)                                     /* ((2.0, #44) on CHAIN into the next: below 1x, no gauge */
+            draw_column(2, "REPS", "CHAIN", "", VR_LIVE, -1, ICON_AUTO);
+        else
+            draw_column(2, "REPS", val, "x", VR_LIVE, (int32_t)(r * 1000u / 16u), ICON_AUTO);
+        draw_column(3, "SONG", lists.song == SONG_ONCE ? "ONCE" : lists.song ? "ON" : "OFF", "", VR_LIVE,
+                    lists.song ? 1000 : 0, ICON_AUTO);   /* ((2.0, #47) OFF ON ONCE) */
         return;
     }
     if (cur_page()->graph == GR_BANK) {                  /* (Skiff phase 5) the pool view: PATTERN, its LEN, how many
-                                                         * use it, CLEAR (bank.c pool_refs, pool_clear) */
+                                                         * use it, ((2.0) ACTION; was CLEAR) (bank.c pool_refs) */
         uint32_t id = ui.bslot % NPAT, len = pool_len(id), n = len ? pool_refs(id) : 0u;
         pat_num(val, id);
-        draw_column(0, "PATTERN", val, "", VAL(0u), (int32_t)((id + 1u) * 1000u / NPAT), ICON_AUTO);
+        draw_column(0, "PATTERN", val, "", VR_LIVE, (int32_t)((id + 1u) * 1000u / NPAT), ICON_AUTO);
         if (len) {
             fmt_int(val, (int32_t)len);
-            draw_column(1, "LENGTH", val, "", T_MID, -1, ICON_AUTO);   /* ((Skiff U4, V3) read, not turned: no gauge, MID) */
+            draw_column(1, "LENGTH", val, "", VR_MID, -1, ICON_AUTO);   /* ((Skiff U4, V3) read, not turned: no gauge, MID) */
             fmt_int(val, (int32_t)n);
-            draw_column(2, "USED", val, "x", T_MID, -1, ICON_AUTO);
+            draw_column(2, "USED", val, "x", VR_MID, -1, ICON_AUTO);
         } else {
-            draw_column(1, "LENGTH", "--", "", T_DIM, -1, ICON_AUTO);
-            draw_column(2, "USED", "--", "", T_DIM, -1, ICON_AUTO);
+            draw_column(1, "LENGTH", "--", "", VR_DIM, -1, ICON_AUTO);
+            draw_column(2, "USED", "--", "", VR_DIM, -1, ICON_AUTO);
         }
-        draw_act_column(3, "CLEAR", len && !n ? T_THEME : T_DIM, ICON_AUTO);
+        draw_column(3, "ACTION", BA_NAME[ui.bact % BA_N], "", act_ready() ? VR_THEME : VR_DIM, -1, ICON_AUTO);   /* ((2.0,
+                                                         * #46) KNOB 4 the action, OCT+ does it: the footer) */
         return;
     }
     if (cur_page()->graph == GR_USER) {                  /* SLOT, then three GO buttons */
         int used = up_used(ui.uslot);
         up_slot_label(val, ui.uslot);
-        draw_column(0, "SLOT", val, "", VAL(0u), (int32_t)ui.uslot * 1000 / (int32_t)(UP_SLOTS - 1u), ICON_AUTO);
-        draw_act_column(1, "LOAD", used ? T_THEME : T_DIM, ICON_AUTO);
-        draw_act_column(2, ui.act == 3u && ui.act2 ? "NAME" : "ERASE", used ? T_THEME : T_DIM, ICON_AUTO);   /* ((Skiff U2)
+        draw_column(0, "SLOT", val, "", VR_LIVE, (int32_t)ui.uslot * 1000 / (int32_t)(UP_SLOTS - 1u), ICON_AUTO);
+        draw_act_column(1, "LOAD", used ? VR_THEME : VR_DIM, ICON_AUTO);
+        draw_act_column(2, ui.act == 3u && ui.act2 ? "NAME" : "ERASE", used ? VR_THEME : VR_DIM, ICON_AUTO);   /* ((Skiff U2)
                                                        * one step further: NAME) */
-        draw_act_column(3, "SAVE", T_THEME, ICON_AUTO);
+        draw_act_column(3, "SAVE", VR_THEME, ICON_AUTO);
         return;
     }
 #if FELUCCA_SLICE
@@ -954,33 +973,37 @@ static void draw_columns(void)
         char u[8];
         if (j < n) {
             fmt_int(val, (int32_t)j + 1);
-            str_cpy(u, "/", 8);
-            fmt_int(u + 1, (int32_t)n);
+            fmt_kn(u, -1, (int32_t)n);
         } else {
             str_cpy(val, n ? "END" : "--", sizeof val);
             u[0] = 0;
         }
-        draw_column(0, "SLICE", val, u, VAL(0u), -1, ICON_SLICE);
+        draw_column(0, "SLICE", val, u, VR_LIVE, -1, ICON_SLICE);
         slice_time(val, slice_mark(j));
-        draw_column(1, "POS", val, "S", ok ? VAL(1u) : T_DIM, -1, ICON_AUTO);
-        draw_act_column(2, "SPLIT", ok ? T_THEME : T_DIM, ICON_AUTO);
-        draw_act_column(3, "JOIN", ok ? T_THEME : T_DIM, ICON_AUTO);
+        draw_column(1, "POS", val, "S", ok ? VR_LIVE : VR_DIM, -1, ICON_AUTO);
+        draw_act_column(2, "SPLIT", ok ? VR_THEME : VR_DIM, ICON_AUTO);
+        draw_act_column(3, "JOIN", ok ? VR_THEME : VR_DIM, ICON_AUTO);
         return;
     }
 #endif
-    if (cur_page()->graph == GR_MOD) {                   /* SLOT, then that slot's SOURCE DEST AMOUNT ((Skiff U4) DST was distortion too) */
+    if (cur_page()->graph == GR_MOD) {                   /* ROUTE, then its SOURCE DEST AMOUNT ((Skiff U4) DST was distortion
+                                                          * too; (2.0, D 1A) a fixed route's SOURCE and DEST DIM: its
+                                                          * AMOUNT alone turns) */
+        static const uint8_t FDST[MOD_SLOT0] = {MD_PITCH, MD_CUT, MD_SHP, MD_AMP, MD_PITCH, MD_CUT, MD_SHP};
         const track_t *t = TSEL;
-        uint32_t id = P_M1SRC + 3u * mod_ui_slot;
-        int32_t s = t->p[id], d = t->p[id + 1u], a = t->p[id + 2u];
-        fmt_int(val, (int32_t)mod_ui_slot + 1);
-        draw_column(0, "SLOT", val, "/4", VAL(0u), (int32_t)mod_ui_slot * 1000 / 3, mod_src_icon(MS_OFF));   /* (the mod icon) */
+        uint32_t r = mod_ui_route, fx = r < MOD_SLOT0, id = fx ? MOD_FIXED[r] : P_M1SRC + 3u * (r - MOD_SLOT0) + 2u;
+        int32_t s = fx ? (r < 4u ? MS_LFO : MS_ENV) : t->p[id - 2u], d = fx ? FDST[r] : t->p[id - 1u], a = t->p[id];
+        fmt_int(val, (int32_t)r + 1);
+        draw_column(0, "ROUTE", val, "/11", VR_LIVE, (int32_t)r * 1000 / (MOD_ROUTES - 1u), mod_src_icon(MS_OFF));   /* (the
+                                                                                                    * mod icon) */
         card_span_by(span_names, N_MSRC, 0, MS_N - 1);
-        draw_column(1, "SOURCE", N_MSRC[clamp(s, 0, MS_N - 1)], "", s ? VAL(1u) : T_DIM, -1, mod_src_icon(s));
+        draw_column(1, "SOURCE", N_MSRC[clamp(s, 0, MS_N - 1)], "", s && !fx ? VR_LIVE : VR_DIM, -1, mod_src_icon(s));
         card_span_by(span_mod_dst, t, 0, MD_N - 1);
-        draw_column(2, "DEST", mod_dst_name(t, d), "", d ? VAL(2u) : T_DIM, -1, mod_dst_icon(t, d));
-        param_format(&TP[id + 2u], a, val, &unit);
-        card_span_of(&TP[id + 2u]);
-        draw_column(3, "AMOUNT", val, unit, a ? VAL(3u) : T_DIM, RATIO(&TP[id + 2u], a), mod_src_icon(MS_OFF));
+        draw_column(2, "DEST", mod_dst_name(t, d), "", d && !fx ? VR_LIVE : VR_DIM, -1, mod_dst_icon(t, d));
+        param_format(&TP[id], a, val, &unit);
+        card_span_of(&TP[id]);
+        draw_column(3, "AMOUNT", val, unit, a && !(fx && mod_dead(t, r)) ? VR_LIVE : VR_DIM, RATIO(&TP[id], a),
+                    mod_src_icon(MS_OFF));
         return;
     }
     if (step_page(cur_page()->graph) && lock_held()) {   /* a step held: what KNOB 1..4 lock (ui_input.c lock_turn) */
@@ -994,7 +1017,7 @@ static void draw_columns(void)
             int16_t v;
             int on;
             if (id == 0xFFu) {
-                draw_column(c, "", "", "", T_THEME, -1, ICON_AUTO);
+                draw_column(c, "", "", "", VR_THEME, -1, ICON_AUTO);
                 continue;
             }
             d = track_desc(TSEL, id);
@@ -1003,65 +1026,69 @@ static void draw_columns(void)
                 v = motion_base_value(TSEL, id);      /* not locked: the sound's own, DIM */
             param_format(d, v, val, &unit);
             card_span_of(d);
-            draw_column(c, d->label, val, unit, on ? VAL(c) : T_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
+            draw_column(c, d->label, val, unit, on ? VR_LIVE : VR_DIM, RATIO(d, enum_rank(d, v)), param_icon(d, v));
         }
         return;
     }
-    if (cur_page()->scope == SC_STEP && drum_track(TSEL)) {   /* the grid: STEP LANE HIT ACC */
+    if (cur_page()->scope == SC_STEP && drum_track(TSEL)) {   /* the grid ((2.0) PRESETS the cursor): LANE, the cursor's
+                                                         * HIT ACC, the selection's VELOCITY */
         const step_t *st = &TSEL->step[ui.cursor];
         uint32_t b = 1u << ui.lane, on = (step_lanes(st) & b) != 0u, ac = (step_accents(st) & b) != 0u;
-        char sn[8], sl[8];
-        fmt_int(sn, (int32_t)ui.cursor + 1);
-        str_cpy(sl, "/", 8);
-        fmt_int(sl + 1, TSEL->p[P_SLEN]);
-        draw_column(0, "STEP", sn, sl, VAL(0u), -1, ICON_AUTO);
-        draw_column(1, "LANE", drum_lane_name(TSEL, ui.lane), "", VAL(1u), -1, ICON_AUTO);
-        draw_column(2, "HIT", on ? "ON" : "--", "", on ? VAL(2u) : T_DIM, -1, ICON_AUTO);
-        draw_column(3, "ACC", ac ? "ON" : "--", "", ac ? VAL(3u) : T_DIM, -1, ICON_AUTO);
+        uint32_t f = sel_first(TSEL);
+        draw_column(0, "LANE", drum_lane_name(TSEL, ui.lane), "", VR_LIVE, -1, ICON_AUTO);
+        draw_column(1, "HIT", on ? "ON" : "--", "", on ? VR_LIVE : VR_DIM, -1, ICON_AUTO);
+        draw_column(2, "ACC", ac ? "ON" : "--", "", ac ? VR_LIVE : VR_DIM, -1, ICON_AUTO);
+        fmt_int(val, f < NSTEP ? (int32_t)step_vel(&TSEL->step[f]) : 0);
+        draw_column(3, "VELOCITY", f < NSTEP ? val : "--", "", f < NSTEP ? VR_LIVE : VR_DIM,
+                    f < NSTEP ? (int32_t)step_vel(&TSEL->step[f]) * 1000 / 127 : -1, ICON_AUTO);
         return;
     }
-    if (cur_page()->scope == SC_STEP) {
-        static const char *const TIME_N[3] = {"NOTE", "TIE", "REST"};
-        const step_t *st = &TSEL->step[ui.cursor];
-        char u[8];
-        uint32_t cnt = st->n, first = st->note[0], l;
-        for (l = NLANE; l-- > 0;)                         /* (lane hits count as their notes) */
-            if ((st->hit >> l) & 1u) {
-                cnt++;
-                if (!st->n)
-                    first = DRUM_LANE_NOTE[l];
-            }
-        if (cnt) {
-            note_name(val, first);
-            u[0] = 0;
-            if (cnt > 1) {
-                str_cpy(u, "+", 8);
-                fmt_int(u + 1, (int32_t)cnt - 1);
-            }
+    if (cur_page()->scope == SC_STEP) {               /* (Skiff 2.0) NOTES: PITCH START LENGTH VELOCITY of the selection's
+                                                        * first step (PITCH its lowest note selected, "+" the others
+                                                        * selected); nothing selected: DIM "--" ("TIE": the cursor on
+                                                        * one; the header has the cursor's step) */
+        const track_t *t = TSEL;
+        uint32_t f = sel_first(t), i, k, cnt = 0, lo = 128u;
+        char u[8], sl[8];
+        int32_t c;
+        for (i = sel_lo(); f < NSTEP && i <= sel_hi(); i++)
+            for (k = 0; sel_step(t, i) && k < t->step[i].n; k++)
+                if (sel_voice(i, k) && !step_tied(&t->step[i], k)) {   /* ((2.0) a note going on: the one before's) */
+                    cnt++;
+                    if (i == f && t->step[i].note[k] < lo)
+                        lo = t->step[i].note[k];
+                }
+        u[0] = 0;
+        str_cpy(val, "--", sizeof val);
+        if (lo < 128u)
+            note_name(val, lo);
+        if (cnt > 1u) {
+            u[0] = '+';
+            fmt_int(u + 1, (int32_t)cnt - 1);
+        }
+        draw_column(0, "PITCH", val, u, f < NSTEP ? VR_LIVE : VR_DIM, -1, ICON_AUTO);
+        str_cpy(val, "--", sizeof val);
+        sl[0] = 0;
+        if (f < NSTEP) {                              /* ((2.0, #44) a chain's counted on: 69 /128) */
+            uint32_t all, off = step_off(&all, 1);
+            fmt_int(val, (int32_t)(off + f) + 1);
+            fmt_kn(sl, -1, (int32_t)all);
+        }
+        draw_column(1, "START", val, sl, f < NSTEP ? VR_LIVE : VR_DIM, -1, ICON_AUTO);
+        unit = "";
+        c = f < NSTEP ? len_get(t, f) : 0;
+        if (c >= LEN_STEPS - 1) {                     /* ((2.0) 100 % is 1 STEP: the default, the next 2 STEPS) */
+            fmt_int(val, c - LEN_STEPS + 2);
+            unit = c >= LEN_STEPS ? "STEPS" : "STEP";
+        } else if (c) {
+            param_format(track_desc(t, P_SGATE), (int16_t)c, val, &unit);
         } else {
-            str_cpy(val, "--", 12);
-            u[0] = 0;
+            str_cpy(val, t->step[ui.cursor].time == ST_TIE ? "TIE" : "--", sizeof val);
         }
-        {
-            static const char *const FLAG_N[4] = {"-", "ACC", "SLD", "A+S"};
-            char sn[8], sl[8];
-            fmt_int(sn, (int32_t)ui.cursor + 1);
-            str_cpy(sl, "/", 8);
-            fmt_int(sl + 1, TSEL->p[P_SLEN]);
-            draw_column(0, "STEP", sn, sl, VAL(0u), -1, ICON_AUTO);
-            draw_column(1, "NOTE", val, u, step_on(st) ? VAL(1u) : T_DIM, -1, ICON_AUTO);
-            if (cur_page()->graph == GR_TILES) {        /* (Skiff) STEP's tiles, as the B mockup: VELO, CHNC */
-                char vv[8];
-                fmt_int(vv, st->vel);
-                draw_column(2, "VELOCITY", vv, "", step_on(st) ? VAL(2u) : T_DIM, (int32_t)st->vel * 1000 / 127, ICON_AUTO);
-                fmt_int(vv, (int32_t)step_chance(st));
-                draw_column(3, "CHANCE", vv, "%", step_on(st) ? VAL(3u) : T_DIM, (int32_t)step_chance(st) * 10, ICON_AUTO);
-            } else {
-                draw_column(2, "TIME", TIME_N[st->time % 3u], "", VAL(2u), -1, ICON_AUTO);
-                draw_column(3, "FLAG", FLAG_N[(st->flags & SF_ACCENT ? 1u : 0u) | (st->flags & SF_SLIDE ? 2u : 0u)], "",
-                            VAL(3u), -1, ICON_AUTO);
-            }
-        }
+        draw_column(2, "LENGTH", val, unit, f < NSTEP ? VR_LIVE : VR_DIM, -1, ICON_AUTO);
+        fmt_int(val, f < NSTEP ? (int32_t)step_vel(&t->step[f]) : 0);
+        draw_column(3, "VELOCITY", f < NSTEP ? val : "--", "", f < NSTEP ? VR_LIVE : VR_DIM,
+                    f < NSTEP ? (int32_t)step_vel(&t->step[f]) * 1000 / 127 : -1, ICON_AUTO);
         return;
     }
     for (c = 0; c < 4u; c++) {
@@ -1069,28 +1096,29 @@ static void draw_columns(void)
         const param_desc_t *d = page_desc(cur_page(), c, &vp);
         if (cur_page()->graph == GR_SLOTS && c == 1u) {   /* ((Skiff U2) PROJECT: NAME, was EDIT; (1.2.1, #6) DELETE, */
             draw_act_column(1, ui.act == 2u && ui.act2 ? "NAME" : "DELETE",   /* one step further NAME) */
-                            project_used((uint32_t)song.g[G_SLOT] - 1u) ? T_THEME : T_DIM, ICON_AUTO);
+                            project_used((uint32_t)song.g[G_SLOT] - 1u) ? VR_THEME : VR_DIM, ICON_AUTO);
             continue;
         }
         if (cur_page()->graph == GR_SLOTS && c == 2u && !project_used((uint32_t)song.g[G_SLOT] - 1u)) {
-            draw_act_column(2, "NEW", T_THEME, ICON_AUTO);   /* ((1.2.1, #6) an empty slot: a blank project) */
+            draw_act_column(2, "NEW", VR_THEME, ICON_AUTO);   /* ((1.2.1, #6) an empty slot: a blank project) */
             continue;
         }
-        if (cur_page()->graph == GR_LANES && c == 0u)  /* (LANE: above) */
+        if ((cur_page()->graph == GR_LANES || cur_page()->graph == GR_LMIX) && c == 0u)   /* (LANE: above) */
             continue;
         if (!d || !d->label || d->label[0] == '-') {
-            draw_column(c, "", "", "", T_THEME, -1, ICON_AUTO);
+            draw_column(c, "", "", "", VR_THEME, -1, ICON_AUTO);
             continue;
         }
         if ((act_cols() >> c) & 1u) {
-            draw_act_column(c, d->label, T_THEME, ICON_AUTO);
+            draw_act_column(c, d->label, VR_THEME, ICON_AUTO);
             continue;
         }
         param_format(d, *vp, val, &unit);
         card_mot_of(vp);                                /* (a global: never) */
         card_span_of(d);
-        draw_column(c, cur_page()->graph == GR_LANES && c == 1u ? "LEVEL" : d->label, val, unit,   /* ((phase 9) TUNE DECAY) */
-                    card_dead(cur_page(), c) ? T_DIM : VAL(c),
+        draw_column(c, (cur_page()->graph == GR_LANES || cur_page()->graph == GR_LMIX) && c == 1u ? "LEVEL" : d->label,
+                    val, unit,                          /* ((phase 9) TUNE DECAY; (2.0) LANE MIX's PAN) */
+                    card_dead(cur_page(), c) ? VR_DIM : VR_LIVE,
                     d->fmt == F_ENUM && d->max < 2 ? -1 : RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
     }
 }
@@ -1133,7 +1161,7 @@ static void draw_splash(void)
     if (ux.crypt) {   /* (Skiff) CRYPT: a skull between two torches, between the bands (design/mock_crypt.py splash) */
         cv_begin(SPL_SQ, 40, T_RAISE);
         cr_torch(36, 8, 0, 2);
-        cr_spritez(SPL_SQ / 2 - 13, 6, CR_SKULL, 9, T_TEXT, T_RAISE, 3);
+        cr_spritez(SPL_SQ / 2 - 13, 6, SPR_SKULL, T_TEXT, T_RAISE, 3);
         cr_torch(SPL_SQ - 46, 8, 1, 2);
         cv_blit(SPL_X0, 98);
     } else if (ux.quark) {   /* (Skiff Q2) QUARK: an atom in a collision's tracks (design/mock_quark.py splash), on the
@@ -1165,7 +1193,7 @@ static void draw_splash(void)
         cv_rect(SPL_PAD, 24, SPL_SQ - 2 * SPL_PAD, 1, T_THEME);
         ne_palm(SPL_PAD + 4, 6, T_BG);
         ne_palm(SPL_SQ - SPL_PAD - 22, 9, T_BG);
-        ne_car(SPL_SQ / 2 + 14, 30, NE_CAR, 6, 1, T_THEME, 30, T_BG);
+        ne_car(SPL_SQ / 2 + 14, 30, SPR_CAR, 1, T_THEME, 30, T_BG);
         cv_blit(SPL_X0, 98);
     } else {   /* Skiff: the tracks' colours, a block each, between the bands (centred: 18 px in from each side; (phase 6)
          * six: 20 px, 24 apart, design/mock_p6.py splash) */
@@ -1322,6 +1350,24 @@ static void confirm_text(char *a, char *b)
         pat_num(a + 14, k);
         str_cpy(a + 16, "?", 8);
         str_cpy(b, "no entry uses it", 24);
+        break;
+    case CF_EMPTY_BANK: {                               /* ((2.0, #46) "EMPTY PATTERN 21?", the entries it empties */
+        uint32_t n = pool_refs(k);
+        str_cpy(a, "EMPTY PATTERN ", 24);
+        pat_num(a + 14, k);
+        str_cpy(a + 16, "?", 8);
+        if (n) {                                        /* "2 entries go quiet" */
+            fmt_int(b, (int32_t)n);
+            str_cpy(b + str_len(b), n == 1u ? " entry goes quiet" : " entries go quiet", 40 - str_len(b));
+        } else
+            str_cpy(b, "no entry uses it", 40);
+        break;
+    }
+    case CF_CLEAR_UNUSED:                               /* ((2.0, #46) "CLEAR 3 UNUSED?" */
+        str_cpy(a, "CLEAR ", 24);
+        fmt_int(a + 6, (int32_t)k);
+        str_cpy(a + str_len(a), " UNUSED?", 24 - str_len(a));
+        str_cpy(b, "patterns no entry uses", 40);
         break;
     default:
         str_cpy(a, "CLEAR T1 SEQUENCE?", 24);     /* the header (T1..T4) is hidden */

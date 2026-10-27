@@ -257,7 +257,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>The installer</h3>
       <p>The <a href="../webapp/installer/">Skiff installer</a> is a web page, made for Chrome or Edge on a computer: they let a page
         talk to the FM-1 over USB MIDI. In a browser without it, the page says so. The page carries the release it installs; its status
-        line says Skiff 1.3.2 when it's ready.</p>
+        line says Skiff 2.0 when it's ready.</p>
       <p>Read the page first. Skiff is custom firmware: the author accepts no responsibility if your FM-1 is damaged or misbehaves
         because of it, so use it at your own risk, and report problems on <a href="https://github.com/illuminus5/skiff/issues">GitHub</a>.
         The way back is in step 13.</p>
@@ -279,7 +279,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p>The unit restarts into update mode: Skiff's update loader, its screen saying UPDATE MODE, WAITING FOR THE SKIFF INSTALLER,
         KEEP USB CONNECTED, while the page says Switching to update mode, then Writing. The page sends the whole package, and the
         loader checks all of it, for this chip and for damage, before it erases anything.</p>
-      <p>The page's bar fills during that check, before the writing has begun: watch the unit's own bar, next.</p>
+      <p>The page's bar moves only a little during that check; it fills with the writing, next.</p>
     </li>
     <li class="step" id="install/writing">
       <h3>Writing</h3>
@@ -302,23 +302,32 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p>New releases come out on <a href="https://github.com/illuminus5/skiff/releases">GitHub</a>, and the installer page then installs
         the newest. Install it the same way, over the Skiff you have: the loader rewrites only the firmware, so your projects, sounds,
         samples and settings stay. Which version you have: MENU › SYSTEM › ABOUT (<a href="#settings/about">chapter 18</a>).</p>
+      <p>From Skiff 1.x or Felucca to 2.0, the page first saves a complete backup to the computer (<code>Skiff-backup-<i>date</i>.json</code>:
+        keep it, it's the way back). 2.0 reads what Skiff 1.0 and later saved, and keeps it in newer formats from then on; after the
+        install the page converts what 2.0 can't read as it was (Felucca's projects and user sounds, DIGITAL sounds, the oldest formats),
+        writes only that back, and lists what it converted. A slot 2.0 can't read says OLD FORMAT on the unit and is kept as it is.
+        The way back to 1.x: install 1.4.x, then restore that backup in the <a href="../webapp/editor/">editor</a>.</p>
     </li>
     <li class="step" id="install/stopped">
       <h3>If it stops</h3>
-      <p>An install cut off (the cable pulled, the unit switched off) or a write that fails loses nothing. A failed write says UPDATE
-        FAILED, INSTALL AGAIN WITH THE SKIFF INSTALLER; switched off in the middle, the unit starts in update mode at every power-on,
-        UPDATE MODE on its screen, until an install finishes. (A loader from before 1.3.2 keeps the screen black instead.)</p>
-      <p>Connect it and press Install again: the page finds the unit in update mode and finishes the install. M-VAVE's own updater
-        can't see the FM-1 in this state, so it has to be this page, or <code>tools/fm1_install.py</code> (step 14). Once Skiff runs, the
-        way back to V15 is open again.</p>
+      <p>An install cut off (the cable pulled, the unit switched off) or a write that fails loses nothing. A connection dropped
+        while it writes, with the page still open, only pauses it: the page says so and waits, and once the cable is back in (or the
+        unit on again) the install carries on by itself. A failed write says UPDATE FAILED, INSTALL AGAIN WITH THE SKIFF INSTALLER;
+        switched off in the middle, the unit starts in update mode at every power-on, UPDATE MODE on its screen, until an install
+        finishes. (A loader from before 1.3.2 keeps the screen black instead.)</p>
+      <p>Connect it and press Install again: the page finds the unit in update mode and finishes the install. If it can't find it, plug
+        the FM-1 straight into the computer: a USB hub or USB-sharing software can lose it when it switches to update mode. M-VAVE's own
+        updater can't see the FM-1 in this state, so it has to be this page, or <code>tools/fm1_install.py</code> (step 14). Once Skiff
+        runs, the way back to V15 is open again.</p>
     </li>
     <li class="step" id="install/stuck">
       <h3>Still stuck?</h3>
-      <p>If a computer sees a USB device named WL80UBOOT, the chip's own boot mode, or nothing at all, the README's
+      <p>If a computer sees a USB disk named WL82 UBOOT1.00 (or WL80UBOOT), the chip's own boot mode, or nothing at all, the README's
         <a href="https://github.com/illuminus5/skiff#if-the-fm-1-does-not-start">If the FM-1 does not start</a> has the steps: another
         USB data cable and another port, the FM-1 charged, other MIDI apps closed, then the install again; if it stays in boot mode,
-        <a href="https://github.com/kurogedelic/FM-1-transporter">FM-1 Transporter</a> reads and writes the FM-1's flash through a Seeed
-        XIAO RP2040. Anything else: <a href="https://github.com/illuminus5/skiff/issues">open an issue</a>.</p>
+        <a href="https://github.com/kurogedelic/FM-1-transporter">FM-1 Transporter</a> (on a Mac, through a Seeed XIAO RP2040) or
+        <a href="https://github.com/kagaimiq/jl-uboot-tool">jl-uboot-tool</a> (Windows and Linux, over the USB cable) reads and writes the
+        FM-1's flash. Anything else: <a href="https://github.com/illuminus5/skiff/issues">open an issue</a>.</p>
       <p>Holding <kbd>OCT−</kbd> and <kbd>OCT+</kbd> together for five seconds is not the installer's update mode: it starts that boot
         mode, which the installer doesn't use. After two seconds the screen counts down, UPDATE MODE IN 3, 2, 1: let go to cancel.</p>
     </li>
@@ -335,10 +344,11 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="install/python">
       <h3>With Python</h3>
-      <p>Without Chrome or Edge, or from a terminal: download <code>skiff-1.3.2.fwsc</code> from
+      <p>Without Chrome or Edge, or from a terminal: download <code>skiff-2.0.fwsc</code> from
         <a href="https://github.com/illuminus5/skiff/releases/latest">the latest release</a> and, with the repository's <code>tools/</code>
-        folder and Python 3, run <code>pip install mido python-rtmidi</code>, then <code>python tools/fm1_install.py skiff-1.3.2.fwsc</code>.
-        It does what the page does, and finishes an install left in update mode too.</p>
+        folder and Python 3, run <code>pip install mido python-rtmidi</code>, then <code>python tools/fm1_install.py skiff-2.0.fwsc</code>.
+        It does what the page does, and finishes an install left in update mode too, but it converts nothing: from 1.x or Felucca
+        to 2.0, take a backup in the editor first and restore it after, and the Restore converts it.</p>
     </li>
   </ol>
 </section>
@@ -370,24 +380,24 @@ footer p { max-width: 1240px; margin: 6px auto; }
     <li class="step" id="find-your-way/presets">
       <h3>Change the sound</h3>
       <p><kbd>PRESETS</kbd> changes the selected track's <a href="#g-sound">sound</a>, a detent a sound, through every
-        <a href="#g-engine">engine</a>'s: ACID, SINE KEY, RAVE. Two detents back and it's ACID again. On the step pages PRESETS moves
-        the cursor instead; <a href="#sounds">chapter 4</a> finds sounds by type.</p>
+        <a href="#g-engine">engine</a>'s: ACID, SINE KEY, RAVE. Two detents back and it's ACID again. On SEQ's NOTES and FEEL PRESETS
+        moves the step cursor instead; <a href="#sounds">chapter 4</a> finds sounds by type.</p>
     </li>
     <li class="step" id="find-your-way/pages">
       <h3>Pages</h3>
       <p>The twelve buttons under the knobs open pages, each a <a href="#g-family">family</a> of them. Tap <kbd>ENV</kbd> for the
-        envelope, again for ENV DEST (where the envelope goes), again for ENV 2. The footer counts them, 1/3 to 3/3, and the lit button
-        is the family you're in.</p>
+        envelope, again for ENV 2, a second one. The footer counts them, 1/2 and 2/2, and the lit button is the family you're in.</p>
     </li>
     <li class="step" id="find-your-way/select">
       <h3>Turn the pages</h3>
-      <p><kbd>SELECT</kbd> turns the family's pages too, one a detent, either way, stopping at the first and the last. On every page the
-        four knobs edit its cards: here ENV DEST's <kbd>KNOB 1</kbd>, CUTOFF, lets the envelope open ACID's filter all the way.</p>
+      <p><kbd>SELECT</kbd> turns the family's pages too, one a detent, either way, stopping at the first and the last: back to ENV. On
+        every page the four knobs edit its cards: here ENV's <kbd>KNOB 2</kbd>, DECAY, lets each of ACID's notes ring longer. SELECT
+        on again: ENV 2.</p>
     </li>
     <li class="step" id="find-your-way/reopen">
       <h3>Where you left it</h3>
-      <p><kbd>SEQ</kbd> opens its family on the first page, STEP: the bass line's 16 steps. Tap <kbd>ENV</kbd> and it opens on ENV DEST,
-        the page you left; every family does that. <kbd>HOME</kbd> goes back to HOME from anywhere.</p>
+      <p><kbd>SEQ</kbd> opens its family on the first page, NOTES: the bass line on a piano roll. Tap <kbd>ENV</kbd> and it opens on
+        ENV 2, the page you left; every family does that. <kbd>HOME</kbd> goes back to HOME from anywhere.</p>
       <p>The first time you tap a button, the screen says HOLD and its name: SHORTCUTS. That's the next step.</p>
     </li>
     <li class="step" id="find-your-way/layer">
@@ -396,8 +406,8 @@ footer p { max-width: 1240px; margin: 6px auto; }
         <a href="#g-layer">layer</a> covers the page: a map of what the keys and the four knobs do while you hold it. The keys you press
         then are the layer's, not notes. A quick tap still opens the pages.</p>
       <p>GLO's layer is the mix: the white keys from <kbd>F3</kbd> solo tracks 1–6 while held, the black keys mute them (<kbd>F♯3</kbd>
-        track 1 to <kbd>F♯4</kbd> track 6), and the knobs are four tracks' levels. Here <kbd>C♯4</kbd> mutes the drums and brings them
-        back. Let go and the page is back.</p>
+        track 1 to <kbd>F♯4</kbd> track 6: a tap mutes or unmutes, held a key cuts its track only while it's held), and the knobs are
+        four tracks' levels. Here <kbd>C♯4</kbd> mutes the drums and brings them back. Let go and the page is back.</p>
     </li>
     <li class="step" id="find-your-way/lock">
       <h3>Keep it open</h3>
@@ -452,9 +462,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="first-beat/grid">
       <h3>Open the grid</h3>
-      <p>Tap <kbd>SEQ</kbd>. On a drum track its STEP page is a grid: a row for each drum (BD bass drum, SD snare, CP clap, CH closed hat,
-        OH open hat, TM tom, RS rim, CB bell) and a column for each <a href="#g-step">step</a>. The 16 white keys are the 16 steps, left to
-        right. You don't need REC for this.</p>
+      <p>Tap <kbd>SEQ</kbd>. On a drum track its first page, NOTES, is a grid: a row for each drum (BD bass drum, SD snare, CP clap,
+        CH closed hat, OH open hat, TM tom, RS rim, CB bell) and a column for each <a href="#g-step">step</a>. The 16 white keys are the 16
+        steps, left to right. You don't need REC for this.</p>
       <p>A black key picks a row, and plays its drum: <kbd>F♯3</kbd> the kick, <kbd>G♯3</kbd> the snare, <kbd>C♯4</kbd> the closed hat.</p>
     </li>
     <li class="step" id="first-beat/play">
@@ -483,14 +493,15 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="first-beat/bass-track">
       <h3>A bass line</h3>
-      <p>Tap <kbd>PLAY</kbd> to stop, then turn <kbd>ALGORITHM</kbd> back to track 1. You stay on SEQ › STEP, which now shows track 1's
-        16 steps as tiles, the cursor on step 1.</p>
+      <p>Tap <kbd>PLAY</kbd> to stop, then turn <kbd>ALGORITHM</kbd> back to track 1. You stay on SEQ › NOTES, which now shows track 1's
+        steps on a piano roll, empty so far, the cursor on step 1: NOTES 1 in the header.</p>
     </li>
     <li class="step" id="first-beat/write-steps">
       <h3>Write steps</h3>
-      <p>Tap <kbd>OCT−</kbd> once, so the keys play an octave lower. Then tap <kbd>REC</kbd>: stopped, on the STEP page, the screen says
-        KEYS WRITE STEPS. Each key you play is written to the step under the cursor, the white tile, and the cursor moves on.
-        <kbd>PRESETS</kbd> moves the cursor too, so one detent leaves a step empty.</p>
+      <p>Tap <kbd>OCT−</kbd> once, so the keys play an octave lower. Then tap <kbd>REC</kbd>: stopped, on NOTES, the screen says KEYS
+        WRITE STEPS and the footer KEYS: WRITE. Each key you play is written to the step under the cursor, a step long, and the cursor
+        moves on. <kbd>PRESETS</kbd> moves the cursor too, so one detent leaves a step empty; turned while a key is held, it makes that
+        note a step longer each detent.</p>
       <p>The line here: A, rest, A, rest, A an octave up, rest, A, rest, G, rest, A, rest, C, rest, E.</p>
     </li>
     <li class="step" id="first-beat/listen">
@@ -501,7 +512,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
     <li class="step" id="first-beat/sound">
       <h3>Change the sound</h3>
       <p>Tap <kbd>HOME</kbd> and turn <kbd>PRESETS</kbd>: track 1 plays the same notes with each <a href="#g-sound">sound</a> you reach, ACID,
-        SINE KEY, RAVE, SUB BASS. On the step pages PRESETS moves the cursor instead; the sound changes on HOME and the sound pages.
+        SINE KEY, RAVE, SUB BASS. On NOTES and FEEL PRESETS moves the step cursor instead; the sound changes on HOME and the sound pages.
         <a href="#sounds">Chapter 4</a> finds sounds by type.</p>
     </li>
     <li class="step" id="first-beat/undo">
@@ -595,7 +606,8 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="sounds/saved">
       <h3>Yours</h3>
-      <p><kbd>OCT+</kbd> writes it: SAVED U01, and U01 is WARM. <kbd>PLAY</kbd>, and track 2 plays on with it. Your sound is on the PRESETS
+      <p><kbd>OCT+</kbd> writes it: SAVED U01, and U01 is WARM. <kbd>PLAY</kbd>, and track 2 plays on with it. From the save on, track 2
+        is U01: HOME names it WARM, and a project or the next power-on brings it back as WARM. Your sound is on the PRESETS
         lists ALL and FAV, and on SAVE › USER <kbd>KNOB 2</kbd>, LOAD, and <kbd>OCT+</kbd> put it on whichever track is selected;
         <kbd>KNOB 3</kbd> erases it, and one detent further renames it.</p>
     </li>
@@ -675,66 +687,88 @@ footer p { max-width: 1240px; margin: 6px auto; }
 
 <section class="chapter" id="steps" data-n="6" data-group="MAKE MUSIC" data-video="Y05JQAIqJww">
   <div class="ch-head"><span class="num">06</span><div><p class="group">MAKE MUSIC</p><h2>Steps</h2></div></div>
-  <p class="meta"><b>You'll learn</b> the step pages in full: notes and velocity on STEP, the piano roll, and a pattern's length, division
-    and swing.</p>
+  <p class="meta"><b>You'll learn</b> SEQ's step pages in full: notes, their length and velocity on NOTES, a step's chance, ratchet,
+    nudge and accent on FEEL, a pattern's length, division and swing, and copy, paste and delete.</p>
+  <p class="meta"><b>The video</b> shows Skiff 1.3, whose STEP, ROLL and CHANCE pages became NOTES and FEEL in 2.0: the steps below
+    are 2.0's.</p>
   <div class="video"></div>
   <ol class="steps">
     <li class="step" id="steps/step-page">
-      <h3>The step page</h3>
-      <p>Tap <kbd>SEQ</kbd> for its first page, STEP: the selected track's bar as 16 tiles, two rows of eight like the halves of the
-        keyboard, each note on its tile, the playing step's number lit. The white tile is the cursor: <kbd>KNOB 1</kbd> moves it, and so
-        does <kbd>PRESETS</kbd> on the step pages (the footer says PRESETS: STEP). Here the bass line from <a href="#first-beat">chapter
-        3</a> plays on track 1.</p>
+      <h3>NOTES</h3>
+      <p>Tap <kbd>SEQ</kbd> for its first page, NOTES: the selected track's notes on a piano roll, higher notes higher, a note that goes
+        on drawn as one bar through the step lines. Here the bass line from <a href="#first-beat">chapter 3</a> plays on track 1.
+        <kbd>PRESETS</kbd> moves the cursor, a step a detent (the footer says PRESETS: STEP), and the header names its step: NOTES 5.
+        The cursor's step is the <a href="#g-selection">selection</a>, and the four knobs are its notes' PITCH, START, LENGTH and
+        VELOCITY.</p>
     </li>
     <li class="step" id="steps/note">
-      <h3>Note</h3>
-      <p><kbd>KNOB 2</kbd>, NOTE, moves the cursor step's note a semitone a detent: step 5's A3 down to G3. On an empty step the first
-        detent puts in the last note used and the next ones move it: step 6 gets G3, then A3. No REC needed: the knobs edit the
+      <h3>Pitch and start</h3>
+      <p><kbd>KNOB 1</kbd>, PITCH, moves the selection's notes through the track's scale, a semitone a detent on CHR: step 5's A3 down
+        to G3. <kbd>KNOB 2</kbd>, START, moves them to another step, with the step's values: one detent, and the G3 starts on step 6
+        (6 /16), a sixteenth later. On an empty step the cards read -- and the knobs write nothing there: notes go in with REC
+        (<a href="#first-beat/write-steps">chapter 3</a>) or a paste (below). No REC needed to edit: the knobs change the
         <a href="#g-step">steps</a> as they play.</p>
     </li>
+    <li class="step" id="steps/tie">
+      <h3>Note length</h3>
+      <p><kbd>PRESETS</kbd> to step 13 and <kbd>KNOB 3</kbd>, LENGTH: its C3 is 1 STEP, as every new note is (PATTERN's GATE, 100 %).
+        One detent on, 2 STEPS: the C3 lasts through step 14, one bar on the roll. LENGTH runs from 1 to 99 % of the step, then 1 STEP,
+        then 2 to 128 STEPS, each note its own. A long note can go on through steps where other notes start: on a POLY track they sound
+        together, on MONO and LEG the newer one takes over.</p>
+      <p>In a chord each note can have its own length. With REC off, a key picks its note in the selection (its row lit on the roll's
+        keyboard strip; the footer says KEYS: PICK), and the knobs move that note alone; the same key again drops it.</p>
+    </li>
     <li class="step" id="steps/velocity">
-      <h3>Velocity</h3>
-      <p><kbd>KNOB 3</kbd>, VELOCITY: how hard the cursor step plays, 1 to 127. Step 7 goes down to 50, a little softer. A note put in
-        with KNOB 2 shows 0: it plays at the default, 96, until you turn it.</p>
+      <h3>A range</h3>
+      <p>Hold <kbd>HOME</kbd> (<a href="#g-shift">SHIFT</a>) and turn <kbd>PRESETS</kbd>: the selection stretches from where it was,
+        here from step 13 on to 16, NOTES 13-16 in the header. The knobs now edit every note in it as one. <kbd>KNOB 4</kbd>, VELOCITY,
+        how hard the notes play, 1 to 127: the C3 and the E3 go down by the same amount, 20 softer. Moving the cursor any other way
+        drops the range.</p>
     </li>
     <li class="step" id="steps/chance">
-      <h3>Chance</h3>
-      <p><kbd>KNOB 4</kbd>, CHANCE: the chance the step plays each time round, 0 to 100 %. At 50 % the new note on step 6 comes and goes,
-        and its tile gets a block in the corner. SEQ › CHANCE adds ratchets, flams and conditions: <a href="#variation">chapter
-        8</a>.</p>
+      <h3>FEEL</h3>
+      <p>Tap <kbd>SEQ</kbd> again for FEEL: the same steps as 16 tiles, two rows of eight like the halves of the keyboard, the cursor
+        and the selection as on NOTES. Its knobs set how each selected step plays: CHANCE, RATCHET, NUDGE and TYPE. <kbd>PRESETS</kbd>
+        to step 11 and <kbd>KNOB 1</kbd>, CHANCE, from 100 % to 50 %: its A2 comes and goes. OFF makes the step a rest; past 100 % come
+        the conditions (<a href="#variation/cond">chapter 8</a>). The tiles show each step's value of the knob turned last.</p>
     </li>
     <li class="step" id="steps/roll">
-      <h3>The piano roll</h3>
-      <p>Tap <kbd>SEQ</kbd> again for ROLL: the same steps on a piano roll, higher notes higher, the cursor's step framed. Its knobs are
-        STEP, NOTE, TIME and FLAG.</p>
-    </li>
-    <li class="step" id="steps/tie">
-      <h3>Tie</h3>
-      <p><kbd>KNOB 3</kbd>, TIME: NOTE, TIE or REST. An empty step is a REST; one detent back makes it a TIE, so the note before it,
-        step 13's C3, lasts through it.</p>
+      <h3>A roll</h3>
+      <p><kbd>KNOB 2</kbd>, RATCHET: X2 to X4 play the step that many times inside its length, a roll; past X4 it's FLAM, a grace note
+        just before. <kbd>PRESETS</kbd> to step 15, X3: a quick roll at the bar's end. <kbd>KNOB 3</kbd>, NUDGE, plays a step early or late,
+        in 64ths of a step: <kbd>PRESETS</kbd> to step 9 and +16 /64, a quarter of a step late, and NOTES draws it where it plays. Both are
+        <a href="#variation">chapter 8</a>'s too.</p>
     </li>
     <li class="step" id="steps/slide">
-      <h3>Slide</h3>
-      <p><kbd>KNOB 4</kbd>, FLAG: ACC accents the step (it plays at full velocity), SLD slides it into the next note, A+S does both.
-        Step 5's G3 now glides up into step 6's A3, the acid way.</p>
+      <h3>Accent and slide</h3>
+      <p><kbd>KNOB 4</kbd>, TYPE: ACC accents the step (it plays at full velocity), SLD slides it into the next note, A+S does both, -
+        neither. <kbd>PRESETS</kbd> to step 6 and SLD: its G3 glides down into step 7's A2, the acid way.</p>
     </li>
     <li class="step" id="steps/pattern">
-      <h3>Length</h3>
-      <p>Turn <kbd>SELECT</kbd> to PATTERN, the <a href="#g-pattern">pattern</a>'s own settings: LENGTH, DIV, SWING and GATE.
-        <kbd>KNOB 1</kbd>, LENGTH, runs from 1 to 64 steps: at 8 the first half bar plays twice, back at 16 the whole line again. Past 16,
-        the step pages turn with the playhead. DIV is a step's length, from 4 bars to 1/32 with the triplets; SWING delays every other
-        step.</p>
+      <h3>Pattern length</h3>
+      <p>Turn <kbd>SELECT</kbd> to PATTERN, the <a href="#g-pattern">pattern</a>'s own settings: LENGTH, DIV, SWING and GATE, and on
+        <kbd>PRESETS</kbd> its direction (the footer says PRESETS: DIR; <a href="#variation/direction">chapter 8</a>). <kbd>KNOB 1</kbd>,
+        LENGTH, runs from 1 to 64 steps: at 8 the first half bar plays twice; at 32 a second bar follows the line, empty for now. Past
+        16, NOTES and FEEL turn their pages with the playhead. DIV is a step's length, from 4 bars to 1/32 with the triplets; SWING
+        delays every other step.</p>
     </li>
     <li class="step" id="steps/gate">
       <h3>Gate</h3>
-      <p><kbd>KNOB 4</kbd>, GATE: how long every note of the pattern lasts, as a share of its step. Down to 27 % the line is short and
-        tight. SEQ › PLAY gives a single step a GATE of its own.</p>
+      <p><kbd>KNOB 4</kbd>, GATE: how long the pattern's notes last, as a share of their step. A new pattern's GATE is 100 %, so a new
+        note is 1 STEP long. Down to 27 % the line is short and tight. A step can have a length of its own, NOTES' LENGTH below 1 STEP
+        (<a href="#variation/step-gate">chapter 8</a>).</p>
     </li>
     <li class="step" id="steps/clear">
-      <h3>Clear a step</h3>
-      <p>Turn <kbd>SELECT</kbd> back to STEP. With <kbd>REC</kbd> armed, <kbd>EDIT</kbd> clears the cursor step and moves on: STEP
-        CLEARED. Tap REC again to disarm it. (Armed while playing, the keys would record live; armed while stopped on STEP, they write
-        steps: <a href="#first-beat/write-steps">chapter 3</a>.) SAVE held puts a cleared step back.</p>
+      <h3>Copy, paste, delete</h3>
+      <p><kbd>SELECT</kbd> back to NOTES, <kbd>PRESETS</kbd> to step 1, and SHIFT + <kbd>PRESETS</kbd> on to step 16: NOTES 1-16.
+        Hold <kbd>HOME</kbd> and tap <kbd>OCT−</kbd> to copy them: COPIED 15 STEPS, the first note's step to the last's, every note as
+        long as it is, with its step's values. <kbd>PRESETS</kbd> to step 17, the second bar's first, and SHIFT + <kbd>OCT+</kbd>: PASTED, the line twice; the pasted
+        steps are the selection now. A paste goes in beside what's there; when a note won't fit (four a step, no pitch twice) nothing
+        is pasted, and the header says which step is in the way.</p>
+      <p>SHIFT + <kbd>EDIT</kbd> deletes the selection's notes, REC armed or not: <kbd>PRESETS</kbd> to step 31 and DELETED 1 NOTE,
+        the second bar's E3. Each of these is one undo: SAVE held puts it back. With <kbd>REC</kbd> armed, <kbd>EDIT</kbd> alone clears
+        the cursor step and moves on: STEP CLEARED (armed while stopped on NOTES, the keys write steps:
+        <a href="#first-beat/write-steps">chapter 3</a>).</p>
     </li>
     <li class="step" id="steps/preview">
       <h3>Step preview</h3>
@@ -744,14 +778,17 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="steps/audition">
       <h3>Hear each step</h3>
-      <p>Stopped, with STEP PREVIEW on, every move of the cursor by <kbd>KNOB 1</kbd> or <kbd>PRESETS</kbd> plays the step it lands on,
-        once, on STEP, ROLL and the grid: here steps 8 to 15, the empty ones silent.</p>
+      <p>Stopped, with STEP PREVIEW on, every move of the cursor by <kbd>PRESETS</kbd> plays the step it lands on, once, on NOTES and
+        the grid: here steps 8 to 15, the empty ones silent.</p>
     </li>
     <li class="step" id="steps/grid">
       <h3>Drum steps</h3>
-      <p><kbd>PLAY</kbd>, and <kbd>ALGORITHM</kbd> to track 4: on a drum track STEP is the grid (<a href="#first-beat/grid">chapter
-        3</a>), and its knobs are STEP, LANE, HIT and ACC. <kbd>KNOB 1</kbd> to step 13, <kbd>KNOB 2</kbd> to the SNARE lane,
-        <kbd>KNOB 4</kbd> accents its hit (it brightens); KNOB 1 on to step 16 and <kbd>KNOB 3</kbd> adds a snare there.</p>
+      <p><kbd>PLAY</kbd>, and <kbd>ALGORITHM</kbd> to track 4: on a drum track NOTES is the grid (<a href="#first-beat/grid">chapter
+        3</a>), and its knobs are LANE, HIT, ACC and VELOCITY, PRESETS still the step. <kbd>PRESETS</kbd> to step 13, <kbd>KNOB 1</kbd>
+        to the SNARE lane, <kbd>KNOB 3</kbd> accents its hit (it brightens); PRESETS on to step 16 and <kbd>KNOB 2</kbd> adds a snare
+        there. On the grid copy and paste follow LANE: SHIFT + <kbd>OCT−</kbd> copies the selection's hits on the lane shown (COPIED SNARE
+        1 STEP), SHIFT + <kbd>OCT+</kbd> pastes them onto the lane shown then (PASTED ON CLAP), a figure moved from lane to lane;
+        SHIFT + OCT− again on the same steps copies every lane (COPIED ALL LANES).</p>
     </li>
   </ol>
 </section>
@@ -771,18 +808,19 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p>Tap <kbd>REC</kbd>: the selected track is armed the moment it's pressed, and the header's play mark becomes a red dot. Armed
         and playing, the keys record at the playhead: a note goes into the step playing, or into the next one when it's played past the
         step's middle. Here a riff of eighths, <kbd>E5</kbd> <kbd>D5</kbd> <kbd>C5</kbd> <kbd>A4</kbd> and back up, which plays back on
-        the next pass. A key held on ties into the steps after it. Stopped, REC starts the transport too; on a melodic STEP or ROLL page
+        the next pass. A key held on ties into the steps after it. Stopped, REC starts the transport too; on NOTES, on a melodic track,
         it writes steps instead (<a href="#first-beat/write-steps">chapter 3</a>).</p>
     </li>
     <li class="step" id="recording/overdub">
       <h3>Overdub</h3>
       <p>Still armed, every pass records on top of the last: what's there stays. Here a third under four of the notes. On a POLY sound
-        like PIANO they join the step's notes as a chord, up to four; a MONO track's step takes the new note instead.</p>
+        like PIANO they join the step's notes as a chord, up to four, and a key held on while you play others goes on under them, a
+        note of its own length; a MONO track's step takes the new note instead.</p>
     </li>
     <li class="step" id="recording/disarm">
       <h3>Done</h3>
       <p>Tap <kbd>REC</kbd> again to disarm. The riff plays on as it was recorded, kept as the track's <a href="#g-pattern">pattern</a>:
-        no save needed.</p>
+        no save needed. (REC's light stays on while any track is armed; REC on an armed track disarms them all.)</p>
     </li>
     <li class="step" id="recording/undo-pass">
       <h3>One pass, one undo</h3>
@@ -829,15 +867,15 @@ footer p { max-width: 1240px; margin: 6px auto; }
     <li class="step" id="recording/loose">
       <h3>As played</h3>
       <p>The riff again, a little behind the beat: with FEEL on, each note keeps its lateness. <kbd>REC</kbd> disarms, and
-        <kbd>SEQ</kbd> twice opens ROLL, the piano roll: every note sits a third of a step after its line, where it was played. With FEEL
+        <kbd>SEQ</kbd> opens NOTES, the piano roll: every note sits a third of a step after its line, where it was played. With FEEL
         OFF they would sit on the lines.</p>
     </li>
     <li class="step" id="recording/take">
       <h3>Take</h3>
       <p>A <a href="#g-take">TAKE</a> keeps what you just played, without REC. Tap <kbd>HOME</kbd>, turn <kbd>ALGORITHM</kbd> to track
         2, PAD, and play: here two chords, A minor and G, held through a bar. In the next bar hold <kbd>HOME</kbd> and tap
-        <kbd>SAVE</kbd>: TAKE KEPT, 6 notes. The last whole pass of the track's loop goes into its steps, held notes as ties and knob
-        moves as automation. It needs one whole pass played since PLAY, and REC off on that track.</p>
+        <kbd>SAVE</kbd>: TAKE KEPT, 6 notes. The last whole pass of the track's loop goes into its steps, each note as long as it was
+        held and knob moves as automation. It needs one whole pass played since PLAY, and REC off on that track.</p>
     </li>
     <li class="step" id="recording/undo">
       <h3>Undo</h3>
@@ -852,37 +890,40 @@ footer p { max-width: 1240px; margin: 6px auto; }
   <div class="ch-head"><span class="num">08</span><div><p class="group">MAKE MUSIC</p><h2>Variation</h2></div></div>
   <p class="meta"><b>You'll learn</b> to make a pattern move: chance, conditions, ratchets and flams, nudges, direction, locks, automation
     and the SEQ tools.</p>
+  <p class="meta"><b>The video</b> shows Skiff 1.3's CHANCE and PLAY pages; in 2.0 their knobs are on FEEL, PATTERN and NOTES, as the
+    steps below say.</p>
   <div class="video"></div>
   <ol class="steps">
     <li class="step" id="variation/chance-page">
-      <h3>The CHANCE page</h3>
+      <h3>FEEL on the grid</h3>
       <p>The beat from <a href="#first-beat">chapter 3</a>: tap <kbd>PLAY</kbd>, turn <kbd>ALGORITHM</kbd> to track 4, tap
-        <kbd>SEQ</kbd> for the grid and turn <kbd>SELECT</kbd> to CHANCE. Its knobs are STEP, CHANCE (0 to 100 %, the chance the step
-        plays each time round), RATCHET and COND, for the step under the cursor; on a drum track they're the whole step's, every lane
-        on it. <kbd>KNOB 1</kbd> moves the cursor to step 15.</p>
+        <kbd>SEQ</kbd> for the grid and turn <kbd>SELECT</kbd> to FEEL, the grid again. Its knobs are CHANCE (OFF, then 1 to 100 %, the
+        chance the step plays each time round), RATCHET, NUDGE and TYPE, for the selected step; on a drum track they're the whole
+        step's, every lane on it. <kbd>PRESETS</kbd> moves the cursor to step 15.</p>
     </li>
     <li class="step" id="variation/ratchet">
       <h3>Ratchet</h3>
-      <p><kbd>KNOB 3</kbd>, RATCHET: X1 to X4 plays the step that many times inside its length. Step 15's hat at X3 is a quick roll
+      <p><kbd>KNOB 2</kbd>, RATCHET: X1 to X4 plays the step that many times inside its length. Step 15's hat at X3 is a quick roll
         into the next bar. The grid draws the hits split.</p>
     </li>
     <li class="step" id="variation/flam">
       <h3>Flam</h3>
-      <p>Past X4, RATCHET is FLAM: a softer grace hit, then the full one 15 ms later. <kbd>KNOB 1</kbd> back to step 13 and
-        <kbd>KNOB 3</kbd> to FLAM: the kick and the snare there flam.</p>
+      <p>Past X4, RATCHET is FLAM: a softer grace hit, then the full one 15 ms later. <kbd>PRESETS</kbd> back to step 13 and
+        <kbd>KNOB 2</kbd> to FLAM: the kick and the snare there flam.</p>
     </li>
     <li class="step" id="variation/cond">
       <h3>Conditions</h3>
-      <p><kbd>KNOB 4</kbd>, COND: when the step plays at all. FILL plays it only during a fill, !FILL only when there's none; A:B plays
-        it in pass A of every B, counted from PLAY (1:2, 2:2, 1:3 … 4:4). Step 9's kick at 1:2 plays in the first bar of every two.
-        On a drum track the condition is the step's, so every hit on that step follows it, as with CHANCE and RATCH: a sound that needs
-        its own goes on a track of its own.</p>
+      <p>Past 100 %, <kbd>KNOB 1</kbd>, CHANCE, turns into the conditions: when the step plays at all. FILL plays it only during a fill,
+        !FILL only when there's none; A:B plays it in pass A of every B, counted from PLAY (1:2, 2:2, 1:3 … 4:4). <kbd>PRESETS</kbd> to
+        step 9 and 1:2: its kick plays in the first bar of every two. A step has a chance or a condition, not both. On a drum track the
+        condition is the step's, so every hit on that step follows it, as with CHANCE and RATCHET: a sound that needs its own goes on a
+        track of its own.</p>
     </li>
     <li class="step" id="variation/fill">
       <h3>A fill</h3>
-      <p><kbd>SELECT</kbd> back to the grid, <kbd>G♯3</kbd> picks the SNARE lane and <kbd>G5</kbd> puts a snare on step 16
-        (<a href="#first-beat/snare">chapter 3</a>). <kbd>SELECT</kbd> on to CHANCE, where the cursor is now on 16: RATCHET X4 and COND
-        FILL. The roll waits for a fill.</p>
+      <p><kbd>SELECT</kbd> back to NOTES, the grid you write in: <kbd>G♯3</kbd> picks the SNARE lane and <kbd>G5</kbd> puts a snare on
+        step 16 (<a href="#first-beat/snare">chapter 3</a>). <kbd>SELECT</kbd> on to FEEL, where the cursor is now on 16: RATCHET X4 and
+        CHANCE FILL. The roll waits for a fill.</p>
     </li>
     <li class="step" id="variation/fill-play">
       <h3>Play the fill</h3>
@@ -891,28 +932,29 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="variation/lock">
       <h3>A lock</h3>
-      <p>A <a href="#g-lock">lock</a> is a step's own value for a knob. <kbd>SELECT</kbd> back to the grid, hold <kbd>D5</kbd> (step 13)
-        and turn <kbd>KNOB 1</kbd>: the cards show the sound's knobs, here DRUM's PITCH, TONE, DECAY and SNAP, and PITCH goes up on step
-        13 only. A mark over the step shows the lock. The knobs lock what they last edited: HOME's four after HOME, an EDIT, ENV, LFO or
-        FX page's after that page. On a melodic track, hold the step's key while REC writes steps, stopped (<a href="#first-beat/write-steps">chapter
-        3</a>); <kbd>EDIT</kbd> tapped with the step held clears its locks.</p>
+      <p>A <a href="#g-lock">lock</a> is a step's own value for a knob. <kbd>SELECT</kbd> back to NOTES, the grid, hold <kbd>D5</kbd>
+        (step 13) and turn <kbd>KNOB 1</kbd>: the cards show the sound's knobs, here DRUM's PITCH, TONE, DECAY and SNAP, and PITCH goes
+        up on step 13 only. A mark over the step shows the lock. The knobs lock what they last edited: HOME's four after HOME, an EDIT,
+        ENV, LFO or FX page's after that page. On a melodic track, hold the step's key while REC writes steps, stopped
+        (<a href="#first-beat/write-steps">chapter 3</a>); <kbd>EDIT</kbd> tapped with the step held clears its locks.</p>
     </li>
     <li class="step" id="variation/direction">
       <h3>Direction</h3>
-      <p><kbd>ALGORITHM</kbd> back to track 1 and <kbd>SELECT</kbd> to PLAY: STEP, NUDGE, DIR and GATE, with the piano roll.
-        <kbd>KNOB 3</kbd>, DIR, is the track's: FWD, RVRS (backwards), PING (up and down) and RAND (any step each time). The bass line
-        plays each in turn, then FWD again.</p>
+      <p><kbd>ALGORITHM</kbd> back to track 1 and <kbd>SELECT</kbd> on to PATTERN: <kbd>PRESETS</kbd> turns the track's DIR (the
+        footer says PRESETS: DIR), shown under its steps: FWD, RVRS (backwards), PING (up and down) and RAND (any step each time). The
+        bass line plays each in turn, then FWD again.</p>
     </li>
     <li class="step" id="variation/nudge">
       <h3>Nudge</h3>
-      <p><kbd>KNOB 1</kbd> to step 7 and <kbd>KNOB 2</kbd>, NUDGE: the step plays early or late, −32 to +31 sixty-fourths of a step.
-        At +16 it's a quarter of a step late, and the roll draws it where it plays. FEEL sets nudges as you record
-        (<a href="#recording/feel">chapter 7</a>).</p>
+      <p><kbd>SELECT</kbd> back to FEEL, <kbd>PRESETS</kbd> to step 7 and <kbd>KNOB 3</kbd>, NUDGE: the step plays early or late, −32
+        to +31 sixty-fourths of a step. At +16 /64 it's a quarter of a step late, and NOTES draws it where it plays. The REC layer's
+        FEEL sets nudges as you record (<a href="#recording/feel">chapter 7</a>).</p>
     </li>
     <li class="step" id="variation/step-gate">
       <h3>A step's gate</h3>
-      <p><kbd>KNOB 1</kbd> to step 13 and <kbd>KNOB 4</kbd>, GATE: the step's own note length, a lock. It starts from the track's GATE,
-        dimmed; turned, it's the step's (here 82 %), and turned back to the track's value it follows the track again.</p>
+      <p><kbd>SELECT</kbd> back to NOTES, <kbd>PRESETS</kbd> to step 13 and <kbd>KNOB 3</kbd>, LENGTH, below 1 STEP: the step's own
+        note length, 1 to 99 % of the step, a lock (here 82 %). Turned back up to the pattern's GATE (PATTERN's KNOB 4, 100 % by
+        default: 1 STEP), it follows the pattern again.</p>
     </li>
     <li class="step" id="variation/automation">
       <h3>Automation</h3>
@@ -923,10 +965,10 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="variation/auto-list">
       <h3>The list</h3>
-      <p>Tap <kbd>SEQ</kbd> (it reopens PLAY) and turn <kbd>SELECT</kbd> to AUTOMATION: every move and lock of the track, by step, AUTO or
-        LOCK, the parameter and its value. KNOB 1 picks a row, KNOB 2 moves it to another step, KNOB 3 changes the parameter and
-        KNOB 4 the value; past its lowest it's DELETE, and OCT+ does it. The top row turns them all on or off (PLAY ON) and clears them.
-        All six tracks share 64 records.</p>
+      <p>Tap <kbd>SEQ</kbd> (it reopens NOTES, the page you left) and turn <kbd>SELECT</kbd> on to AUTOMATION: every move and lock of
+        the track, by step, AUTO or LOCK, the parameter and its value. KNOB 1 picks a row, KNOB 2 moves it to another step, KNOB 3
+        changes the parameter and KNOB 4 the value; past its lowest it's DELETE, and OCT+ does it. The top row turns them all on or off
+        (PLAY ON) and clears them. All six tracks share 64 records.</p>
     </li>
     <li class="step" id="variation/tools">
       <h3>SEQ tools</h3>
@@ -935,7 +977,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
         (a few notes changed), <kbd>F4</kbd> EUCLID, <kbd>D5</kbd> DOUBLE and <kbd>E5</kbd> HALF the length with its steps; on a drum
         track <kbd>E4</kbd> BEAT (a basic beat) and the lane tools on G4 to C5. The knobs are the PATTERN page's. Here REVERSE, then
         SHIFT &gt;. Each tool is one undo (SAVE held, once SEQ is let go); OCT− puts back the track as it was when the layer
-        opened.</p>
+        opened. On notes that overlap REVERSE goes note by note, each starting where it ended.</p>
     </li>
     <li class="step" id="variation/euclid">
       <h3>Euclid</h3>
@@ -950,8 +992,10 @@ footer p { max-width: 1240px; margin: 6px auto; }
 <!-- ================================================================ SHAPE SOUND -->
 <section class="chapter" id="modulation" data-n="9" data-group="SHAPE SOUND" data-video="XLGraH8EX6w">
   <div class="ch-head"><span class="num">09</span><div><p class="group">SHAPE SOUND</p><h2>Envelopes, LFOs, MOD</h2></div></div>
-  <p class="meta"><b>You'll learn</b> to shape a sound over time with two envelopes, the LFO and the four mod slots, and to move knobs
-    for a moment only.</p>
+  <p class="meta"><b>You'll learn</b> to shape a sound over time with two envelopes and the LFO, to send them where they go on MOD with
+    its four slots, and to move knobs for a moment only.</p>
+  <p class="meta"><b>The video</b> shows Skiff 1.3, where ENV DEST and LFO DEST were pages of their own; in 2.0 they're MOD's first
+    seven routes, as the steps below say.</p>
   <div class="video"></div>
   <ol class="steps">
     <li class="step" id="modulation/env">
@@ -961,57 +1005,64 @@ footer p { max-width: 1240px; margin: 6px auto; }
         <kbd>KNOB 2</kbd> stretches ACID's DECAY from 54 to 160 ms. FM6 and the drum engines have no ENV pages (NO ENV ON FM6): they
         shape their notes on their own pages.</p>
     </li>
-    <li class="step" id="modulation/env-dest">
-      <h3>Where it goes</h3>
-      <p>Tap <kbd>ENV</kbd> again for ENV DEST: how much of the envelope goes to the filter's CUTOFF, to the PITCH and to the SHAPE, each
-        −100 to +100 %. ACID's squelch is CUTOFF +76 %: <kbd>KNOB 1</kbd> down to +13 % dulls the bass, all the way up to +100 % makes
-        every note bite. SHAPE moves the engine's shape: on ANALOG the pulse width of PWM, the second oscillator of SYNC.</p>
-    </li>
-    <li class="step" id="modulation/env-sync">
-      <h3>In time</h3>
-      <p><kbd>KNOB 4</kbd>, SYNC ON: ATTACK, DECAY and RELEASE become note values, from 1/64T to 4BAR, and follow the tempo. Turn
-        <kbd>SELECT</kbd> back to ENV to see them: DECAY reads 1/8D, and <kbd>KNOB 2</kbd> takes it to 1/16, a note value a detent.
-        SUSTAIN stays a level.</p>
-    </li>
     <li class="step" id="modulation/env-2">
       <h3>ENV 2</h3>
-      <p><kbd>SELECT</kbd> on to ENV 2: a second envelope with the same four knobs, always in milliseconds. On its own it changes
-        nothing you hear: it's a source for the MOD slots, ENV2 (below). Here its DECAY goes up to 112 ms.</p>
+      <p>Tap <kbd>ENV</kbd> again for ENV 2: a second envelope with the same four knobs, always in milliseconds. On its own it changes
+        nothing you hear: it's a source for MOD's slots, ENV2 (below). Here its DECAY goes up to 112 ms. These two are ENV's pages;
+        where the envelope goes is set on MOD, under LFO.</p>
     </li>
     <li class="step" id="modulation/lfo">
       <h3>The LFO</h3>
       <p>Tap <kbd>LFO</kbd>: RATE (0.05 to 40 Hz), WAVE (SIN, TRI, SAW, SQR or S&amp;H, a new random value each cycle), PHASE (where a
         note starts it) and FADE (how long it takes to come in). The graph draws two seconds of it. Here RATE 2.21 Hz and WAVE TRI;
-        nothing moves yet, as every depth is still 0.</p>
+        nothing moves yet, as every depth is still 0. LFO's pages are LFO, LFO 2 and MOD.</p>
     </li>
     <li class="step" id="modulation/lfo-dest">
-      <h3>LFO dest</h3>
-      <p><kbd>SELECT</kbd> on to LFO DEST, the depths: PITCH, CUTOFF, SHAPE and AMP (a tremolo), each drawn as the wave it makes.
-        <kbd>KNOB 2</kbd>, CUTOFF +50 %: the filter wobbles with the triangle. A little PITCH is a vibrato.</p>
+      <h3>Where it goes</h3>
+      <p>Tap <kbd>LFO</kbd> twice more for MOD. <kbd>KNOB 1</kbd>, ROUTE, picks one of 11: 1 to 4 are the LFO's depths, to PITCH, CUT,
+        SHAPE and AMP (a tremolo), 5 to 7 the envelope's, 8 to 11 the four slots. The graph draws the seven as a grid, a row for the
+        LFO and one for the envelope, the route picked white. ROUTE 2, the LFO to CUT: its SOURCE and DEST are fixed, dimmed, and
+        <kbd>KNOB 4</kbd>, AMOUNT, to +50 %: the filter wobbles with the triangle. A little of route 1, PITCH, is a vibrato.</p>
     </li>
     <li class="step" id="modulation/lfo-2">
       <h3>LFO 2</h3>
       <p><kbd>SELECT</kbd> back to LFO 2. <kbd>KNOB 1</kbd>, SYNC, makes the LFO's cycle a note value of the tempo, 4BAR to 1/32; at 1/8
-        the wobble locks to the beat, and RATE dims. TRIG NOTE starts the LFO again at each new phrase, FREE lets it run.
+        the wobble locks to the beat, and LFO's RATE dims. TRIG NOTE starts the LFO again at each new phrase, FREE lets it run.
         <kbd>KNOB 3</kbd>, POLARITY UNI, makes it one-sided: the filter only opens.</p>
     </li>
+    <li class="step" id="modulation/env-sync">
+      <h3>In time</h3>
+      <p>LFO 2's <kbd>KNOB 4</kbd> is the envelope's: ENV SYNC ON, and ATTACK, DECAY and RELEASE become note values, from 1/64T to
+        4BAR, and follow the tempo. Tap <kbd>ENV</kbd> (it reopens ENV 2, the page left) and turn <kbd>SELECT</kbd> back to ENV to see
+        them: DECAY reads 1/8D, and <kbd>KNOB 2</kbd> takes it to 1/16, a note value a detent. SUSTAIN stays a level.</p>
+    </li>
+    <li class="step" id="modulation/env-dest">
+      <h3>The envelope's routes</h3>
+      <p>Tap <kbd>LFO</kbd> (it reopens LFO 2) and turn <kbd>SELECT</kbd> on to MOD; <kbd>KNOB 1</kbd> to ROUTE 6, the envelope to CUT.
+        ACID's squelch is its AMOUNT, +76 %: <kbd>KNOB 4</kbd> down to +13 % dulls the bass, all the way up to +100 % makes every note
+        bite. Routes 5 and 7 send it to the PITCH and the SHAPE, each −100 to +100 %. SHAPE moves the engine's shape: on ANALOG the
+        pulse width of PWM, the second oscillator of SYNC.</p>
+    </li>
     <li class="step" id="modulation/mod">
-      <h3>MOD</h3>
-      <p><kbd>SELECT</kbd> on to MOD: four slots, each a SOURCE sent to a DEST by an AMOUNT. The sources are the LFO, ENV, VEL, KEY,
-        RAND (a new value each note), MODW and AT (the mod wheel and aftertouch over MIDI), EXPR, ENV2, S&amp;H and SLEW; the
-        destinations the pitch, the cutoff, the shape, the level, the pan, DIST and the sends, the LFO's RATE and DEPTH, the vibrato, the
-        engine's own eight controls, and VEL and TIME. Slot 1 here: RAND to CUT, +63 %, so every note has its own brightness.</p>
+      <h3>The slots</h3>
+      <p><kbd>KNOB 1</kbd> on to ROUTE 8, the first of four slots, each a SOURCE sent to a DEST by an AMOUNT, all three turning. The
+        sources are the LFO, ENV, VEL, KEY, RAND (a new value each note), MODW and AT (the mod wheel and aftertouch over MIDI), EXPR,
+        ENV2, S&amp;H and SLEW; the destinations the pitch, the cutoff, the shape, the level, the pan, DIST and the sends, the LFO's RATE
+        and DEPTH, the vibrato, the engine's own eight controls, and VEL and TIME. Slot 1 here: RAND to CUT, +63 %, so every note has
+        its own brightness.</p>
     </li>
     <li class="step" id="modulation/mod-2">
       <h3>Slot 2</h3>
-      <p><kbd>KNOB 1</kbd> picks the slot: 2. SOURCE ENV2, DEST PITCH, AMOUNT +25 %: each note starts three semitones sharp and drops
-        into place as ENV 2 decays. The graph lists the four slots, the one being edited lit.</p>
+      <p><kbd>KNOB 1</kbd> on to ROUTE 9, slot 2. SOURCE ENV2, DEST PITCH, AMOUNT +25 %: each note starts three semitones sharp and
+        drops into place as ENV 2 decays. Under the grid the graph lists the four slots, the one picked lit.</p>
     </li>
     <li class="step" id="modulation/momentary">
       <h3>Momentary</h3>
-      <p>Tap <kbd>HOME</kbd>. Hold <kbd>LFO</kbd> and turn knobs: the header says MOMENTARY, then OCT+: KEEP. Here <kbd>KNOB 1</kbd>
-        opens the CUTOFF and <kbd>KNOB 2</kbd> adds RES; let go of LFO and they spring back at once: BACK. It works on HOME, the sound
-        and FX pages and the MIXER, up to eight values at a time, and it's never recorded.</p>
+      <p>Tap <kbd>HOME</kbd>. Hold <kbd>LFO</kbd> and turn knobs: the header says MOMENTARY, the footer LET GO: BACK OVER 1 BAR and
+        OCT+: KEEP. Here <kbd>KNOB 1</kbd> opens the CUTOFF and <kbd>KNOB 2</kbd> adds RES; let go of LFO and they glide back over a
+        bar: BACK. It works on HOME, the sound and FX pages and the MIXER, up to eight values at a time, and it's never recorded. MENU ›
+        CONTROL › RETURN sets the way back, SNAP (at once), 1 BEAT or 1 BAR, for these, the FX layer's macros and PERFORM's throws
+        alike (<a href="#settings/control">chapter 18</a>).</p>
     </li>
     <li class="step" id="modulation/keep">
       <h3>Keep it</h3>
@@ -1064,12 +1115,17 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p><kbd>ALGORITHM</kbd> to track 4: DRUM's EDIT 1 is KIT, PITCH, TONE and DECAY. <kbd>KNOB 1</kbd>, KIT, swaps the whole kit:
         STD, the five virtual-analog kits 80, 10, 66, 55 and 77, and DEEP, TIGHT and PERC. KIT 80: a deep sine kick, a noisy
         snare.</p>
+      <p>On past PERC, USR1, USR2 and USR3 play a sample slot of your own as the kit: each lane the slot's sample on its key, with the
+        lanes, LANE MIX and the hat choke as on any kit; a lane with no sample stays silent. The web editor's Samples tab builds such a
+        slot, a WAV a lane (<a href="#web-editor/sample">chapter 20</a>).</p>
     </li>
     <li class="step" id="engines/lanes">
       <h3>Lanes</h3>
       <p><kbd>EDIT</kbd> twice, past EDIT 2 (HIT), for LANES: each drum of the kit on its own. <kbd>KNOB 1</kbd> picks the lane, KICK
         here; KNOB 2 is its LEVEL, <kbd>KNOB 3</kbd> its TUNE (−6 semitones) and <kbd>KNOB 4</kbd> its DECAY, longer (0 % is as the kit
         has it).</p>
+      <p><kbd>EDIT</kbd> once more: LANE MIX, each lane's LEVEL (<kbd>KNOB 2</kbd>) and PAN (<kbd>KNOB 3</kbd>), <kbd>KNOB 1</kbd> the
+        lane (or a key struck). The track's PAN moves the whole kit on top. DRUM-X has it too, after its SOUND sheet.</p>
     </li>
     <li class="step" id="engines/drum-x">
       <h3>DRUM-X</h3>
@@ -1100,7 +1156,8 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p><kbd>SELECT</kbd> back to EDIT 1, SLICE: <kbd>KNOB 1</kbd>, SOURCE, runs BREAK, USR1, USR2, USR3, PIANO and FUNK; DIV cuts it in
         4 to 32 or where the hits are (AUTO). FUNK is the second loop, two beats of funk. USR1–3 are your own samples, put on the unit
         with the web editor's Samples tab (<a href="#web-editor/samples">chapter 20</a>); SAMPLE and GRAIN play them too. An empty one plays a
-        sine and says NO SAMPLE.</p>
+        sine and says NO SAMPLE. On a SAMPLE track playing one, EDIT › SAMPLES, after EDIT 2, gives each sample in it a LEVEL, REVERB and
+        DELAY of its own.</p>
     </li>
   </ol>
 </section>
@@ -1248,10 +1305,11 @@ footer p { max-width: 1240px; margin: 6px auto; }
         from ACID's 16 % to 55 %: the bass growls.</p>
     </li>
     <li class="step" id="track-fx/type">
-      <h3>Four types</h3>
-      <p><kbd>KNOB 2</kbd>, TYPE: SOFT rounds the peaks off, HARD clips them flat, FOLD folds them back (the sine turns to ripples) and
-        BITS takes bits away and holds samples, a lo-fi crunch. Back to FOLD, then <kbd>KNOB 3</kbd>, TONE, to −62 %: darker. TONE moves
-        the drive's own low-pass, minus darker and plus brighter.</p>
+      <h3>Five types</h3>
+      <p><kbd>KNOB 2</kbd>, TYPE: SOFT rounds the peaks off, HARD clips them flat, FOLD folds them back (the sine turns to ripples),
+        CRUSH takes bits away and holds samples, a lo-fi crunch (BITS before 2.0), and FUZZ clips the top flat and squashes the bottom
+        to half, lopsided. They're the INSERT's own shapers, next. Back to FOLD, then <kbd>KNOB 3</kbd>, TONE, to −62 %: darker. TONE
+        moves the drive's own low-pass, minus darker and plus brighter.</p>
     </li>
     <li class="step" id="track-fx/insert">
       <h3>Insert</h3>
@@ -1329,8 +1387,8 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="mixer/mute">
       <h3>Mute</h3>
-      <p><kbd>KNOB 4</kbd> to the right mutes the track: ON, and M on its strip, its meter still. To the left it plays again; here the
-        piano stays muted for now. A mute isn't recorded.</p>
+      <p><kbd>KNOB 4</kbd> to the right mutes the track: ON, and M on its strip, its meter still. Muted is silent at once, the notes
+        still sounding too. To the left it plays again; here the piano stays muted for now. A mute isn't recorded.</p>
     </li>
     <li class="step" id="mixer/delay">
       <h3>Delay</h3>
@@ -1362,9 +1420,10 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>The GLO layer</h3>
       <p>Hold <kbd>GLO</kbd>: the GLO layer, GLO SET in the header. The white keys <kbd>F3</kbd> to <kbd>D4</kbd> solo tracks 1–6,
         <kbd>E4</kbd> is ALL, <kbd>F4</kbd> FILL (<a href="#variation/fill-play">chapter 8</a>) and <kbd>G4</kbd> TAP; the black keys
-        <kbd>F♯3</kbd> <kbd>G♯3</kbd> <kbd>A♯3</kbd> <kbd>C♯4</kbd> <kbd>D♯4</kbd> <kbd>F♯4</kbd> mute tracks 1–6. The four knobs are the
-        levels of the four tracks around the selected one, here 2 to 5: <kbd>KNOB 1</kbd> takes the pad down to −8 dB. HOME with GLO
-        keeps the layer open (LOCKED), and <kbd>OCT−</kbd> puts the levels, the mutes and the tempo back as they were when it opened.</p>
+        <kbd>F♯3</kbd> <kbd>G♯3</kbd> <kbd>A♯3</kbd> <kbd>C♯4</kbd> <kbd>D♯4</kbd> <kbd>F♯4</kbd> are tracks 1–6's mutes. The four
+        knobs are the levels of the four tracks around the selected one, here 2 to 5: <kbd>KNOB 1</kbd> takes the pad down to −8 dB.
+        HOME with GLO keeps the layer open (LOCKED), and <kbd>OCT−</kbd> puts the levels, the mutes and the tempo back as they were
+        when it opened.</p>
     </li>
     <li class="step" id="mixer/solo">
       <h3>Solo</h3>
@@ -1373,8 +1432,10 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="mixer/mutes">
       <h3>Mutes</h3>
-      <p>Hold <kbd>GLO</kbd>. A black key mutes its track, and it stays muted after you let go, until it's tapped again: <kbd>G♯3</kbd>, the
-        pad, its cell lit and its card dimmed. <kbd>D♯4</kbd>'s cell is lit already: the piano's mute from the MIXER, the same switch.</p>
+      <p>Hold <kbd>GLO</kbd>. A black key tapped mutes its track, and it stays muted after you let go, until it's tapped again:
+        <kbd>G♯3</kbd>, the pad, its cell lit and its card dimmed. <kbd>D♯4</kbd>'s cell is lit already: the piano's mute from the MIXER,
+        the same switch. Held past a tap, a key cuts its track only while it's held. The FX and PERFORM layers' black keys are the same
+        six mutes (<a href="#fx-layer/cuts">chapter 16</a>, <a href="#perform/mutes">15</a>).</p>
     </li>
     <li class="step" id="mixer/all">
       <h3>All</h3>
@@ -1405,16 +1466,18 @@ footer p { max-width: 1240px; margin: 6px auto; }
         track 1, the chords on track 2. Tap <kbd>PLAY</kbd>, then <kbd>SAVE</kbd> (USER, the first time) and turn <kbd>SELECT</kbd> to
         PATTERNS: the pool, 64 <a href="#g-pattern">patterns</a>, 01 to 64, shared by every project. A pattern is a track's notes exactly
         as they play: its steps, LENGTH, DIV, SWING, GATE and direction, its automation and locks; the sound isn't part of it. 01 to 05 are
-        kept here. <kbd>KNOB 1</kbd> picks one: its LENGTH and USED, how many entries name it. <kbd>OCT+</kbd> clears one that nothing
-        uses, stopped, after asking.</p>
+        kept here. <kbd>KNOB 1</kbd> picks one: its LENGTH and USED, how many entries name it. <kbd>KNOB 4</kbd>, ACTION, is what
+        <kbd>OCT+</kbd> does, stopped and after asking: CLEAR, a pattern that nothing uses; EMPTY, its notes gone while its number, its
+        settings and the entries naming it stay; or UNUSED, every pattern nothing uses cleared at once, lit on the grid while it's
+        picked.</p>
     </li>
     <li class="step" id="song/lists">
       <h3>Each track's list</h3>
-      <p>Tap <kbd>SEQ</kbd>: STEP, whose header names the pattern being edited, A · 03. Turn <kbd>SELECT</kbd> on to SONG, the last SEQ
+      <p>Tap <kbd>SEQ</kbd>: NOTES, whose header names the pattern being edited, A · 03. Turn <kbd>SELECT</kbd> on to SONG, the last SEQ
         page: a row for each track, its <a href="#g-list">list</a> of 16 entries, A to P, across. An entry names a pattern and its REPS,
         how many times it plays (1 to 16), the ticks under its tile. The entry a track is on is filled with its colour; a dot is an empty
-        entry. <kbd>KNOB 1</kbd> picks the entry, <kbd>KNOB 2</kbd> a pattern for it, <kbd>KNOB 3</kbd> its REPS, <kbd>KNOB 4</kbd>
-        SONG.</p>
+        entry. <kbd>KNOB 1</kbd> picks the entry, <kbd>KNOB 2</kbd> a pattern for it, <kbd>KNOB 3</kbd> its REPS (below 1x, CHAIN:
+        <a href="#song-chains">after the steps</a>), <kbd>KNOB 4</kbd> SONG.</p>
     </li>
     <li class="step" id="song/play-entry">
       <h3>Play an entry</h3>
@@ -1426,7 +1489,8 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>Song on</h3>
       <p><kbd>KNOB 4</kbd>, SONG ON, and the header says SONG ON too. Each track now plays an entry its REPS times and then moves on to the
         next, at the end of its own loop; after the last, back to the first. The drums play 01 three times, then the fill once; the bass
-        04 twice, then 03. With SONG OFF each track loops the entry it's on.</p>
+        04 twice, then 03. With SONG OFF each track loops the entry it's on. ONCE, one detent more, plays every list once from its
+        first entry, then each track goes quiet, and when the last one ends the music stops.</p>
     </li>
     <li class="step" id="song/set">
       <h3>A new entry</h3>
@@ -1454,9 +1518,12 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="song/copy">
       <h3>A copy of its own</h3>
-      <p><kbd>SELECT</kbd> on to SONG, <kbd>KNOB 1</kbd> to C and <kbd>KNOB 2</kbd> one detent on, past the kept patterns: COPY, and the
-        footer says OCT+: COPY 05 TO 06. <kbd>OCT+</kbd>: COPIED 05 TO 06, a new pattern copied from 05, and C names it. Now C can change
-        without touching A. KNOB 2's last choice, CLEAR, empties an entry, stopped, after asking.</p>
+      <p><kbd>SELECT</kbd> on to SONG, <kbd>KNOB 1</kbd> to C and <kbd>KNOB 2</kbd> two detents on, past the kept patterns and NEW:
+        COPY, and the footer says OCT+: COPY 05 TO 06. <kbd>OCT+</kbd>: COPIED 05 TO 06, a new pattern copied from 05, and C names it. A
+        copy takes the first free number after its original's, so copies sit beside it in the pool. Now C can change without touching A.
+        NEW, just before COPY, gives the entry a new empty pattern instead; COPY+, after it, puts the copy into the first empty entry
+        after this one (COPY 06 TO 07 AT D) and leaves this one as it is. KNOB 2's last choice, CLEAR, empties an entry, stopped,
+        after asking.</p>
     </li>
     <li class="step" id="song/kept">
       <h3>Nothing to save</h3>
@@ -1466,6 +1533,18 @@ footer p { max-width: 1240px; margin: 6px auto; }
         pool.</p>
     </li>
   </ol>
+  <p class="meta" id="song-chains"><b>Chains.</b> <kbd>KNOB 3</kbd>, REPS, turned below 1x is CHAIN: the entry goes on into the next,
+    and entries on CHAIN with the one they end on are one long <a href="#g-chain">pattern</a> wherever the track plays them, each part
+    with its own LENGTH, DIV and SWING. The rows put a chain's tiles on a box of their own; the header names it and the part (A-B · 02), and NOTES counts
+    its steps on through the parts (NOTES 71), so a note can go on from one part into the next, by LENGTH, REC or a TAKE. With SONG OFF
+    the track loops the whole chain; with SONG ON or ONCE it plays the chain through, its last entry's REPS repeating all of it. A
+    launch onto any of its parts starts it from its first, and COPY+ copies the whole chain into the empty entries after it. An empty
+    entry ends a chain; KNOB 3 turned right again splits it.</p>
+  <p class="meta" id="song-sounds"><b>Sounds on entries.</b> <kbd>KNOB 2</kbd> on past CLEAR is SOUND: <kbd>OCT+</kbd> puts the track's
+    sound as it is now on the entry (T2 C SOUND STRINGS), a user sound by its slot, a factory one by its engine and preset. Its tile
+    loses a corner and the footer names the sound. Whenever the track comes onto the entry (the song moving on, a launch, or
+    <kbd>PLAY</kbd> from stopped) it loads that sound; a track already on it keeps your knob turns. The sound must be as it was loaded:
+    edited, the unit says SOUND EDITED, so save it on SAVE › USER first. NO SOUND, one detent further, takes it off.</p>
 </section>
 
 <section class="chapter" id="perform" data-n="15" data-group="ARRANGE AND PERFORM" data-video="AmZ00cKx9OE">
@@ -1513,7 +1592,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p>The black keys <kbd>F♯3</kbd> <kbd>G♯3</kbd> <kbd>A♯3</kbd> <kbd>C♯4</kbd> <kbd>D♯4</kbd> <kbd>F♯4</kbd> turn the mutes of
         tracks 1–6, staged as the entries are. <kbd>G♯3</kbd>: T2 MUTE AT NEXT BAR, an outlined M at the end of track 2's row; on the bar
         the chords drop out and the M is lit. The same key again stages the unmute, and a second press before a mute lands takes it back
-        (T2 MUTE CANCELLED). Stopped, a mute turns at once.</p>
+        (T2 MUTE CANCELLED). Stopped, a mute turns at once. Held past a tap, a key cuts its track while it's held, right away rather
+        than at the LAUNCH point, and stages nothing. They're the same six mutes as the GLO and FX layers'
+        (<a href="#mixer/mutes">chapter 13</a>).</p>
     </li>
     <li class="step" id="perform/cancel">
       <h3>Cancel</h3>
@@ -1544,8 +1625,10 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>Throws</h3>
       <p>The four knobs throw the selected track's sound: <kbd>KNOB 1</kbd> its tone (CUTOFF on most engines, PITCH on a drum kit),
         <kbd>KNOB 2</kbd> its REVERB, <kbd>KNOB 3</kbd> its DELAY and <kbd>KNOB 4</kbd> its DIST. A turn pushes the value out, the card
-        saying how far (+40), and once the knob rests it glides back over a bar: here the bass opens and closes again, then its echoes
-        swell and fade. A throw never edits the sound and is never saved; stopping drops it at once.</p>
+        saying how far (+40), and once the knob rests it glides back over a bar, the footer saying LET GO: BACK OVER 1 BAR and OCT+:
+        KEEP: here the bass opens and closes again, then its echoes swell and fade. MENU › CONTROL › RETURN sets that way back (SNAP,
+        1 BEAT or 1 BAR). <kbd>OCT+</kbd> while a throw is out keeps it: the value as it sounds becomes the sound's own, not recorded,
+        with no undo. Otherwise a throw never edits the sound and is never saved; stopping drops it at once.</p>
     </li>
     <li class="step" id="perform/close">
       <h3>Close it</h3>
@@ -1565,8 +1648,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p>The beat from <a href="#first-beat">chapter 3</a> plays, with two chords on track 2 and a piano line on track 5. Tap
         <kbd>PLAY</kbd>, then hold <kbd>FX</kbd>: the FX layer, FX HOLD in the header. Its effects work on the whole mix, each while its
         key is held. The map shows the 14 effects of the white keys, seven a row, an octave each (<kbd>F3</kbd> to <kbd>E4</kbd> over
-        <kbd>F4</kbd> to <kbd>E5</kbd>), each cell its key's letter and the effect's icon; under them the six cuts of the black keys. The
-        four knobs are the layer's macros. (Tapped, <kbd>FX</kbd> opens a track's FX pages: <a href="#track-fx">chapter 12</a>.)</p>
+        <kbd>F4</kbd> to <kbd>E5</kbd>), each cell its key's letter and the effect's icon; under them the black keys, the six tracks'
+        mutes, drawn as GLO's. The four knobs are the layer's macros; the footer says WHITE: EFFECTS, BLACK: MUTE, K1-4: MACROS.
+        (Tapped, <kbd>FX</kbd> opens a track's FX pages: <a href="#track-fx">chapter 12</a>.)</p>
     </li>
     <li class="step" id="fx-layer/repeat">
       <h3>Repeat</h3>
@@ -1613,23 +1697,26 @@ footer p { max-width: 1240px; margin: 6px auto; }
         one pressed plays: <kbd>B3</kbd> over <kbd>F3</kbd> reverses, and letting <kbd>B3</kbd> go returns to the repeat.</p>
     </li>
     <li class="step" id="fx-layer/cuts">
-      <h3>Cuts</h3>
-      <p>The black keys <kbd>F♯3</kbd> <kbd>G♯3</kbd> <kbd>A♯3</kbd> <kbd>C♯4</kbd> <kbd>D♯4</kbd> <kbd>F♯4</kbd> cut tracks 1–6 while
-        they're held: <kbd>C♯4</kbd>, the drums, then <kbd>F♯3</kbd> and <kbd>G♯3</kbd> together, the bass and the chords. A cut isn't
-        the track's mute (GLO's, <a href="#mixer/mute">chapter 13</a>) and is never saved.</p>
+      <h3>Mutes and cuts</h3>
+      <p>The black keys <kbd>F♯3</kbd> <kbd>G♯3</kbd> <kbd>A♯3</kbd> <kbd>C♯4</kbd> <kbd>D♯4</kbd> <kbd>F♯4</kbd> are tracks 1–6's
+        mutes, GLO's own (<a href="#mixer/mutes">chapter 13</a>). Held, a key cuts its track while it's held: <kbd>C♯4</kbd>, the drums,
+        then <kbd>F♯3</kbd> and <kbd>G♯3</kbd> together, the bass and the chords. Tapped, it mutes the track until it's tapped again, the
+        track's MUTE as on the MIXER, kept with the music.</p>
     </li>
     <li class="step" id="fx-layer/macros">
       <h3>Macros</h3>
       <p>The four knobs: <kbd>KNOB 1</kbd> FILTER, left a low-pass, right a high-pass (here 40 LP); <kbd>KNOB 2</kbd> CRUSH, fewer bits
         and a lower rate; <kbd>KNOB 3</kbd> THROW, the mix sent into the delay and the reverb; <kbd>KNOB 4</kbd> DEPTH, how much of a
-        playback effect you hear (with OCT UP or DN its shimmer, with GATE how deep it cuts). Let go of <kbd>FX</kbd> and they all go back:
-        FILTER, CRUSH and THROW to OFF, DEPTH to 100 %.</p>
+        playback effect you hear (with OCT UP or DN its shimmer, with GATE how deep it cuts). Let go of <kbd>FX</kbd> and they glide back
+        over a bar, FILTER, CRUSH and THROW to OFF, DEPTH to 100 %: the footer says LET GO: BACK OVER 1 BAR while they're out, and
+        <kbd>OCT+</kbd> with FX held keeps them where they are. MENU › CONTROL › RETURN sets that way back (SNAP, 1 BEAT or 1 BAR).</p>
     </li>
     <li class="step" id="fx-layer/latch">
       <h3>Latch</h3>
       <p>Hold <kbd>HOME</kbd> and tap <kbd>FX</kbd> (or hold <kbd>FX</kbd> and tap <kbd>HOME</kbd>): the layer stays open and latches,
         FX LATCH in the header. Now a key turns its effect on, and the same key again off, with nothing held: <kbd>G4</kbd>, then
-        <kbd>B4</kbd>, an octave up and the gate together. The macros keep their values too. The footer says KEYS: ON / OFF.</p>
+        <kbd>B4</kbd>, an octave up and the gate together. The macros keep their values too, until the layer closes. The footer says WHITE:
+        ON / OFF, BLACK: MUTE, OCT−: ALL OFF.</p>
     </li>
     <li class="step" id="fx-layer/all-off">
       <h3>All off</h3>
@@ -1649,7 +1736,8 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>Kept as you go</h3>
       <p>The beat from <a href="#first-beat">chapter 3</a> plays, with two chords on track 2. Nothing in Skiff has to be saved to be kept:
         the patterns keep themselves (<a href="#song/kept">chapter 14</a>), and the whole session, the sounds and the mix too, goes into an
-        autosave of its own, written once the music has changed, stopped, with nothing touched for 10 s (at most once a minute). Tap
+        autosave of its own, written once the music has changed, stopped, with nothing touched for 2 s (at most once every 20 s),
+        and within a second of a save or a project load: switch off a few seconds after your last change, or right after a save. Tap
         <kbd>PLAY</kbd>, then hold <kbd>HOME</kbd> and let it go: the MENU. <kbd>ALGORITHM</kbd> to SYSTEM and <kbd>PRESETS</kbd> to
         RESTORE LAST: ON, the default, so at power-on the music you left comes back and the header says RESTORED. OFF starts with the
         power-on sounds. Projects are for keeping versions, and starting something new.</p>
@@ -1723,7 +1811,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>Six themes</h3>
       <p>DISPLAY's first row is THEME; turn any knob: HI-CON (high contrast), PAPER (light), CRYPT (a dungeon synth's stone, amber and
         pixel letters), NEON (synthwave's chrome and neon) and QUARK (particle physics), then round to SKIFF, each track in its own colour.
-        The whole screen changes at once, the MENU first; the web editor follows the theme too. One detent back: NEON.</p>
+        The whole screen changes at once, the MENU first; the web editor follows the theme too. One detent back: NEON. Colours of your
+        own, set in the web editor, add CUSTOM after QUARK, in the look of a theme you pick there; PLAYHEAD, the next row, LINE draws
+        HOME's playhead as a plain line, without NEON's car, CRYPT's torch or QUARK's collision.</p>
     </li>
     <li class="step" id="settings/every-screen">
       <h3>Every screen</h3>
@@ -1754,7 +1844,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
         default) keeps <kbd>SELECT</kbd> for the pages and <kbd>GLO</kbd> + <kbd>SELECT</kbd> for the tempo; OFF, <kbd>SELECT</kbd> is
         the tempo everywhere. STEP PREVIEW is <a href="#steps/preview">chapter 6</a>'s. SCALE LEDS ON: the keys of the selected track's
         scale glow, the root's brighter, and the others are dark: track 1 is in A minor (<a href="#keys/scale">chapter 5</a>), so
-        <kbd>A3</kbd>, <kbd>C4</kbd> and <kbd>E4</kbd> are among them. Not on a drum or SLICE track.</p>
+        <kbd>A3</kbd>, <kbd>C4</kbd> and <kbd>E4</kbd> are among them. Not on a drum or SLICE track. RETURN, the last row, is how
+        MOMENTARY's values (<a href="#modulation/momentary">chapter 9</a>), the FX layer's macros and PERFORM's throws come back: SNAP
+        at once, or in a line over 1 BEAT or 1 BAR, the default.</p>
     </li>
     <li class="step" id="settings/audio">
       <h3>Audio</h3>
@@ -1766,16 +1858,18 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="settings/system">
       <h3>System</h3>
-      <p><kbd>ALGORITHM</kbd> on to SYSTEM, <kbd>PRESETS</kbd> down its seven rows. USB SERIAL OFF leaves out the serial console, a
-        developer's tool, so that macOS 13–15 sees the USB audio input. RESTORE LAST is <a href="#projects/kept">chapter 17</a>'s. CPU:
+      <p><kbd>ALGORITHM</kbd> on to SYSTEM, <kbd>PRESETS</kbd> down its six rows. RESTORE LAST is <a href="#projects/kept">chapter
+        17</a>'s. CPU:
         1 CORE or 2 CORES (BETA, up to 12 voices instead of 8), and how busy the audio is (0 % here: this film's run was made on a
         computer). CPU CLOCK: 360 MHZ or 320 MHZ. Both take effect at the next power-on: stop, then restart when the row says RESTART.
         CALIBRATION asks for each button and knob in turn, to learn which is which (a unit that works never needs it). RESET SETTINGS puts
-        every MENU setting back as a new unit has it, after asking; the music stays.</p>
+        every MENU setting back as a new unit has it, after asking; the music stays. A release has no serial console, so macOS 13–15
+        always sees the USB audio input; a build from source without <code>--release</code> adds a seventh row, USB SERIAL, for
+        developers.</p>
     </li>
     <li class="step" id="settings/about">
       <h3>About</h3>
-      <p>On ABOUT, <kbd>OCT+</kbd>: SKIFF, its version (v1.3.1), the CPU's clock, a QR code to the source on GitHub, and the credits of
+      <p>On ABOUT, <kbd>OCT+</kbd>: SKIFF, its version (v2.0), the CPU's clock, a QR code to the source on GitHub, and the credits of
         the code it's built on, Felucca first. <kbd>PRESETS</kbd> scrolls them; <kbd>OCT−</kbd> goes back to the tabs.</p>
     </li>
     <li class="step" id="settings/close">
@@ -1895,6 +1989,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p>Restore backup, then the file. The editor checks all of it first, then asks: Restore this complete backup? OK, and it writes
         it all back, the music last: projects A–D, sounds, patterns, samples, settings, and the music as it was when the backup was
         saved. Whatever the unit held before is replaced. The unit's screen has the beat again, and the editor reads it anew.</p>
+      <p>On 2.0, a backup from Skiff 1.x or Felucca is converted first: what 2.0 can't read as it was (Felucca's projects and user
+        sounds, DIGITAL sounds, the oldest formats) goes in as 2.0's, and the editor lists what it converted and anything with no place
+        in 2.0.</p>
     </li>
     <li class="step" id="web-editor/play">
       <h3>Play from here</h3>
@@ -1937,6 +2034,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p>On the unit, <kbd>ALGORITHM</kbd> to track 5: PIANO is the SAMPLE engine. <kbd>EDIT</kbd> opens EDIT 1, where
         <kbd>KNOB 1</kbd> is SET: on past FLUTE and SAX to USR1, and the screen draws the kalimba's wave. <kbd>PLAY</kbd>, and the
         keys play it over the beat, each in tune from its root. SLICE and GRAIN take USR1–3 too.</p>
+      <p>A drum kit of your own: a slot's <b>Drum kit</b> switch shows a row a lane, KICK to BELL. Drop a WAV on each row (or click it),
+        each with a level; the files keep their levels to each other, and each starts where its sound does. Upload, and on a DRUM track
+        <kbd>KNOB 1</kbd> (KIT) on past PERC to that slot plays it (<a href="#engines/kit">chapter 10</a>).</p>
     </li>
     <li class="step" id="web-editor/settings">
       <h3>Settings</h3>
@@ -1958,12 +2058,14 @@ footer p { max-width: 1240px; margin: 6px auto; }
     <dt id="g-track">Track</dt><dd>One of six parts, T1–T6, each with its own sound and pattern, all playing together. <kbd>ALGORITHM</kbd> picks the track you're working on.</dd>
     <dt id="g-engine">Engine</dt><dd>How a track makes its sound. There are 14: ANALOG, FM6, PHASE, LOFI, SAMPLE, VOICE, TRIO, WHEEL, GRAIN, PHYS, NOISE, SLICE, DRUM and DRUM-X. Hold <kbd>EDIT</kbd> to switch.</dd>
     <dt id="g-sound">Sound</dt><dd>A stored setting of an engine (a preset). <kbd>PRESETS</kbd> steps through them; your own go to SAVE › USER.</dd>
-    <dt id="g-family">Page family</dt><dd>The pages one button opens: tap it again, or turn <kbd>SELECT</kbd>, for the next. SEQ's family is STEP, ROLL, CHANCE, PLAY, PATTERN, AUTOMATION and SONG.</dd>
+    <dt id="g-family">Page family</dt><dd>The pages one button opens: tap it again, or turn <kbd>SELECT</kbd>, for the next. SEQ's family is NOTES, FEEL, PATTERN, AUTOMATION and SONG.</dd>
     <dt id="g-layer">Layer</dt><dd>What a held button lays over the page: FX, GLO, SEL, EDIT, SEQ TOOLS, PERFORM (ARP) and REC (SHIFT + REC). Let go and it's gone; SHIFT + the button keeps it open.</dd>
     <dt id="g-shift">SHIFT</dt><dd><kbd>HOME</kbd> held. Its map shows what every control does on the page, and it changes what some do: SHIFT + SAVE is TAKE.</dd>
-    <dt id="g-step">Step</dt><dd>A sixteenth of a bar in a pattern, up to 64 of them. On the step pages the 16 white keys are steps 1–16.</dd>
-    <dt id="g-pattern">Pattern</dt><dd>A track's notes exactly as they play: its steps, LENGTH, DIV, SWING, GATE, direction, automation and locks. Kept by itself; 64 of them in a pool every project shares.</dd>
+    <dt id="g-step">Step</dt><dd>A sixteenth of a bar in a pattern, up to 64 of them. On a drum track's grid the 16 white keys are steps 1–16.</dd>
+    <dt id="g-selection">Selection</dt><dd>What the knobs edit on NOTES and FEEL: the cursor's step, or a range of steps (SHIFT + <kbd>PRESETS</kbd>). With REC off a key picks one of its notes. SHIFT + OCT− and OCT+ copy and paste it, SHIFT + EDIT deletes it.</dd>
+    <dt id="g-pattern">Pattern</dt><dd>A track's notes exactly as they play: its steps, each note's own length, LENGTH, DIV, SWING, GATE, direction, automation and locks. Kept by itself; 64 of them in a pool every project shares.</dd>
     <dt id="g-list">List and entry</dt><dd>Each track has a list of 16 entries, A–P. An entry names a pattern and how many times it plays (REPS). The lists are the song, and PERFORM's keys.</dd>
+    <dt id="g-chain">Chain</dt><dd>Entries on CHAIN (SONG's <kbd>KNOB 3</kbd> below 1x) go on into the next: the track plays and edits them as one long pattern.</dd>
     <dt id="g-lock">Lock</dt><dd>A step's own value for a control: hold the step and turn a knob.</dd>
     <dt id="g-take">Take</dt><dd>SHIFT + SAVE keeps the loop you just played as the track's pattern, whether or not REC was on.</dd>
     <dt id="g-scene">Scene</dt><dd>The entry every track is on and every mute, stored together (16 in a project) and recalled with one key in PERFORM.</dd>
@@ -1977,22 +2079,25 @@ footer p { max-width: 1240px; margin: 6px auto; }
   <p><b>The screen says UPDATE MODE, WAITING FOR THE SKIFF INSTALLER, or stays black while a computer sees a USB MIDI device named
     "Felucca Update":</b> an install was cut off, and the FM-1 waits in Skiff's update loader at every power-on. Nothing is lost.
     Connect it by USB and press Install on the <a href="../webapp/installer/">installer</a> again (or run
-    <code>tools/fm1_install.py</code>): it finishes the install. M-VAVE's own updater does not see the FM-1 in this state. A loader
-    from before 1.3.2 keeps the screen black. <a href="#install/stopped">Chapter 1</a> shows it.</p>
-  <p><b>A computer sees a USB device named WL80UBOOT</b> (or a USB mass-storage device with ID 4C4A:8057): that is the chip's built-in
-    boot mode, and the FM-1 can be brought back:</p>
+    <code>tools/fm1_install.py</code>): it finishes the install. If the installer can't find it, plug the FM-1 straight into the
+    computer: a USB hub or USB-sharing software can lose it when it switches to update mode. M-VAVE's own updater does not see the
+    FM-1 in this state. A loader from before 1.3.2 keeps the screen black. <a href="#install/stopped">Chapter 1</a> shows it.</p>
+  <p><b>A computer sees a USB disk named WL82 UBOOT1.00</b> (or WL80UBOOT, a USB mass-storage device with ID 4C4A:8057): that is the
+    chip's built-in boot mode, and the FM-1 can be brought back:</p>
   <ul class="outline">
     <li>First try another USB data cable, and close every other app that uses MIDI, then run the install again: it finishes an
       interrupted update.</li>
     <li>If it stays in boot mode, <a href="https://github.com/kurogedelic/FM-1-transporter">FM-1 Transporter</a> reads and writes the FM-1's
       flash from a Mac through a Seeed XIAO RP2040 (three wires to the FM-1's USB lines). Back up the flash first, then write the official
-      firmware (M-VAVE's FM-1.fwsc).</li>
+      firmware (M-VAVE's FM-1.fwsc). On Windows and Linux, <a href="https://github.com/kagaimiq/jl-uboot-tool">jl-uboot-tool</a> reads
+      and writes it over the same USB cable.</li>
   </ul>
   <p>Holding <kbd>OCT−</kbd> and <kbd>OCT+</kbd> together for five seconds starts that boot mode on purpose: after two seconds the screen
     counts down, UPDATE MODE IN 3, 2, 1 (let go to cancel), then shows UPDATE MODE alone. It is not the installer's update mode, and the
     installer doesn't use it (<a href="#install/stuck">chapter 1</a>).</p>
   <p><b>A computer sees nothing at all:</b> try another USB cable (a charge-only cable has no data lines) and another port, with the
-    FM-1 charged. FM-1 Transporter (above) reaches the chip's boot mode by itself.</p>
+    FM-1 charged, then restart the computer: Windows can leave a USB port dead after a device in boot mode goes away. FM-1 Transporter
+    (above) reaches the chip's boot mode by itself.</p>
   <p>Anything else: <a href="https://github.com/illuminus5/skiff/issues">open an issue</a> on GitHub.</p>
 </section>
 
@@ -2006,22 +2111,22 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <tr data-ctrl="MASTER"><th scope="row"><kbd>MASTER</kbd></th><td>The volume.</td><td class="in"></td></tr>
       <tr data-ctrl="SELECT"><th scope="row"><kbd>SELECT</kbd></th><td>The page before or after in the family. With <kbd>GLO</kbd> held: the tempo.</td><td class="in"></td></tr>
       <tr data-ctrl="ALGORITHM"><th scope="row"><kbd>ALGORITHM</kbd></th><td>The track, T1–T6, on every page. In the MENU: the tab.</td><td class="in"></td></tr>
-      <tr data-ctrl="PRESETS"><th scope="row"><kbd>PRESETS</kbd></th><td>The track's sound. On the step pages: the cursor. In lists: the row.</td><td class="in"></td></tr>
+      <tr data-ctrl="PRESETS"><th scope="row"><kbd>PRESETS</kbd></th><td>The track's sound. On NOTES and FEEL: the step cursor (SHIFT + PRESETS: a range); on PATTERN: the direction. In lists: the row.</td><td class="in"></td></tr>
       <tr data-ctrl="KNOB1"><th scope="row"><kbd>KNOB 1</kbd>–<kbd>KNOB 4</kbd></th><td>The four cards across the top of the page.</td><td class="in"></td></tr>
       <tr data-ctrl="FX"><th scope="row"><kbd>FX</kbd></th><td>Tap: the track's effects, SLICER and DUCK. Hold: the FX layer.</td><td class="in"></td></tr>
       <tr data-ctrl="SEL"><th scope="row"><kbd>SEL</kbd></th><td>Tap: SCALE and CHORD. Hold: a key sets the root.</td><td class="in"></td></tr>
-      <tr data-ctrl="ENV"><th scope="row"><kbd>ENV</kbd></th><td>The envelopes and where they go.</td><td class="in"></td></tr>
-      <tr data-ctrl="LFO"><th scope="row"><kbd>LFO</kbd></th><td>Tap: the LFOs and MOD. Hold: MOMENTARY.</td><td class="in"></td></tr>
-      <tr data-ctrl="EDIT"><th scope="row"><kbd>EDIT</kbd></th><td>Tap: the engine's pages and the voices. Hold: the engines on the white keys.</td><td class="in"></td></tr>
-      <tr data-ctrl="GLO"><th scope="row"><kbd>GLO</kbd></th><td>Tap: MIXER, DELAY, REVERB, CHORUS, GLOBAL. Hold: solos, mutes, FILL, tap tempo.</td><td class="in"></td></tr>
+      <tr data-ctrl="ENV"><th scope="row"><kbd>ENV</kbd></th><td>The envelopes, ENV and ENV 2.</td><td class="in"></td></tr>
+      <tr data-ctrl="LFO"><th scope="row"><kbd>LFO</kbd></th><td>Tap: LFO, LFO 2 and MOD, where the LFO and the envelope go. Hold: MOMENTARY.</td><td class="in"></td></tr>
+      <tr data-ctrl="EDIT"><th scope="row"><kbd>EDIT</kbd></th><td>Tap: the engine's pages and the voices; on NOTES with REC armed, it clears the cursor step. Hold: the engines on the white keys. SHIFT + EDIT on NOTES and FEEL: delete the selection.</td><td class="in"></td></tr>
+      <tr data-ctrl="GLO"><th scope="row"><kbd>GLO</kbd></th><td>Tap: MIXER, DELAY, REVERB, CHORUS, GLOBAL. Hold: solos, mutes (a tap) and cuts (held), FILL, tap tempo.</td><td class="in"></td></tr>
       <tr data-ctrl="HOME"><th scope="row"><kbd>HOME</kbd></th><td>Tap: HOME. Hold: SHIFT and its map. Held and let go alone: the MENU.</td><td class="in"></td></tr>
       <tr data-ctrl="SAVE"><th scope="row"><kbd>SAVE</kbd></th><td>Tap: PRESETS, USER, PATTERNS, PROJECT. Hold: undo. SHIFT + SAVE: TAKE.</td><td class="in"></td></tr>
       <tr data-ctrl="ARP"><th scope="row"><kbd>ARP</kbd></th><td>Tap: the arpeggiator. Hold: PERFORM.</td><td class="in"></td></tr>
-      <tr data-ctrl="SEQ"><th scope="row"><kbd>SEQ</kbd></th><td>Tap: STEP, ROLL, CHANCE, PLAY, PATTERN, AUTOMATION, SONG. Hold: SEQ TOOLS.</td><td class="in"></td></tr>
+      <tr data-ctrl="SEQ"><th scope="row"><kbd>SEQ</kbd></th><td>Tap: NOTES, FEEL, PATTERN, AUTOMATION, SONG. Hold: SEQ TOOLS.</td><td class="in"></td></tr>
       <tr data-ctrl="PLAY"><th scope="row"><kbd>PLAY</kbd></th><td>Start and stop; green while playing. With <kbd>GLO</kbd> held: from the top.</td><td class="in"></td></tr>
-      <tr data-ctrl="REC"><th scope="row"><kbd>REC</kbd></th><td>Arms the selected track. SHIFT + REC: the REC layer.</td><td class="in"></td></tr>
-      <tr data-ctrl="OCT-"><th scope="row"><kbd>OCT−</kbd> <kbd>OCT+</kbd></th><td>The octave; both together reset it. In dialogs: back, and do it.</td><td class="in"></td></tr>
-      <tr data-ctrl="KEYS"><th scope="row">The keys</th><td>F3–G5: notes. On the step pages the white keys are steps 1–16; on a drum grid the black keys pick the row.</td><td class="in"></td></tr>
+      <tr data-ctrl="REC"><th scope="row"><kbd>REC</kbd></th><td>Arms the selected track; on an armed track, disarms every track. SHIFT + REC: the REC layer.</td><td class="in"></td></tr>
+      <tr data-ctrl="OCT-"><th scope="row"><kbd>OCT−</kbd> <kbd>OCT+</kbd></th><td>The octave; both together reset it. In dialogs: back, and do it. SHIFT + OCT− / OCT+ on NOTES and FEEL: copy and paste the selection.</td><td class="in"></td></tr>
+      <tr data-ctrl="KEYS"><th scope="row">The keys</th><td>F3–G5: notes. On NOTES with REC off, a key picks its note in the selection; on a drum grid the white keys are steps 1–16 and the black keys pick the row.</td><td class="in"></td></tr>
     </tbody>
   </table>
 </section>
@@ -2318,8 +2423,8 @@ emu.addEventListener("load", () => {
   paintLive();
   emu.classList.add("ready");
 });
-/* hidden, it stays on (and in a narrow window): the firmware saves only after 10 s stopped (project.c autosave_poll),
- * so switching it off would lose the last minute */
+/* hidden, it stays on (and in a narrow window): the firmware saves only after 2 s stopped, at most once every 20 s
+ * (project.c autosave_poll), so switching it off would lose the last edits */
 function follow(on) {
   document.body.classList.toggle("following", on);
   if (on && !emu.classList.contains("ready")) emu.src = "../try/";

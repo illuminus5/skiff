@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* (Skiff U5, V1) the page graphs for the pages that showed the output's scope (design/mock_u5.py, as the user picked
- * them): ENV DEST, LFO DEST, GLO's DELAY REVERB CHORUS GLOBAL, VOICE, VOICE 2, ANALOG's OSC and FLT, ARP and ARP 2.
+ * them): GLO's DELAY REVERB CHORUS GLOBAL, VOICE, VOICE 2, ANALOG's OSC and FLT, ARP and ARP 2 ((2.0, D 1A) ENV DEST's and
+ * LFO DEST's went with their pages: MOD's grid).
  * Included by ui_graph.c; drawn on the panel's canvas from its top (cv_oy 0: y 0 .. 137), in the track's colour c.
  * Of the curves of a page the knob just turned's is the bright one (else the biggest amount's), the others MID, a
  * zero one DIM. */
@@ -12,142 +13,6 @@ static void pg_text_r(int32_t xr, int32_t base, const char *s, uint16_t fg)
     cv_text_r(xr, base - AF_S.asc, &AF_S, s, fg, T_SURF);
 }
 static void pg_hline(int32_t x0, int32_t x1, int32_t y, uint16_t c) { cv_rect(x0, y, x1 - x0 + 1, 1, c); }
-
-/* "CUTOFF +40": a parameter's label and its value (b holds 24) */
-static void pg_label(char *b, const param_desc_t *d, int32_t v)
-{
-    char val[12];
-    const char *unit;
-    param_format(d, v, val, &unit);
-    str_cpy(b, d->label, 12);
-    str_cpy(b + str_len(b), " ", 2);
-    str_cpy(b + str_len(b), val, 12);
-}
-
-/* the curve of the page's knob just turned, else the biggest |amount| of n (-1: all zero) */
-static int32_t pg_bright(const int16_t *amt, uint32_t n)
-{
-    uint32_t k;
-    int32_t best = -1, bv = 0;
-    if (ui.hot_t && ui.hot_col < n && amt[ui.hot_col])
-        return (int32_t)ui.hot_col;
-    for (k = 0; k < n; k++)
-        if ((amt[k] < 0 ? -amt[k] : amt[k]) > bv) {
-            bv = amt[k] < 0 ? -amt[k] : amt[k];
-            best = (int32_t)k;
-        }
-    return best;
-}
-
-/* the ENV page's envelope over w + 1 px (0..1000 a px), as graph_adsr draws it: attack linear, decay and release
- * exponential, the release at the end */
-static void env_fill(const track_t *t, int16_t *lv, int32_t w)
-{
-    int32_t xa, xd, xr;
-    env_fill4(t->p[P_ATK], t->p[P_DEC], t->p[P_SUS], t->p[P_REL], lv, w, &xa, &xd, &xr);
-}
-
-/* ENV DEST: the envelope scaled by each amount around a zero line, up or down; the labels at the right, the ones
- * above the line at the top, the others at the foot */
-static void graph_envdst(const track_t *t, uint16_t c)
-{
-    static int16_t lv[211];
-    const page_t *pg = cur_page();
-    int16_t amt[3];
-    int32_t k, x, kind, cy = 74, br, ytop = 22, ybot = 133;
-    char b[24];
-    env_fill(t, lv, 210);
-    for (k = 0; k < 3; k++)
-        amt[k] = t->p[pg->id[k]];
-    br = pg_bright(amt, 3u);
-    pg_hline(10, 229, cy, T_LINE);
-    if (ux.crypt) {                                  /* (Skiff C4) CRYPT: each amount as ASCII art, up or down (4 lines of
-                                                      * 14 px), a skull over the bright one's peak */
-        uint8_t L[37];
-        for (k = 0; k < 3; k++) {
-            int32_t neg = amt[k] < 0, a = neg ? -amt[k] : amt[k], i, pk = 0, top = neg ? cy : cy - 56;
-            if (!amt[k])
-                continue;
-            for (i = 0; i < 37; i++) {
-                int32_t v = (lv[i * 210 / 36] * a * 4 + 32000) / 64000;
-                L[i] = (uint8_t)(neg ? v : 4 - v);
-                if (v > (neg ? L[pk] : 4 - L[pk]))
-                    pk = i;
-            }
-            cr_art(12, top, 6, 14, L, 37, k == br ? T_THEME : T_MID);
-            if (k == br)
-                cr_skull(12 + pk * 6 - 4, neg ? top + L[pk] * 14 + 4 : top + L[pk] * 14 - 12, CR_FLAME, T_SURF, 0);
-        }
-    } else
-    for (kind = 0; kind < 3; kind++)                 /* the zero ones, the others, the bright one last */
-        for (k = 0; k < 3; k++) {
-            int32_t py = cy;
-            if ((!amt[k] ? 0 : k == br ? 2 : 1) != kind)
-                continue;
-            for (x = 0; x <= 210; x += 3) {
-                int32_t y = cy - lv[x] * amt[k] * 60 / (1000 * 64);
-                if (x)
-                    cv_line_t(12 + x - 3, py, 12 + x, y, kind == 2 ? c : kind ? T_MID : T_DIM, 1 + kind);
-                py = y;
-            }
-        }
-    for (k = 0; k < 3; k++)                          /* the labels: those above the line at the top .. */
-        if (amt[k] > 0) {
-            pg_label(b, &TP[pg->id[k]], amt[k]);
-            pg_text_r(228, ytop, b, k == br ? c : T_MID);
-            ytop += 15;
-        }
-    for (k = 2; k >= 0; k--)                         /* .. the others at the foot, bottom up */
-        if (amt[k] <= 0) {
-            pg_label(b, &TP[pg->id[k]], amt[k]);
-            pg_text_r(228, ybot, b, !amt[k] ? T_DIM : k == br ? c : T_MID);
-            ybot -= 15;
-        }
-}
-
-/* LFO DEST: a row a destination, the LFO's 2 s as it runs (lfo_view_at: RATE, PHASE, FADE) as tall as its amount
- * (negative: upside down), a dot where the LFO is now */
-static void graph_lfodst(const track_t *t, uint16_t c)
-{
-    const page_t *pg = cur_page();
-    int16_t amt[4];
-    int32_t k, x, br;
-    for (k = 0; k < 4; k++)
-        amt[k] = t->p[pg->id[k]];
-    br = pg_bright(amt, 4u);
-    for (k = 0; k < 4; k++) {
-        int32_t y0 = 17 + k * 32, a = amt[k] * 14 / (pg->id[k] == P_LD_AMP ? 96 : 48), py = y0;   /* (full: 3/4 up) */
-        int32_t kind = !amt[k] ? 0 : k == br ? 2 : 1;
-        uint16_t col = kind == 2 ? c : kind ? T_MID : T_DIM;
-        a = a > 14 ? 14 : a < -14 ? -14 : a;
-        pg_text(10, y0 + 5, TP[pg->id[k]].label, col);
-        if (ux.crypt) {                              /* (Skiff C4) CRYPT: the wave as ASCII art (4 lines of 6 px), a snake
-                                                      * up to now, the rest of its path faint */
-            uint8_t L[29];
-            int32_t i, A = (a + (a < 0 ? -3 : 3)) / 7, now = lfo_view_now(t, 162) / 6;
-            if (amt[k] && !A)
-                A = amt[k] < 0 ? -1 : 1;
-            for (i = 0; i < 29; i++)
-                L[i] = (uint8_t)(2 - (lfo_view_at(t, i * 6, 168) * A + (A < 0 ? -16384 : 16384)) / 32768);
-            cr_art(62, y0 - 12, 6, 6, L, 29, amt[k] ? T_LINE : T_DIM);
-            if (amt[k])
-                cr_snake(62, y0 - 12, 6, 6, L, (uint32_t)now + 1u, kind == 2 ? T_THEME : T_MID,
-                         kind == 2 ? CR_EMBER : T_DIM);
-            continue;
-        }
-        pg_hline(62, 229, y0, T_LINE);
-        for (x = 0; x <= 167; x += 2) {
-            int32_t y = y0 - lfo_view_at(t, x, 168) * a / 32768;
-            if (x)
-                cv_line_t(62 + x - 2, py, 62 + x, y, col, 1 + kind);
-            py = y;
-        }
-        if (amt[k]) {                                /* now */
-            x = lfo_view_now(t, 167);
-            cv_rect(62 + x - 2, y0 - lfo_view_at(t, x, 168) * a / 32768 - 2, 5, 5, T_TEXT);
-        }
-    }
-}
 
 /* DELAY: the dry hit, then an echo every TIME, the first MIX high, each next FEEDBACK lower (fx.c fx_buses), over a
  * bar's beats (TIME longer than a beat: four echoes, over bars) */
@@ -318,12 +183,7 @@ static void graph_chorus(uint16_t c)
         } else {
             for (x = 0; x <= 216; x++) {             /* (under it: NEON the sun's bands, QUARK a Monte Carlo fill) */
                 int32_t y = 124 - pg_cho_resp(mode, x) * 40 / 32768;
-                if (ux.neon)
-                    ne_band_col(12 + x, y, 44, 124);
-                else if (ux.quark)
-                    qk_mc(12 + x, y, 124);
-                else
-                    cv_rect(12 + x, y, 1, 124 - y, ux_mix(c, T_SURF, 75));
+                pg_under(12 + x, y, 44, 124, ux_mix(c, T_SURF, 75));
                 if (x)
                     cv_line_t(12 + x - 1, py, 12 + x, y, c, 3);
                 py = y;
@@ -381,33 +241,25 @@ static void graph_chorus(uint16_t c)
 }
 
 /* (Skiff phase 9) FX > DRIVE: the TYPE's transfer at the DRIVE, as fx.c track_dist shapes it (its low cut and tone left
- * out): the input across, the output up, the straight line dim behind it; at the right the TYPE, DIST and TONE (BITS:
- * the bits left, the hold) */
+ * out): the input across, the output up, the straight line dim behind it; at the right the TYPE, DIST and TONE (CRUSH:
+ * the bits left, the hold). (2.0, D 2A) INSERT's shapers (ins_shape), DT_* to IT_* */
 static int32_t pg_drive_at(uint32_t type, int32_t d, int32_t x)
 {
+    static const uint8_t DT_IT[DT_N] = {IT_SOFT, IT_HARD, IT_FOLD, IT_CRUSH, IT_FUZZ};
     int32_t g = 4096 + d * d * 2, y = ((x >> 2) * g) >> 10;
     if (!d)
         return x;                                    /* (DIST 0: no DIST at all) */
-    if (type == DT_BITS) {
-        uint32_t s = (uint32_t)d / 11u;
-        return mulq15(((x + (s ? 1 << (s - 1u) : 0)) >> s) << s, 32000 - d * 20);
-    }
-    if (type == DT_HARD) {
-        y = clamp(y, -24576, 24576);
-    } else if (type == DT_FOLD) {
-        int32_t u = (y + 16384) & 65535;
-        y = (u < 32768 ? u - 16384 : 49152 - u) * 2;
-    } else {
-        y = softclip(y + 2400) - softclip(2400);
-    }
+    if (type == DT_CRUSH)
+        return mulq15(ins_shape(IT_CRUSH, x, (uint32_t)d / 11u), 32000 - d * 20);
+    y = type == DT_SOFT ? softclip(y + 2400) - softclip(2400) : ins_shape(DT_IT[type], y, 0);
     return mulq15(clamp(y, -40000, 40000), 30000 - d * 120);
 }
-/* the inset: a sine's cycle of 88 samples through the TYPE, BITS' hold, the TONE's two-pole low-pass and the make-up,
+/* the inset: a sine's cycle of 88 samples through the TYPE, CRUSH's hold, the TONE's two-pole low-pass and the make-up,
  * as fx.c runs them (its second pass: the filter settled) */
 static void pg_drive_wave(const track_t *t, uint32_t type, int32_t d, int32_t *y)
 {
-    uint32_t i, hm = type == DT_BITS ? (1u << ((uint32_t)d >> 5)) - 1u : 0u;
-    int32_t lp1 = 0, lp2 = 0, h = 0, k = clamp((type == DT_BITS ? 32700 - d * 40 : 32000 - d * 95) +
+    uint32_t i, hm = type == DT_CRUSH ? (1u << ((uint32_t)d >> 5)) - 1u : 0u;
+    int32_t lp1 = 0, lp2 = 0, h = 0, k = clamp((type == DT_CRUSH ? 32700 - d * 40 : 32000 - d * 95) +
                                               t->p[P_DTONE] * 150, 2000, 32700);
     for (i = 0; i < 176u; i++) {
         int32_t x = sine_i(i * 48806447u) * 3 / 4;   /* (2^32 / 88 a sample, -2.5 dBFS) */
@@ -453,12 +305,7 @@ static void pg_curve_graph(int32_t (*at)(const pg_curve_t *, int32_t), const pg_
     } else {
         for (i = 0; i <= 116; i++) {                 /* (under the curve, as ANALOG's FLT: NEON the sun's bands, QUARK a
                                                       * Monte Carlo fill) */
-            if (ux.neon)
-                ne_band_col(12 + i, ys[i], 8, 124);
-            else if (ux.quark)
-                qk_mc(12 + i, ys[i], 124);
-            else
-                cv_rect(12 + i, ys[i], 1, 124 - ys[i], ux_mix(c, T_SURF, 75));
+            pg_under(12 + i, ys[i], 8, 124, ux_mix(c, T_SURF, 75));
         }
         pg_hline(12, 128, 66, T_LINE);
         cv_rect(70, 8, 1, 117, T_LINE);
@@ -489,14 +336,14 @@ static void pg_curve_graph(int32_t (*at)(const pg_curve_t *, int32_t), const pg_
 static int32_t pg_drive_curve(const pg_curve_t *k, int32_t x) { return pg_drive_at(k->type, k->d, x); }
 static void graph_drive(const track_t *t, uint16_t c)
 {
-    uint32_t type = (uint32_t)t->p[P_DTYPE] & 3u;
+    uint32_t type = (uint32_t)clamp(t->p[P_DTYPE], 0, DT_N - 1);
     int32_t d = t->p[P_DIST], w[88];
     pg_curve_t k = {type, d, 0, 0, 0, 0};
     char b[24];
     pg_drive_wave(t, type, d, w);
     pg_curve_graph(pg_drive_curve, &k, w, c);
     cv_text(140, 26 - AF_M.asc, &AF_M, N_DTYPE[type], d ? c : T_DIM);
-    if (type == DT_BITS && d) {                      /* (the bits left of 16, each sample held) */
+    if (type == DT_CRUSH && d) {                     /* (the bits left of 16, each sample held) */
         fmt_int(b, 16 - d / 11);
         str_cpy(b + str_len(b), " BITS, HOLD ", 13);
         fmt_int(b + str_len(b), 1 << (d >> 5));
@@ -644,7 +491,7 @@ static void graph_voice2(const track_t *t, uint16_t c)
         if (ux.crypt) {                              /* (Skiff C4) CRYPT: the voices skulls, those sounding lit, the next
                                                       * one gold in a double frame */
             int nx = rot && i == t->rr % np;
-            cr_spritez(x + (w - 18) / 2, 29, CR_SKULL, 9, on ? T_THEME : nx ? CR_GOLD : T_DIM, T_SURF, 2);
+            cr_spritez(x + (w - 18) / 2, 29, SPR_SKULL, on ? T_THEME : nx ? CR_GOLD : T_DIM, T_SURF, 2);
             if (nx)
                 cr_frame2(x - 2, 23, w + 4, 30, CR_GOLD);
             continue;
@@ -768,12 +615,8 @@ static void graph_flt(const track_t *t, uint16_t c)
             l = peak + d * 32 / 10;
         if (l < 0) l = 0;
         y = 120 - l * 104 / 1000;
-        if (ux.neon)                                 /* ((Skiff N4) NEON: the sun's bands under it) */
-            ne_band_col(12 + x, y, 16, 120);
-        else if (ux.quark)                           /* ((Skiff Q4) QUARK: a Monte Carlo fill) */
-            qk_mc(12 + x, y, 120);
-        else
-        cv_rect(12 + x, y, 1, 120 - y, fill);
+        pg_under(12 + x, y, 16, 120, fill);          /* ((Skiff N4, Q4) NEON the sun's bands under it, QUARK a Monte
+                                                      * Carlo fill) */
         if (x)
             cv_line_t(12 + x - 1, py, 12 + x, y, c, 3);
         py = y;

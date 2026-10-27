@@ -299,7 +299,7 @@ static int kits(void)
     track_t *d = &trk[3];
     uint8_t out[CHORD_MAX];
     reset();
-    song.sel = 3;                                                  /* the DRUM track */
+    sel_set(3);                                                  /* the DRUM track */
     d->p[P_CHRD] = CH_DIA7;
     key_down(K_C4);
     bad += check("DRUM: CHRD ignored (one hit per key)", chord_build(d, 36, out) == 1u && out[0] == 36 &&
@@ -308,7 +308,7 @@ static int kits(void)
     midi(0x93, 38, 100);
     bad += check("  MIDI IN on the DRUM track: one hit, no chord kept", !mchord[0].id);
     midi(0x83, 38, 0);
-    song.sel = 0;
+    sel_set(0);
     trk[0].eng_req = trk[0].engine = ENGI_SAMPLE;                   /* SAMPLE: no set is a kit (PERC, retired, */
     trk[0].p[P_CHRD] = CH_DIA3;                                     /* loads as DRUM; its SET 4 is a PIANO alias) */
     trk[0].p[P_E0] = SMP_SET_PERC;

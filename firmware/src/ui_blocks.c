@@ -14,21 +14,29 @@
 #define HB_MSG_X 106                                  /* a message from here: 130 px to the edge */
 /* (Skiff phase 5) before the title, in the selected track's colour: on SONG, playing with SONG on, "SONG ON"; on a SEQ
  * page that edits the pattern, which one: the entry the track is on, the pattern's number, how many entries name it
- * when more than one ("C \xB7 06 \xB7 2x", the mockup's; b: 16 bytes). 0: nothing to say */
+ * when more than one ("C \xB7 06 \xB7 2x", the mockup's; b: 16 bytes); ((2.0, #44) on a chain: its entries, the
+ * part's number: "A-B \xB7 02", the join sheet's). 0: nothing to say */
 static int head_mark(char *b)
 {
     const page_t *pg = cur_page();
-    uint32_t k = song.sel % NTRK, id = trk_pat(k), e = bank_cur(k), n = 0, t, j;
+    uint32_t k = song.sel % NTRK, id = trk_pat(k), e = bank_cur(k), n = 0, t, j, b0, b1;
     b[0] = 0;
     if (ui.home || pg->fam != FAM_SEQ)
         return 0;
     if (pg->graph == GR_SONG) {
         if (song.playing && lists.song)
-            str_cpy(b, "SONG ON", 16);
+            str_cpy(b, lists.song == SONG_ONCE ? "SONG ONCE" : "SONG ON", 16);
         return b[0] != 0;
     }
     if (id == PAT_NONE)
         return 0;
+    if (e < NENT && ent_block(k, e, &b0, &b1)) {
+        str_cpy(b, "A-B \xB7 ", 16);
+        b[0] = (char)('A' + b0);
+        b[2] = (char)('A' + b1);
+        pat_num(b + str_len(b), id);
+        return 1;
+    }
     if (e < NENT) {
         b[0] = (char)('A' + e);
         str_cpy(b + 1, " \xB7 ", 15);
@@ -323,7 +331,7 @@ static void draw_confirm_blocks(void)
         [CF_CLEAR_MOTION] = "CLEAR", [CF_ERASE_USER] = "ERASE",
         [CF_ERASE_BANK] = "CLEAR", [CF_CLEAR_ENTRY] = "CLEAR", [CF_LOAD_PROJ] = "LOAD",
         [CF_STORE_SCENE] = "OVERWRITE", [CF_RESET_SET] = "RESET",
-        [CF_ERASE_PROJ] = "DELETE", [CF_NEW_PROJ] = "NEW"};
+        [CF_ERASE_PROJ] = "DELETE", [CF_NEW_PROJ] = "NEW", [CF_EMPTY_BANK] = "EMPTY", [CF_CLEAR_UNUSED] = "CLEAR"};
     static const uint8_t KEY[2] = {KC_OCTDN, KC_OCTUP};
     char a[24], b[40];
     const aafont_t *tf = &AF_M;

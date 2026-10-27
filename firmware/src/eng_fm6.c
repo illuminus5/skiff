@@ -163,6 +163,18 @@ static void fm6_load_slot(uint32_t tr, uint32_t s)
     fm6_slot[tr % NTRK] = (uint8_t)(s % FM6_NFACTORY);
 }
 
+/* the SLOT patch p shows: the factory patch it equals (F n; looked for from SLOT s on), else OWN */
+static int32_t fm6_match(const uint8_t *p, int32_t s)
+{
+    uint8_t v[FP_SIZE + 1u];
+    uint32_t k, f = s >= 0 && s < (int32_t)FM6_NFACTORY ? (uint32_t)s : 0u;
+    for (k = 0; k < FM6_NFACTORY; k++) {
+        fm6_unpack(FM6_FACTORY[(f + k) % FM6_NFACTORY], v);
+        if (!memcmp(v, p, FP_SIZE))
+            return (int32_t)((f + k) % FM6_NFACTORY);
+    }
+    return FM6_OWN;
+}
 /* track tr's patch was just put in as its own (a project, a user preset, the editor, a conversion): an FM6 track's
  * SLOT shows the factory patch it equals unchanged (F n; the SLOT it had first), else OWN; nothing reloads over it
  * (fm6_poll) */
@@ -172,17 +184,8 @@ static void fm6_adopt(uint32_t tr)
     int32_t s = t->p[P_E7];
     tr %= NTRK;
     fm6_own_ok &= (uint8_t)~(1u << tr);
-    if (t->eng_req == ENGI_FM6) {
-        uint8_t v[FP_SIZE + 1u];
-        uint32_t k, f = s >= 0 && s < (int32_t)FM6_NFACTORY ? (uint32_t)s : 0u;
-        for (k = 0; k < FM6_NFACTORY; k++) {
-            fm6_unpack(FM6_FACTORY[(f + k) % FM6_NFACTORY], v);
-            if (!memcmp(v, fm6_patch[tr], FP_SIZE))
-                break;
-        }
-        s = k < FM6_NFACTORY ? (int32_t)((f + k) % FM6_NFACTORY) : (int32_t)FM6_OWN;
-        t->p[P_E7] = (int16_t)s;
-    }
+    if (t->eng_req == ENGI_FM6)
+        t->p[P_E7] = (int16_t)(s = fm6_match(fm6_patch[tr], s));
     fm6_slot[tr] = (uint8_t)s;
 }
 
@@ -405,14 +408,14 @@ static const engine_t ENG_FM6 = {
     .name = "FM6",
     .page_title = {"OPS", "PATCH"},
     .edit = {
-        {"ALGO", F_INT, 0, 32, 0, N_FM6_ALG, 0},
-        {"FEEDBACK", F_INT, -7, 7, 0, 0, 0},
-        {"MOD LVL", F_BIPCT, -64, 63, 0, 0, 0},
-        {"RATIO", F_INT, -16, 16, 0, 0, 0},
-        {"MOD ENV", F_BIPCT, -64, 63, 0, 0, 0},
-        {"VEL MOD", F_INT, -7, 7, 0, 0, 0},
-        {"DETUNE", F_PCT, 0, 127, 0, 0, 0},
-        {"PATCH", F_INT, 0, FM6_OWN, 0, N_FM6_PATCH, 0},
+        {"ALGO", N_FM6_ALG, 0, 32, 0, F_INT, 0},
+        {"FEEDBACK", 0, -7, 7, 0, F_INT, 0},
+        {"MOD LVL", 0, -64, 63, 0, F_BIPCT, 0},
+        {"RATIO", 0, -16, 16, 0, F_INT, 0},
+        {"MOD ENV", 0, -64, 63, 0, F_BIPCT, 0},
+        {"VEL MOD", 0, -7, 7, 0, F_INT, 0},
+        {"DETUNE", 0, 0, 127, 0, F_PCT, 0},
+        {"PATCH", N_FM6_PATCH, 0, FM6_OWN, 0, F_INT, 0},
     },
     .presets = FM6_PRESETS,
     .npresets = NELEM(FM6_PRESETS),

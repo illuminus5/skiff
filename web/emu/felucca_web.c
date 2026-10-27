@@ -22,7 +22,7 @@
 
 #define FELUCCA_WEB 1
 #ifndef FELUCCA_CDC
-#define FELUCCA_CDC 1                    /* as src/felucca.c: MENU > USB SERIAL is there (nothing behind it) */
+#define FELUCCA_CDC 0                    /* (Skiff 2.0) as a release (build.py --release): no console, no USB SERIAL row */
 #endif
 #define FELUCCA_FLASH 1
 #define FELUCCA_OTA 0
@@ -273,7 +273,9 @@ static void web_power_on(void)
     kb_boot_hold = 1;                     /* main.c (#137): the keys silent under the splash */
     audio_init();
     boot_leds();                          /* main.c: the power-on LED sweep, from the scan's start */
+#if FELUCCA_LEGACY
     proj_migrate(boot_clean);             /* main.c: projects of before phase 5 become SKF2 (bank.c) */
+#endif
     unit_g_adopt = ui_set_rev < 2u;       /* main.c: (Skiff U3, R8) the unit's CLOCK MIDI IN TUNE */
     autosave_boot(boot_clean);            /* main.c: the last session's music (1.2, project.c) */
     unit_g_boot();

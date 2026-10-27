@@ -72,6 +72,7 @@ static void reset(void)
 {
     memset(nor, 0xFF, sizeof nor);
     memset(&song, 0, sizeof song);
+    sel_set(0);
     memset(trk, 0, sizeof trk);
     memset(proj_slot, 0, sizeof proj_slot);
     memset(up_bank, 0, sizeof up_bank);
@@ -185,16 +186,18 @@ int main(void)
 {
     int bad = 0;
     uint32_t len = 0, crc = 0, before;
-    static project_store_t st;
+    static project_store_t st, was;
+#if FELUCCA_LEGACY
     static project_v6_t v6;
-    persist_t ps;
+#endif
+    sks_t ps;                                            /* ((2.0) the settings object: SKS1) */
 
     reset();
     trk[0].step[0] = (step_t){{60}, 1, ST_NOTE, 0, 96, 0, 0};
     bad += check("LIST captures the runtime: 29 objects (id 8 empty, id 9 the FM6 patches, (Skiff) 16..31 the pattern "
-                 "bank), runtime 2048 B (SKF3, six tracks), the tracks' patterns written first",
+                 "bank), runtime 2560 B ((2.0) SKF4, six tracks), the tracks' patterns written first",
                  list(0, &len, &crc) == 0 && rep[2] == 29u && rep[3 + 10u * 11u] == 16u && rep[3 + 25u * 11u] == 31u &&
-                 len == PROJ_SKF->size && len == 2048u && crc == st_crc32(ED_BK_RAW, len) &&
+                 len == PROJ_SKF->size && len == 2560u && crc == st_crc32(ED_BK_RAW, len) &&
                  bank_used(0, 0) && keep_waiting() == 0u);
     bad += check("an empty project slot lists as length 0", list(2, &len, &crc) == 0 && len == 0);
     bad += check("GET of the runtime copy", get(0, 0, 64) == 0);
@@ -251,6 +254,24 @@ int main(void)
     bad += check("settings with an unknown LEDS value are refused, nothing written",
                  put_all(1, &ps, sizeof ps, st_crc32(&ps, sizeof ps)) == 2u && erases == before);
     ps.zoom = 0;
+    {   /* (2.0, Tier B 6) an archive of before: its settings a PER4 (Skiff's: bank.c's mark), read, then kept as SKS1 */
+        static persist_t po;
+        static sks_t got;
+        memset(&po, 0, sizeof po);
+        po.magic = PERSIST_MAGIC; po.palette = palette_to_stored(2); po.lowcut = 1; po.panel = panel;
+        po.favorites.factory[15][24] = 0xA5u;
+        po.favorites.factory[15][26] = LAUNCH_BEAT;
+        po.favorites.factory[9][0] = 4;                  /* (PHYS's third preset starred) */
+        bad += check("(2.0) settings of a PER4 archive restore, stored as SKS1",
+                     put_all(1, &po, sizeof po, st_crc32(&po, sizeof po)) == 0 && settings.palette == 2u &&
+                     settings.lowcut == 1u && launch_mode() == LAUNCH_BEAT && favorites.factory[9][0] == 4u &&
+                     st_load(OBJ_SETTINGS, &got, sizeof got) == (int)sizeof got && got.magic == SKS_MAGIC &&
+                     got.s.launch == LAUNCH_BEAT && got.fav[9][0] == 4u && !memcmp(&got, &persist_saved, sizeof got));
+        before = erases;
+        po.magic = SKS_MAGIC;
+        bad += check("  a PER4-sized record of another magic is refused, nothing written",
+                     put_all(1, &po, sizeof po, st_crc32(&po, sizeof po)) == 2u && erases == before);
+    }
     bad += check("a wrong CRC is refused before any write",
                  put_all(1, &ps, sizeof ps, st_crc32(&ps, sizeof ps) ^ 1u) == 2u && erases == before);
 
@@ -290,6 +311,42 @@ int main(void)
     /* projects */
     reset();
     trk[1].step[3] = (step_t){{64}, 1, ST_NOTE, 0, 96, 0, 0};
+#if !FELUCCA_LEGACY
+    (void)keep_all();                                    /* ((2.0) the steps are the patterns': kept first, as LIST does) */
+    project_capture(&proj_scratch);
+    proj_pack2(&st, &proj_scratch, PROJ_SKF);
+    bad += check("(2.0) an SKF4 project restores into slot 3 (flash and RAM)",
+                 put_all(4, &st, PROJ_STORE4, st_crc32(&st, PROJ_STORE4)) == 0 && project_used(2) &&
+                 !memcmp(&proj_slot[2], &st, PROJ_STORE4) &&
+                 st_load(OBJ_PROJECT0 + 2, &proj_wire, sizeof proj_wire) == (int)PROJ_STORE4);
+    {   /* (D3) a slot's project of before (SKF1; the editor's Restore converts one first, and keeps one it couldn't: the
+         * archive's patterns full): kept as it is, OLD FORMAT; a damaged one refused (2), the slot as it was. One in flash
+         * (a command-line install's) the same after a power cycle; a backup takes its bytes as flash keeps them */
+        static uint8_t old[PROJ_STORE_SIZE], back[PROJ_STORE_SIZE];
+        uint32_t sum, m = PROJ_MAGIC, sz = PROJ_STORE_SIZE;
+        char nm[PROJ_NAME_LEN + 1u];
+        memset(old, 0, sizeof old);
+        memcpy(old, &m, 4); memcpy(old + 4, &sz, 4); old[100] = 7;
+        sum = proj_hash(old, sizeof old - 4u); memcpy(old + sizeof old - 4u, &sum, 4);
+        memcpy(&was, &proj_slot[3], sizeof was);
+        old[200] ^= 1;
+        bad += check("(2.0) a damaged project of before (its hash) is refused (2), the slot as it was",
+                     put_all(5, old, sizeof old, st_crc32(old, sizeof old)) == 2u && !memcmp(&proj_slot[3], &was, sizeof was));
+        old[200] ^= 1;
+        bad += check("(2.0, D3) a whole one is kept as it is (flash), OLD FORMAT",
+                     put_all(5, old, sizeof old, st_crc32(old, sizeof old)) == 0 && proj_old(3) &&
+                     st_load(OBJ_PROJECT0 + 3, back, sizeof back) == (int)sizeof old && !memcmp(back, old, sizeof old));
+        memset(&proj_slot[3], 0, sizeof proj_slot[3]);    /* (a power cycle: the RAM copy from flash) */
+        proj_fetch(3);
+        bad += check("(2.0, D3) .. used (SAVE asks before writing over it), named OLD FORMAT, LOAD says so",
+                     project_used(3) && project_name(3, nm) && str_eq(nm, "OLD FORMAT") &&
+                     (project_load(3), str_eq(ui.msg, "OLD FORMAT")));
+        bad += check("(2.0, D3) .. a backup lists it and reads it back byte for byte (the editor's Restore converts it)",
+                     list(5, &len, &crc) == 0 && len == sizeof old && crc == st_crc32(old, sizeof old) &&
+                     !get_all(5, back, sizeof back) && !memcmp(back, old, sizeof old));
+        bad += check("(2.0, D3) .. DELETE clears it", project_erase(3) == 0 && !project_used(3) && !proj_old(3));
+    }
+#else
     project_capture(&proj_scratch);
     proj_pack(&st, &proj_scratch);
     bad += check("a FUN9 project restores into slot 3 (flash and RAM)",
@@ -336,6 +393,7 @@ int main(void)
                  proj_import(&proj_scratch, &proj_slot[3], sizeof st) && proj_scratch.t[0].step[0].n == 4u &&
                  proj_scratch.t[0].step[0].note[0] == 127u && proj_scratch.t[0].p[P_E0] ==
                  clamp(3, param_desc_of(trk[0].engine, P_E0)->min, param_desc_of(trk[0].engine, P_E0)->max));
+#endif
     {   /* 1.0.3: the FM6 patch bank (id 8) is retired; an older archive's bank moves into its user presets (ids 6, 7
          * restored first), the user presets' patches are id 9 */
         static up_bank_t ub;
@@ -361,6 +419,13 @@ int main(void)
         memcpy(bk.v[2] + 118, "BANK B3   ", 10);
         upf_empty();
         bad += check("the user presets of an old archive (id 6) restore", put_all(6, &ub, sizeof ub, st_crc32(&ub, sizeof ub)) == 0);
+#if !FELUCCA_LEGACY
+        bad += check("(2.0) an old archive's FM6 bank (id 8) is refused at begin (1): the converter moves its patches",
+                     put_begin(8, sizeof bk, st_crc32(&bk, sizeof bk)) == 1u && upf_get(0, pk));
+        bad += check("(2.0) an empty id 8 (a 1.0.3 archive) is taken and ignored", put_all(8, 0, 0, st_crc32(0, 0)) == 0);
+        upf_set(0, bk.v[2]);                             /* (slot 1's patch, as the converter writes id 9: below) */
+        (void)got;
+#else
         bad += check("an old archive's FM6 bank (id 8) is taken (0)", put_all(8, &bk, sizeof bk, st_crc32(&bk, sizeof bk)) == 0);
         bad += check("  .. its B3 patch is now the B3 presets' own (slots 1 and 5)",
                      !upf_get(0, pk) && !memcmp(pk + 118, "BANK B3   ", 10) && !upf_get(4, pk) && !memcmp(pk + 118, "BANK B3", 7));
@@ -380,6 +445,7 @@ int main(void)
                      !memcmp(&got, &upf, sizeof got));
         bk.v[3][0] = 200;
         bad += check("an FM6 bank with a byte above 127 is refused (2)", put_all(8, &bk, sizeof bk, st_crc32(&bk, sizeof bk)) == 2u);
+#endif
         bad += check("id 8 lists empty, id 9 with the patches' length", list(8, &len, &crc) == 0 && len == 0 &&
                      list(9, &len, &crc) == 0 && len == sizeof(upf_t) && crc == st_crc32(&upf, sizeof upf));
         memcpy(&got, &upf, sizeof got);
@@ -396,9 +462,9 @@ int main(void)
     memcpy(&st, &proj_slot[2], sizeof st);
     erase_error = 1;
     proj_slot[2].raw[100] ^= 1;                          /* (marks the RAM copy, to see it is kept) */
-    memcpy(&v6, &proj_slot[2], sizeof v6);
+    memcpy(&was, &proj_slot[2], sizeof was);
     bad += check("a flash error on commit (4) keeps the slot's RAM copy",
-                 put_all(4, &st, sizeof st, st_crc32(&st, sizeof st)) == 4u && !memcmp(&proj_slot[2], &v6, sizeof v6));
+                 put_all(4, &st, sizeof st, st_crc32(&st, sizeof st)) == 4u && !memcmp(&proj_slot[2], &was, sizeof was));
     erase_error = 0;
     bad += check("an empty project object clears the slot", put_all(4, 0, 0, st_crc32(0, 0)) == 0 && !project_used(2));
     st.raw[200] ^= 1;                                    /* hash no longer matches */
@@ -408,8 +474,14 @@ int main(void)
     reset();
     trk[2].step[5] = (step_t){{67}, 1, ST_NOTE, 0, 96, 0, 0};
     trk[2].p[P_LEVEL] = 77;
+#if FELUCCA_LEGACY
     project_capture(&proj_scratch);
     proj_pack(&st, &proj_scratch);
+#else
+    (void)keep_all();                                    /* ((2.0) SKF4: the steps in the pattern it names) */
+    project_capture(&proj_scratch);
+    proj_pack2(&st, &proj_scratch, PROJ_SKF);
+#endif
     host_tracks_init();
     bad += check("the runtime object restores the tracks",
                  put_all(0, &st, sizeof st, st_crc32(&st, sizeof st)) == 0 && trk[2].step[5].note[0] == 67u &&
@@ -429,8 +501,8 @@ int main(void)
         b.r[4].p[0] = 55;
         bad += check("a bank with a future record version restores byte for byte",
                      put_all(6, &b, sizeof b, st_crc32(&b, sizeof b)) == 0 &&
-                     st_load(OBJ_UPRESET0, &proj_wire, sizeof proj_wire) == (int)sizeof b &&
-                     !memcmp(&proj_wire, &b, sizeof b));
+                     st_load(OBJ_UPRESET0, proj_wire_u.raw, sizeof proj_wire_u.raw) == (int)sizeof b &&
+                     !memcmp(proj_wire_u.raw, &b, sizeof b));   /* ((2.0) proj_wire: SKF4's 2,560, the staging all) */
         b.nslot = 3;
         bad += check("a bank with the wrong slot count is refused", put_all(7, &b, sizeof b, st_crc32(&b, sizeof b)) == 2u);
     }
@@ -496,6 +568,7 @@ int main(void)
         song.playing = 0;
         bad += check("  a bank chunk of the wrong length: refused at begin (1)", put_begin(17u, 100u, 0) == 1u);
     }
+#if FELUCCA_LEGACY                                       /* ((2.0) the converter's: web/conv) */
     /* (Skiff phase 5) an older archive: its projects (SKF1) stored as they come, SKF2 once its music (id 0, the last
      * object of a restore) is in: their tracks patterns */
     reset();
@@ -510,7 +583,7 @@ int main(void)
         ok &= put_all(0, &w, sizeof w, st_crc32(&w, sizeof w)) == 0 && trk[0].step[0].note[0] == 60u &&
               st_load(OBJ_PROJECT0, &st, sizeof st) == (int)PROJ_SKF->size && *(const uint32_t *)st.raw == PROJ_SKF->magic &&
               *(const uint32_t *)proj_slot[0].raw == PROJ_SKF->magic && pool_used(0) &&
-              st.raw[68u + PROJ_SKF->nt * (PROJ_NP + 2u)] == 1u;
+              st.raw[PROJ_ENT4] == 1u;                 /* ((2.0) SKF4: track 1's entry A names pattern 001) */
         bad += check("(phase 5) an older archive: its projects as they came, SKF2 once its music is restored", ok);
     }
     /* (phase 6) project objects of 1280 (SKF2), 2048 (SKF3) and 3840 bytes (a retained slot holding one): each kept in
@@ -532,6 +605,27 @@ int main(void)
               put_all(0, &w3, PROJ_STORE3, st_crc32(&w3, PROJ_STORE3)) == 0;
         bad += check("(phase 6) project objects of 1280, 2048 and 3840 bytes: SKF2 and SKF3 kept as they are", ok);
     }
+#else
+    /* (2.0) project objects of 2048 (SKF3) and 3840 bytes (1.x's backups: a slot's whole RAM copy): kept as SKF3, and a
+     * backup gives the record's own size (2048: 1.4.x restores it) */
+    reset();
+    {
+        static project_t pj;
+        static project_store_t w3;
+        static uint8_t w3x[PROJ_STORE_SIZE];
+        int ok;
+        project_capture(&pj);
+        ok = proj_pack2(&w3, &pj, &PROJ_SKF3) && put_all(5, &w3, PROJ_STORE3, st_crc32(&w3, PROJ_STORE3)) == 0 &&
+             st_load(OBJ_PROJECT0 + 3u, &st, sizeof st) == (int)PROJ_STORE3 && *(const uint32_t *)st.raw == PROJ_MAGIC3;
+        memset(w3x, 0, sizeof w3x);
+        memcpy(w3x, &w3, PROJ_STORE3);
+        ok &= put_all(5, w3x, sizeof w3x, st_crc32(w3x, sizeof w3x)) == 0 &&
+              st_load(OBJ_PROJECT0 + 3u, &st, sizeof st) == (int)PROJ_STORE3 &&
+              list(5, &len, &crc) == 0 && len == PROJ_STORE3 && crc == st_crc32(&w3, PROJ_STORE3) &&
+              put_all(0, &w3, PROJ_STORE3, st_crc32(&w3, PROJ_STORE3)) == 0;
+        bad += check("(2.0) project objects of 2048 and 3840 bytes (SKF3): kept as they are, listed at 2048", ok);
+    }
+#endif
     printf("backup test %s\n", bad ? "FAILED" : "passed");
     return bad != 0;
 }

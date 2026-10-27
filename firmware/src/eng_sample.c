@@ -151,6 +151,15 @@ static void smp_sine(int32_t *out, uint32_t n, const vmod_t *m, int32_t d16, int
     *ph = p;
     *y = s;
 }
+/* user slot k's name, its printable ASCII (nm holds 9; "" for an empty slot): the editor's SMP_INFO, (2.0, #35) a user
+ * kit on the footer */
+static void smp_user_name(uint32_t k, char *nm)
+{
+    const smp_user_hdr_t *h = (const smp_user_hdr_t *)smp_user_xip(k);
+    uint32_t j;
+    for (j = 0; j < 9u; j++)
+        nm[j] = j < 8u && usr_nz[k % SMP_USER_SLOTS] && h->name[j] >= 32 && h->name[j] < 127 ? h->name[j] : 0;
+}
 /* SET / SRC si (0..SMP_NALL - 1) has no sample data: an empty or invalid user slot, a built-in set without data */
 static int smp_set_missing(uint32_t si)
 {
@@ -165,22 +174,30 @@ static inline const smp_zone_t *smp_zone(uint32_t zi)
     return zi < 0x8000u ? &SMP_ZONES[zi] : &usr_zone[(zi >> 5) & 3u][zi & 31u];
 }
 
-/* voice: ph[0] position (samples), ph[1] fraction Q16, s[0] predictor, s[1] step
- * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] step Q16 */
-static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
+/* zone z's IMA ADPCM code at *pos decoded: ps[0] the predictor (the sample), ps[1] the step index; *pos on by one.
+ * ((2.0, #35) SAMPLE's and DRUM's user kits') */
+static inline void adpcm_next(const smp_zone_t *z, uint32_t *pos, int32_t *ps)
 {
-    uint32_t pos = v->ph[0], b = SMP_DATA[z->off + (pos >> 1)];
-    uint32_t code = (pos & 1u) ? (b >> 4) : (b & 15u);
-    int32_t step = IMA_STEP[(uint32_t)v->s[1] <= 88u ? v->s[1] : 88], vd = step >> 3;
+    uint32_t b = SMP_DATA[z->off + (*pos >> 1)];
+    uint32_t code = (*pos & 1u) ? (b >> 4) : (b & 15u);
+    int32_t step = IMA_STEP[(uint32_t)ps[1] <= 88u ? ps[1] : 88], vd = step >> 3;
     if (code & 4u)
         vd += step;
     if (code & 2u)
         vd += step >> 1;
     if (code & 1u)
         vd += step >> 2;
-    v->s[0] = clamp(v->s[0] + ((code & 8u) ? -vd : vd), -32768, 32767);
-    v->s[1] = clamp(v->s[1] + IMA_IDX[code & 7u], 0, 88);
-    pos++;
+    ps[0] = clamp(ps[0] + ((code & 8u) ? -vd : vd), -32768, 32767);
+    ps[1] = clamp(ps[1] + IMA_IDX[code & 7u], 0, 88);
+    (*pos)++;
+}
+/* voice: ph[0] position (samples), ph[1] fraction Q16, s[0] predictor, s[1] step
+ * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] step Q16. ((2.0) A call per sample decoded, as it
+ * always was: inlined, the render loop's cost grows past its budget, tests/target_budget.txt) */
+static __attribute__((noinline)) int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
+{
+    uint32_t pos = v->ph[0];
+    adpcm_next(z, &pos, v->s);
     if (pos > z->le && z->looped && loop) {
         pos = z->ls;
         v->s[0] = z->pred;
@@ -276,14 +293,14 @@ static const engine_t ENG_SAMPLE = {
     .name = "SAMPLE",
     .page_title = {"SET", "TONE"},
     .edit = {
-        {"SET", F_ENUM, 0, SMP_PICK_MAX, 0, SMP_ALL_NAMES, 0},
-        {"PITCH", F_SEMI, -24, 24, 0, 0, 0},
-        {"BITS", F_INT, 0, 127, 0, 0, 0},
-        {"LOOP", F_ENUM, 0, 1, 1, N_ONOFF_E, 0},
-        {"CUTOFF", F_INT, 0, 127, 127, 0, 0},
-        {"-", F_INT, 0, 0, 0, 0, 0},
-        {"DRIVE", F_PCT, 0, 127, 0, 0, 0},
-        {"-", F_INT, 0, 0, 0, 0, 0},
+        {"SET", SMP_ALL_NAMES, 0, SMP_PICK_MAX, 0, F_ENUM, 0},
+        {"PITCH", 0, -24, 24, 0, F_SEMI, 0},
+        {"BITS", 0, 0, 127, 0, F_INT, 0},
+        {"LOOP", N_ONOFF_E, 0, 1, 1, F_ENUM, 0},
+        {"CUTOFF", 0, 0, 127, 127, F_INT, 0},
+        {"-", 0, 0, 0, 0, F_INT, 0},
+        {"DRIVE", 0, 0, 127, 0, F_PCT, 0},
+        {"-", 0, 0, 0, 0, F_INT, 0},
     },
     .presets = SMP_PRESET_TABLE,
     .npresets = SMP_NPRESETS,
