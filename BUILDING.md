@@ -150,3 +150,17 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 
 Installing firmware is at your own risk. If an install fails and the FM-1 no longer
 starts, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
+### Optional mapped USB capture (FM-1)
+
+The default remains stereo. For ten configurable mono capture slots at
+44.1 kHz / 16-bit (tracks, master and shared effects):
+
+```sh
+FELUCCA_USB_6CH=1 FELUCCA_USB_CHANNELS=10 FELUCCA_CDC=0 ./build.sh --release 2.0.1-usb10fast
+```
+
+Six/eight channels are optional fallbacks. See
+[USB routing and acceptance tests](docs/usb-ten-channel-routing.md).
+Builds do not flash hardware. `tests/run_usb_tests.sh` runs the focused USB
+checks and is included in the normal host test runner.

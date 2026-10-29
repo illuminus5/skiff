@@ -28,7 +28,13 @@ static int erase_error;
 static uint32_t erases;
 static int st_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, nor + off, n); return 0; }
 static int st_erase(uint32_t off) { if (erase_error) return -8; memset(nor + off, 0xFF, 4096); erases++; return 0; }
-static int st_prog(uint32_t off, const void *src, uint32_t n) { memcpy(nor + off, src, n); return 0; }
+static int st_prog(uint32_t off,const void *src,uint32_t n) {
+#ifdef ST_TEST_PROG
+    return ST_TEST_PROG(off,src,n);
+#else
+    memcpy(nor+off,src,n);return 0;
+#endif
+}
 static uint32_t irq_save(void) { return 0; }
 static void irq_restore(uint32_t f) { (void)f; }
 static uint32_t fl_jedec_ram(void) { return 0; }
@@ -182,6 +188,7 @@ static uint32_t get(uint32_t id, uint32_t off, uint32_t count)
     return rep[1];
 }
 
+#ifndef BACKUP_TEST_NO_MAIN
 int main(void)
 {
     int bad = 0;
@@ -629,3 +636,5 @@ int main(void)
     printf("backup test %s\n", bad ? "FAILED" : "passed");
     return bad != 0;
 }
+
+#endif /* BACKUP_TEST_NO_MAIN */

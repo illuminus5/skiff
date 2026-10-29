@@ -810,6 +810,14 @@ static void draw_columns(void)
         }
         return;
     }
+#if FELUCCA_TAPE
+    if(cur_page()->fam==FAM_FX && cur_page()->graph==GR_NONE){
+        uint32_t level=tape_send[song.sel%NTRK];fmt_int(val,(int32_t)level);
+        draw_column(0,"SEND",val,"%",VR_LIVE,(int32_t)level*10,ICON_AUTO);
+        for(c=1;c<4;c++)draw_column(c,"","","",VR_LIVE,-1,ICON_AUTO);
+        return;
+    }
+#endif
     if (cur_page()->graph == GR_FEEL) {                /* (Skiff 2.0) FEEL: CHANCE RATCHET NUDGE TYPE of the selection's
                                                         * first step (none: the cursor's; DIM there, or a value at rest) */
         static const char *const FL[4] = {"CHANCE", "RATCHET", "NUDGE", "TYPE"};

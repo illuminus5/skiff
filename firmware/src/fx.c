@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "usb_routing.c"
 /* Effects: per-track DIST insert, then sends into three
  * shared buses (chorus, tempo delay, reverb). Mono buses (HALL with its stereo difference), stereo dry mix. */
 #define DLY_LEN 65536u           /* 1.49 s: 1/4 at 40 BPM fits */
@@ -315,6 +316,15 @@ static uint32_t div_samples(uint32_t div)
     return div < 6u ? quarter / DIV_DEN[div] : div < 10u ? quarter << (div - 5u) : quarter / DIV_DEN[div % 6u];
 }
 
+#if FELUCCA_TAPE
+#include "tape_inputs.h"
+#include "tape_fx.h"
+#define TAPE_NO_SYSTEM_HEADERS 1
+#include "tape_core.h"
+#undef TAPE_NO_SYSTEM_HEADERS
+static tape_t tape_state;
+static volatile uint8_t tape_wanted; /* audio-side commands only in this prototype */
+#endif
 #include "perform.c"                                 /* the FX hold layer's effects (the master) */
 #include "click.c"                                   /* the metronome's click (after the master: audio.c) */
 #include "duck.c"                                    /* (Skiff) ducking: a track under another's hits (mix_part) */
@@ -646,11 +656,17 @@ static __attribute__((noinline)) void cho_mode(const int32_t *cho_in, const int3
         fx.cho_w++;
         wet[i] = fx.cho_y << 1;
     }
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[2][i]=wet[i];
+#endif
     for (i = 0; i < n; i++) {                           /* the delay as in fx_buses */
         int32_t x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)];
         fx.dly_lp += mulq15(x - fx.dly_lp, col);
         dly_buf[fx.dly_w & (DLY_LEN - 1u)] = (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, dfb), -32768, 32767);
         fx.dly_w++;
+#if FELUCCA_USB_6CH
+        usb_fx_return[1][i]=mulq15(x << 1, dmix);
+#endif
         wet[i] += mulq15(x << 1, dmix);
     }
 }
@@ -682,6 +698,28 @@ static int32_t part_buf[CTL];                            /* a part's block (mix_
 #define SM1_d send_d
 #define SM1_v send_r
 #define SM1_b part_buf
+#endif
+
+#if FELUCCA_TAPE
+/* Prefader stereo send: unity at 100%, with source pan/spread preserved.
+ * Core sums are separate; CPU0 reads them only after C1_WAIT. */
+static __attribute__((noinline)) void tape_track_send(track_t *t,const int32_t *b,const int32_t *d,
+    uint32_t n,int32_t gl,int32_t gr,int32_t dl,int32_t dr SM_DECL)
+{
+    uint32_t k=(uint32_t)(t-trk),c=0;
+    if((!tape_wanted&&!tape_state.enabled) || k>=6 || !tape_send_block[k] || t->p[P_MUTE])return;
+#if FELUCCA_CPU2
+    c=sm==&mx[1];
+#endif
+    int32_t gain=(int32_t)tape_send_block[k];
+    for(uint32_t i=0;i<n;i++){
+        int32_t x=b[i],y=d?d[i]:0;
+        int32_t l=(int32_t)(((int64_t)x*gl+(int64_t)y*dl)/4096);
+        int32_t r=(int32_t)(((int64_t)x*gr+(int64_t)y*dr)/4096);
+        tape_input[c].l[i]+=(int32_t)((int64_t)l*gain/100);
+        tape_input[c].r[i]+=(int32_t)((int64_t)r*gain/100);
+    }
+}
 #endif
 
 /* the model changed (to rt): the old one's block fades out (HALL's stereo difference with it), its buffers are
@@ -734,15 +772,25 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
         dly_buf[fx.dly_w & (DLY_LEN - 1u)] =
             (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
         fx.dly_w++;
+#if FELUCCA_USB_6CH
+        usb_fx_return[2][i]=y;
+        usb_fx_return[1][i]=mulq15(x << 1,dmix);
+#endif
         y += mulq15(x << 1, dmix);
         wet[i] = y;
     }
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[0][i]=-wet[i];
+#endif
     rt = song.g[G_RTYPE] == 1 || song.g[G_RTYPE] == 2 ? song.g[G_RTYPE] : 0;   /* (phase 9) HALL) */
     hl.side = 0;
     if (rt != fx.rtype)
         rev_switch(rev_in, wet, n, rt);
     else
         rev_model((uint32_t)rt, rev_in, wet, n);
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[0][i]+=wet[i];
+#endif
 }
 
 /* after the buses: HALL's stereo difference to the left and from the right of the dry mix (the wet bus adds the
@@ -986,8 +1034,12 @@ static __attribute__((noinline)) void lpan_mix(track_t *t, const int32_t *b, con
             SM(d)[i] += mulq15(xs, dl);
         if (r)
             SM(v)[i] += mulq15(xs, r);
-        SM(l)[i] += ((x - yl) * gl) >> 12;
-        SM(r)[i] += ((x - yr) * gr) >> 12;
+        int32_t left=((x-yl)*gl)>>12,right=((x-yr)*gr)>>12;
+        SM(l)[i]+=left;SM(r)[i]+=right;
+#if FELUCCA_USB_ROUTING
+        uint32_t usb_mask=usb_route_modes[(uint32_t)(t-trk)];
+        if(usb_mask)usb_route_track(usb_mask,i,left,right);
+#endif
     }
     t->peak = pk;
 }
@@ -995,6 +1047,9 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
 {
     int32_t *d = SPREAD_BUF(t), *e = t->lpan_on ? LPAN_BUF(t) : 0;
     uint32_t i, k = (uint32_t)(t - trk);
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask = usb_route_modes[k];
+#endif
     int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN], s = (t->p[P_SPRD] + 1) >> 1;
     int32_t pa = clamp(pan - s, -64, 63), pb = clamp(pan + s, -64, 63);
     int32_t gla = 4096 - (pa > 0 ? pa * 64 : 0), gra = 4096 + (pa < 0 ? pa * 64 : 0);
@@ -1028,9 +1083,17 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             duck_apply(k, e, n);
     }
     if (e) {
+#if FELUCCA_TAPE
+        int32_t tl=4096-(pan>0?pan*64:0),tr=4096+(pan<0?pan*64:0);
+        tape_track_send(t,b,d,n,tl,0,-tl,0 SM_ARG(sm));
+        tape_track_send(t,b,e,n,0,tr,0,-tr SM_ARG(sm));
+#endif
         lpan_mix(t, b, d, e, n SM_ARG(sm));
         return;
     }
+#if FELUCCA_TAPE
+    tape_track_send(t,b,d,n,glm,grm,gld,grd SM_ARG(sm));
+#endif
     for (i = 0; i < n; i++) {
         int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x, y = ((d[i] >> 2) * lvl) >> 10;
         int32_t xs = clamp(x, -xmax, xmax);
@@ -1042,8 +1105,15 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             SM(d)[i] += mulq15(xs, dl);
         if (r)
             SM(v)[i] += mulq15(xs, r);
-        SM(l)[i] += ((x * glm) >> 12) + ((y * gld) >> 12);
-        SM(r)[i] += ((x * grm) >> 12) + ((y * grd) >> 12);
+        {
+            int32_t l = ((x * glm) >> 12) + ((y * gld) >> 12);
+            int32_t rr = ((x * grm) >> 12) + ((y * grd) >> 12);
+            SM(l)[i] += l;
+            SM(r)[i] += rr;
+#if FELUCCA_USB_ROUTING
+            if (usb_mask) usb_route_track(usb_mask, i, l, rr);
+#endif
+        }
     }
     t->peak = pk;
 }
@@ -1097,6 +1167,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
 {
     int32_t *b = SM(b);
     uint32_t i;
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask = usb_route_modes[(uint32_t)(t - trk)];
+#endif
 #if FELUCCA_CPU2
     uint32_t nr;
 #endif
@@ -1143,6 +1216,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
             AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */
         if ((duck_on >> (t - trk)) & 1u)
             duck_apply((uint32_t)(t - trk), b, n);      /* (Skiff) duck.c: under its source's hits */
+#if FELUCCA_TAPE
+        tape_track_send(t,b,0,n,gl,gr,0,0 SM_ARG(sm));
+#endif
         for (i = 0; i < n; i++) {
             int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
             int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
@@ -1154,8 +1230,14 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
                 SM(d)[i] += mulq15(xs, d);
             if (r)
                 SM(v)[i] += mulq15(xs, r);
-            SM(l)[i] += (x * gl) >> 12;
-            SM(r)[i] += (x * gr) >> 12;
+            {
+                int32_t l = (x * gl) >> 12, rr = (x * gr) >> 12;
+                SM(l)[i] += l;
+                SM(r)[i] += rr;
+#if FELUCCA_USB_ROUTING
+                if (usb_mask) usb_route_track(usb_mask, i, l, rr);
+#endif
+            }
         }
         t->peak = pk;
     }
@@ -1183,6 +1265,9 @@ static void c1_parts(uint32_t arg)                      /* arg: the tracks (bit 
 {
     uint32_t i, n = arg >> 8;
     mixsum_t *sm = &mx[1];
+#if FELUCCA_TAPE
+    for(i=0;i<n;i++)tape_input[1].l[i]=tape_input[1].r[i]=0;
+#endif
     for (i = 0; i < n; i++)
         sm->l[i] = sm->r[i] = sm->c[i] = sm->d[i] = sm->v[i] = 0;
     for (i = 0; i < NPART; i++)
@@ -1233,10 +1318,46 @@ static __attribute__((noinline)) AUDIO_RAM void perf_master(int32_t *out, uint32
     }
 }
 
+
+
+#if FELUCCA_TAPE
+#include "tape_sequence.h"
+#include "tape_bridge.h"
+#endif
+
+static __attribute__((noinline)) void mix_finish(int32_t *out,uint32_t n,int perf,int32_t mg)
+{
+    uint32_t i;
+    if (perf) {
+        AUDIO_FAR(perf_master)(out, n);
+#if FELUCCA_TAPE
+        skiff_tape_output(out,n);
+#endif
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        int32_t l = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
+        int32_t r = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
+        master_out(&l, &r);
+        out[2u * i] = l;
+        out[2u * i + 1u] = r;
+    }
+    /* tape final output */
+#if FELUCCA_TAPE
+    skiff_tape_output(out,n);
+#endif
+}
+
 static void mix_block(int32_t *out, uint32_t n)
 {
     uint32_t i;
     int perf;
+#if FELUCCA_TAPE
+    if(tape_wanted||tape_state.enabled)tape_input_begin(n);
+#endif
+#if FELUCCA_USB_ROUTING
+    usb_route_begin(n);
+#endif
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++)
         send_c[i] = send_d[i] = send_r[i] = mix_l[i] = mix_r[i] = 0;
@@ -1280,15 +1401,5 @@ static void mix_block(int32_t *out, uint32_t n)
     fx_buses(send_c, send_d, send_r, wet, n);
     if (hl.side)
         rev_side_mix(mix_l, mix_r, n);                  /* HALL: stereo */
-    if (perf) {
-        AUDIO_FAR(perf_master)(out, n);
-        return;
-    }
-    for (i = 0; i < n; i++) {
-        int32_t l = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
-        int32_t r = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
-        master_out(&l, &r);
-        out[2u * i] = l;
-        out[2u * i + 1u] = r;
-    }
+    mix_finish(out,n,perf,mg);
 }

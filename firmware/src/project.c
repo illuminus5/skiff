@@ -84,6 +84,9 @@
  *
  * Built on the Mac too (tests/project_test.c, -DPROJ_HOST): the part above the #ifndef
  * PROJ_HOST needs core.h, params.c (TP) and engines.c. */
+#if FELUCCA_TAPE
+#include "tape_store.h"
+#endif
 #define PROJ_MAGIC 0x534B4631u                 /* (Skiff) "SKF1": FUN9 + the steps' NUDGE (see the top) */
 #define PROJ_MAGIC2 0x534B4632u                /* (Skiff phase 5) "SKF2": no steps, each track's list (proj_pack2) */
 #define PROJ_MAGIC_V9 0x46554E39u              /* "FUN9": FUN8, 64 bytes longer (the DRUM lane levels, 99 parameters) */
@@ -137,6 +140,9 @@ typedef struct {
     uint8_t scene[PROJ_SCENES];                /* (SKF2) the scenes (bank.c) */
     uint8_t dx_on;                             /* (Skiff phase 7) 1: dx is the project's DRUM-X kit; 0 none (the factory's) */
     dx_lane_t dx[DV_NLANE];                    /* (SKF3) the DRUM-X kit (drumx_voice.c dx_kit), one for every DRUM-X track */
+#if FELUCCA_TAPE
+    uint8_t tape[TAPE_STORE_BYTES]; /* decoded TP1 metadata, never tape audio */
+#endif
     uint32_t sum;
 } project_t;
 #if FELUCCA_LEGACY
@@ -209,6 +215,11 @@ _Static_assert(PROJ_ENT4 + NTRK * (NENT * 4u + 1u) + PROJ_SCENES + 2u + 1u + DV_
                1u + 2u * GSID_COUNT + NTRK * (4u + SID_COUNT) + PROJ_NAME_LEN + 4u <= PROJ_STORE4, "SKF4 holds it all");
 #define PROJ_SKF (&PROJ_SKF4)                  /* the format a save writes */
 #define PROJ_NAME_AT(f) ((f)->size - 4u - PROJ_NAME_LEN)
+#if FELUCCA_TAPE
+#define PROJ_TAPE_AT (PROJ_STORE4-4u-PROJ_NAME_LEN-TAPE_STORE_BYTES)
+_Static_assert(PROJ_ENT4+NTRK*(NENT*4u+1u)+PROJ_SCENES+2u+1u+DV_NLANE*11u+NTRK*FM6_PACKED+
+    1u+2u*GSID_COUNT+NTRK*(4u+SID_COUNT)<=PROJ_TAPE_AT,"TP1 overlaps SKF4 parameters");
+#endif
 #define PROJ_FM6_AT(f) (PROJ_NAME_AT(f) - (f)->nt * FM6_PACKED)
 #define PROJ_DX_MARK 0x58u                    /* ('X') the kit follows */
 #define PROJ_DX_AT(f) (PROJ_FM6_AT(f) - 1u - DV_NLANE * sizeof(dx_lane_t))   /* (a dx format's) */
@@ -1020,6 +1031,11 @@ static int proj_pack4(project_store_t *out, const project_t *q)
         if (!(n = sid_put(b + pos, q->t[t].p))) return 0;
         pos += n;
     }
+#if FELUCCA_TAPE
+    {tape_store_state_t check;int present=tape_store_decode(&check,q->tape);
+        if(pos>PROJ_TAPE_AT||present<0)return 0;
+        if(present)memcpy(b+PROJ_TAPE_AT,q->tape,TAPE_STORE_BYTES);}
+#endif
     {
         char nm[PROJ_NAME_LEN + 1u];
         memcpy(b + PROJ_NAME_AT(&PROJ_SKF4), nm, proj_name_get(nm, (const uint8_t *)q->name));
@@ -1073,6 +1089,13 @@ static int proj_unpack4(project_t *q, const uint8_t *b)
             q->t[t].step[e].time = ST_REST;               /* (empty: the patterns hold the steps) */
 #endif
     }
+#if FELUCCA_TAPE
+    if(pos<=PROJ_TAPE_AT){
+        tape_store_state_t check;int present=tape_store_decode(&check,b+PROJ_TAPE_AT);
+        if(present<0)return 0;
+        if(present)memcpy(q->tape,b+PROJ_TAPE_AT,TAPE_STORE_BYTES);
+    }
+#endif
 #if FELUCCA_LEGACY
     chain_defaults(&q->chain);
 #endif
@@ -1364,6 +1387,9 @@ static void project_capture(project_t *p)
         p->dx_on = 1;                              /* the factory's when loaded; a project of before as it was) */
         memcpy(p->dx, dx_kit, sizeof p->dx);
     }
+#if FELUCCA_TAPE
+    skiff_tape_store(p->tape);
+#endif
     p->sum = proj_sum(p);
 }
 
@@ -1478,6 +1504,9 @@ static int project_restore_runtime(const project_t *input)
     project_t *p = &proj_scratch;
     uint32_t i, k;
     if (!proj_ok(input) || !proj_engines_ok(input)) return 1;
+#if FELUCCA_TAPE
+    {tape_store_state_t check;if(tape_store_decode(&check,input->tape)<0)return 1;}
+#endif
     if (p != input) memcpy(p, input, sizeof *p);
 #if FELUCCA_LEGACY
     proj_drums_to_part(p);                              /* a RAM slot of firmware before 1.0 */
@@ -1489,6 +1518,10 @@ static int project_restore_runtime(const project_t *input)
     panic_req = (1u << NTRK) - 1u;
     fm1_irq_off();                                      /* the audio ISR must not see half a project */
     seq_stop();
+#if FELUCCA_TAPE
+    skiff_tape_project_reset();
+    skiff_tape_restore(p->tape);
+#endif
     launch_drop();                                      /* (Skiff) the bank's staged patterns: not over it (launch.c) */
     transport_req = 0;
 #if FELUCCA_LEGACY
@@ -1771,6 +1804,12 @@ static uint32_t autosave_sig(void)
     h = as_mix(h, trk_pid, sizeof trk_pid);
     i = (ui_prefs & PREF_RESTORE_OFF) != 0;           /* (RESTORE LAST back ON: a round, the project written) */
     h = as_mix(h, &i, sizeof i);
+#if FELUCCA_TAPE
+    {uint32_t v[4]={tape_seq_length,tape_filter,tape_lfo,tape_live&TAPE_STORE_LIVE_MASK};
+        h=as_mix(h,v,sizeof v);
+        for(i=0;i<6;i++){uint32_t send=tape_send[i];h=as_mix(h,&send,sizeof send);}
+        for(i=0;i<TS_STEPS;i++){uint32_t step=tape_steps[i];h=as_mix(h,&step,sizeof step);}}
+#endif
     return as_mix(h, proj_name, sizeof proj_name);
 }
 
@@ -1880,6 +1919,9 @@ static void project_new(void)
     panic_req = (1u << NTRK) - 1u;
     fm1_irq_off();
     seq_stop();
+#if FELUCCA_TAPE
+    skiff_tape_project_reset();
+#endif
     launch_drop();
     transport_req = 0;
     memset(&motion, 0, sizeof motion);

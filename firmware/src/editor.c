@@ -23,6 +23,9 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 
 enum { ED_KIT_GET = 74, ED_KIT_PUT };                 /* (Skiff W3) the DRUM-X kit (INFO 4B 01 8) */
 enum { ED_SMP_MIX = 81 };                             /* (Skiff, #21) a user slot's sounds' LEVEL REV DLY (INFO 57 01 bit 5) */
+#if FELUCCA_USB_TRACE
+enum { ED_USB_TRACE = 82 }; /* read-only diagnostic build extension */
+#endif
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -410,6 +413,10 @@ static void ed_motion_reply(uint32_t k, uint32_t rc, uint32_t kinds)
 static int ed_args_ok(uint32_t cmd, const uint8_t *a, uint32_t n)
 {
     switch (cmd) {
+#if FELUCCA_USB_TRACE
+    case ED_USB_TRACE:
+        return !n;
+#endif
     case ED_INFO: case ED_DUMP: case ED_SMP_INFO: case ED_PING:
     case ED_UI_STATE: case ED_UI_PALETTES:
         return !n;
@@ -516,6 +523,23 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     if (ed_project_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_song_handle(cmd, a, na)) { ed_send(); return; }
     switch (cmd) {
+#if FELUCCA_USB_TRACE
+    case ED_USB_TRACE: {
+        _Static_assert(sizeof(usb_trace_entry_t) == 9u && sizeof(usb_trace_t) == 296u,
+                       "USB trace wire layout is fixed for pi32v2");
+        _Static_assert(1u + 294u + 294u / 7u <= sizeof ed_out - 6u,
+                       "USB trace reply fits editor SysEx buffer");
+        /* Main-loop reader: USB writes only from interrupt service. Copy with
+         * IRQs off, then encode/send outside the critical section. */
+        static usb_trace_t snapshot;
+        fm1_irq_off();
+        snapshot = usb_trace;
+        fm1_irq_on();
+        ed_b(2); /* fixed wire layout; omit two trailing alignment bytes */
+        ed_bk_pack((const uint8_t *)&snapshot, 294u);
+        break;
+    }
+#endif
     case ED_MOTION: {
         track_t *t = &trk[a[0]]; uint32_t rc = 0;
         if (na > 1u && a[1] == 7u) {

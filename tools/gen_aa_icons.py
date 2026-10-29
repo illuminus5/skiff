@@ -128,7 +128,7 @@ BIG_DEFAULT = ["x_play", "x_stop", "x_rec", "x_rec_o", "x_usb", "x_star",
                "wave", "algorithm", "phase", "bits", "sample", "mouth", "trio", "drawbar", "slice", "grain",
                "phys", "drum", "noise", "mod", "tempo",
                "x_song", "x_motion", "x_motion_del", "x_doctor", "x_knob", "rate", "x_bat0", "x_bat1", "x_bat3", "x_bat4", "x_bat_chg",
-               "x_nofile", "midi"]   # ((Skiff 1.3) midi: the MENU's MIDI tab)
+               "x_nofile", "midi", "tape"]   # ((Skiff 1.3) midi: the MENU's MIDI tab)
 
 
 def glyph_table(font_path):

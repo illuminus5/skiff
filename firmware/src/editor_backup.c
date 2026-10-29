@@ -150,7 +150,8 @@ static uint32_t ed_bk_commit(void)
         const sks_t *s = (const sks_t *)raw;
         if (ed_bk_len == sizeof *s ? s->magic != SKS_MAGIC ||
                                      !ed_bk_set_ok(s->palette, s->lowcut, s->zoom, s->bold, s->fav_filter, &s->panel)
-                                   : ed_bk_len != sizeof *p || p->magic != PERSIST_MAGIC ||
+                                   : ((ed_bk_len != sizeof *p || p->magic != PERSIST_MAGIC) &&
+                                     (!usb_legacy_size(p->magic) || ed_bk_len != sizeof *p + usb_legacy_size(p->magic))) ||
                                      !ed_bk_set_ok(p->palette, p->lowcut, p->zoom, p->bold, p->favorites.filter, &p->panel))
             return 2;
         if (ed_bk_len != sizeof *s) {
@@ -232,7 +233,9 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)
         if (n != 12u || a[6] > 15u || a[11] > 15u) return 1;
         uint32_t len = ed_bk_r32(a + 2);
         if (len > ED_BK_MAX || (a[1] == 0u && !proj_store_len(len)) ||
-            (a[1] == 1u && len != sizeof(persist_t) && len != sizeof(sks_t)) ||
+            (a[1] == 1u && len != sizeof(persist_t) && len != sizeof(sks_t) &&
+             len != sizeof(persist_t)+4u && len != sizeof(persist_t)+8u &&
+             len != sizeof(persist_t)+36u && len != sizeof(persist_t)+40u) ||
             (a[1] >= 2u && a[1] <= 5u && len && !proj_store_len(len)) ||
             ((a[1] == 6u || a[1] == 7u) && len && len != sizeof(up_bank_t)) ||
             (a[1] == 8u && len && (!FELUCCA_LEGACY || len != sizeof(fm6_bank_t))) ||   /* ((2.0) only empty: web/conv) */

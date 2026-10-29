@@ -28,7 +28,7 @@ static void fm1_audio_init(int32_t *b, uint32_t n, void (*isr)(void), uint32_t p
 void isr_alnk0(void) {}
 #define FELUCCA_UAC 1                                  /* audio.c taps USB audio: here into tap */
 static int32_t tap_blk[2 * CTL];
-static void uac_tap(const int32_t *out, uint32_t n) { memcpy(tap_blk, out, 8u * n); }
+static void uac_tap(const int32_t *out, uint32_t n) { for(uint32_t i=0;i<n;i++) { tap_blk[2u*i]=out[UAC_CHANNELS*i];tap_blk[2u*i+1u]=out[UAC_CHANNELS*i+1u]; } }
 static void uac_render_start(void) {}
 #include "../firmware/src/audio.c"
 
@@ -48,6 +48,9 @@ static uint32_t nb;                                    /* blocks rendered */
 
 static void fresh(void)
 {
+#if FELUCCA_USB_6CH
+    usb_six_routes=1u | 2u<<5; /* master capture for metronome exclusion checks */
+#endif
     uint32_t p;
     memset(trk, 0, sizeof trk);
     memset(&song, 0, sizeof song); sel_set(0);
@@ -448,6 +451,7 @@ static void ext_clock(void)
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
+
     timing();
     sound();
     modes();
