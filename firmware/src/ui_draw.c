@@ -177,20 +177,27 @@ static void head_msg(int32_t x, int32_t maxw)
     if (lock)
         cv_icon_mid(x + 6, H_HEAD / 2, 16, ICON_X_LOCK, T_THEME, T_BG);
 }
-/* the octave, its right end at r (HEAD_GRP_R; (Skiff) BLOCKS: before the title) */
-static void head_group(int32_t r)
+/* the octave, its right end at r (HEAD_GRP_R; (Skiff) BLOCKS: before the title). lim: left bound past the
+ * BPM (lx + 8): when the title is long (FM6's OPERATOR n, #70) drop the "OCT" word and keep the signed
+ * number; if that still will not fit, draw nothing so it never covers the BPM */
+static void head_group(int32_t r, int32_t lim)
 {
     char b[8];
-    int32_t x;
-    {
-        str_cpy(b, song.octave > 0 ? "+" : "", sizeof b);
-        fmt_int(b + str_len(b), song.octave);
-        x = r - (text_w(&AF_S, "OCT") + 4 + text_w(&AF_M, b));
+    int32_t nw, full, x;
+    str_cpy(b, song.octave > 0 ? "+" : "", sizeof b);
+    fmt_int(b + str_len(b), song.octave);
+    nw = text_w(&AF_M, b);
+    full = text_w(&AF_S, "OCT") + 4 + nw;
+    if (r - full >= lim) {
+        x = r - full;
         GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
         x = cv_text(x, HEAD_SY, &AF_S, "OCT", T_MID);
+        GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
+        cv_text(x + 4, HEAD_MY, &AF_M, b, T_THEME);
+    } else if (r - nw >= lim) {                        /* (#70) crowded: number only */
+        GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
+        cv_text(r - nw, HEAD_MY, &AF_M, b, T_THEME);
     }
-    GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
-    cv_text(x + 4, HEAD_MY, &AF_M, b, T_THEME);
 }
 /* (Skiff 1.3, from Felucca 1.6.1 #251) MENU > LARGE: a tall card sets its value in one face over everything its knob
  * can show (L where every value fits L, else M, else S: tall_face), so turning it never changes the value's size.

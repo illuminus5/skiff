@@ -354,7 +354,7 @@ The colours differ in lightness as well as hue, and always appear with the track
 
 **BLOCKS**, the look (`firmware/src/ui_blocks.c`, `ui_home.c`). U2: the only one; FLAT and LINE and the MENU's STYLE are retired (a saved STYLE byte is left as it was):
 - Square tiles on BG, with no dividers.
-- **Header:** the transport on the left: the play state, which becomes the REC mark while a track is armed; the selected track's bar.beat (grey 1.1 when stopped); then "124 BPM". At the right, as the mockup's, the page's title in MID (HOME: the project's name; a layer its own: GLO SET, PERFORM BAR). The octave sits before the title only while shifted; the battery after it at every level (charging on USB). A message starts right of the BPM, at x 106 or later, and takes the title's place for a while.
+- **Header:** the transport on the left: the play state, which becomes the REC mark while a track is armed; the selected track's bar.beat (grey 1.1 when stopped); then "124 BPM". At the right, as the mockup's, the page's title in MID (HOME: the project's name; a layer its own: GLO SET, PERFORM BAR). The octave sits before the title only while shifted; when the title leaves too little room before the BPM (FM6's OPERATOR n), drop the "OCT" word and keep the signed number, or hide it rather than cover the BPM (#70). The battery after it at every level (charging on USB). A message starts right of the BPM, at x 106 or later, and takes the title's place for a while.
 - **Knob cards:**
   - The label (S) sits top left.
   - The value is big (V), with its unit right-aligned on the same baseline. The value drops to M, then S, when it is too wide.
