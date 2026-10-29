@@ -246,6 +246,7 @@ else
 fi
 
 if [ -f build/gen/felucca_tables.h ]; then
+    run "mapped USB profiles, routing, V2 settings and editor compatibility" sh tests/run_usb_tests.sh
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hostsim" tests/hostsim.c -lm
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/scale_test" tests/scale_test.c -lm
     run "scales: white-key mapping and note lifecycle" "$OUT/scale_test"
