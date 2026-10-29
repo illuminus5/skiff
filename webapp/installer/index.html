@@ -418,12 +418,14 @@ const SMK_MODELS = ["SMK-37 Pro", "SMK-37 Elite", "MKE-P37"];
 const needsStockUpdate = (id) => SMK_MODELS.includes(id.model) && id.version > 0 && id.version < 16;
 // (2.0.2, #64) why a running Skiff turned an official FM-1 file away, from where its reads stopped (firmware/src/ota.c
 // ota_stage, the counts pinned by tests/ota_test.c): after the header's 2, flash.bin's size (V16's file, a Skiff before
-// 2.0.2); within the boot area's 32 after the 3 before them, the head (the unit started on the other version). The
-// message's key (index_pkg.html), or null
+// 2.0.2); within the boot area's 32 after the 3 before them, the head (the unit started on the other version). (2.0.3,
+// #64) An SMK-37's head there is not V016's, the only SMK file the page takes: no version to name. The message's key
+// (index_pkg.html), or null
 function stockRefusal(product, e) {
-  if (!e || e.code !== "stopped" || !/^FM-1_/.test(product)) return null;
-  if (e.served === 2) return "stockSkiffOld";
-  if (e.served >= 4 && e.served <= 35) return product === "FM-1_016" ? "stockNeedsV15" : "stockNeedsV16";
+  const smk = SMK_MODELS.includes(product.split("_")[0]);
+  if (!e || e.code !== "stopped" || (!smk && !/^FM-1_/.test(product))) return null;
+  if (e.served === 2 && !smk) return "stockSkiffOld";
+  if (e.served >= 4 && e.served <= 35) return smk ? "stockSmkHead" : product === "FM-1_016" ? "stockNeedsV15" : "stockNeedsV16";
   return null;
 }
 
@@ -1002,6 +1004,7 @@ const TEXT = {
     stockSkiffOld: "書き込みはしていません。この Skiff はその公式版にまだ対応していません。最新の Skiff をインストールしてから、公式ファームウェアに戻してください。",
     stockNeedsV16: "書き込みはしていません。この FM-1 の起動部は V16 のものです（Skiff の前は V16 でした）。戻せるのは V16 です。M-VAVE の現在の FM-1.fwsc（V16）を選んでください。",
     stockNeedsV15: "書き込みはしていません。この FM-1 の起動部は V15 のものです（Skiff の前は V15 でした）。戻せるのは V15 です。M-VAVE の fm1_open リポジトリ（sdk/firmware）の FM-1_015.fwsc を選んでください。その後 M-VAVE の M-UPGRADE で V16 にできます。",
+    stockSmkHead: "書き込みはしていません。Skiff はそのまま使えます。このキーボードの起動部は V016 のものではありません（別の版で出荷されたか、Skiff の前のファームウェアが書き換えました）。そのため V016 には戻せません。Skiff が動いている間は、M-VAVE のアップデーターでも同じ確認で止まります。Skiff の前に何が入っていたかを、Skiff の GitHub で教えてください。",
     backup: "全体バックアップ保存中 ", stockError: "公式ファイルを確認できません: ",
     nomidi: "このブラウザでは使えません。Chrome か Edge で開いてください。", loadfail: "読み込めませんでした: ",
     start: "開始します", verify: "確認中", loader: "書き込みモードに切り替え中", write: "書き込み中",
@@ -1051,6 +1054,7 @@ const TEXT = {
     stockSkiffOld: "Nothing was written. This Skiff can't take that official version yet: install the current Skiff first, then return to the official firmware.",
     stockNeedsV16: "Nothing was written. This FM-1's start-up part is V16's (it ran V16 before Skiff), so its way back is V16: select M-VAVE's current FM-1.fwsc (V16).",
     stockNeedsV15: "Nothing was written. This FM-1's start-up part is V15's (it ran V15 before Skiff), so its way back is V15: select FM-1_015.fwsc from M-VAVE's fm1_open repository (sdk/firmware). M-VAVE's M-UPGRADE can take it to V16 afterwards.",
+    stockSmkHead: "Nothing was written, and Skiff runs as before. This keyboard's start-up part is not V016's (it came with another, or a firmware before Skiff rewrote it), so V016 can't go back on it; while Skiff runs, M-VAVE's own updaters stop at the same check. Please tell us on Skiff's GitHub what the keyboard ran before Skiff.",
     backup: "Saving complete backup ", stockError: "Cannot validate official firmware: ",
     nomidi: "This browser cannot do it. Open the page in Chrome or Edge.", loadfail: "Could not load: ",
     start: "Starting", verify: "Verifying", loader: "Switching to update mode", write: "Writing",
@@ -1086,7 +1090,7 @@ applyLang();
 const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textContent = t(k) + arg; };
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
-const meta = {"version": "2.0.2", "product": "FM-1_720", "pkg": "../../firmware/skiff-2.0.2.fwsc", "packages": [{"product": "FM-1_720", "pkg": "../../firmware/skiff-2.0.2.fwsc"}, {"product": "SMK-37 Pro_720", "pkg": "../../firmware/skiff-2.0.2-smk37.fwsc"}, {"product": "SMK-37 Elite_720", "pkg": "../../firmware/skiff-2.0.2-smk37-elite.fwsc"}, {"product": "MKE-P37_720", "pkg": "../../firmware/skiff-2.0.2-smk37-mke.fwsc"}]};
+const meta = {"version": "2.0.3", "product": "FM-1_720", "pkg": "../../firmware/skiff-2.0.3.fwsc", "packages": [{"product": "FM-1_720", "pkg": "../../firmware/skiff-2.0.3.fwsc"}, {"product": "SMK-37 Pro_720", "pkg": "../../firmware/skiff-2.0.3-smk37.fwsc"}, {"product": "SMK-37 Elite_720", "pkg": "../../firmware/skiff-2.0.3-smk37-elite.fwsc"}, {"product": "MKE-P37_720", "pkg": "../../firmware/skiff-2.0.3-smk37-mke.fwsc"}]};
 // one package per model ({ product, pkg }); a site made before the SMK builds carries only product + pkg
 const packages = meta.packages || [{ product: meta.product, pkg: meta.pkg }];
 const images = new Map();             // product -> logical image, loaded on first use
