@@ -180,6 +180,23 @@ EOF
     run "USB descriptors (AC collection MIDI first): CDC $t_cdc (presented $t_on), UAC $t_uac (48 kHz $t_48)" \
         "$OUT/usb_desc_test"
 done
+# FELUCCA_UAC_MIDI_LAST=1 / FELUCCA_UAC_AS_ONLY=1 (Skiff #59, Felucca #67 reopened): on some Macs the audio
+# streaming interface still gets no driver with the AC-collection fix alone. These physically renumber the
+# audio function (AS right after AC, MIDI last) and/or trim MIDI out of the AC collection; both default off
+for v in 1.1.0.1.1 1.1.0.0.1 0.1.0.1.1 1.1.0.1.0; do
+    IFS=. read -r t_cdc t_uac t_lay t_on t_48 <<EOF
+$v
+EOF
+    for ml_ao in "1 0" "0 1" "1 1"; do
+        read -r t_midilast t_asonly <<EOF
+$ml_ao
+EOF
+        $CC -DT_CDC="$t_cdc" -DT_UAC="$t_uac" -DT_LAYOUT="$t_lay" -DT_ON="$t_on" -DT_48K="$t_48" \
+            -DT_MIDILAST="$t_midilast" -DT_ASONLY="$t_asonly" -o "$OUT/usb_desc_test" tests/usb_desc_test.c
+        run "USB descriptors (MIDI_LAST $t_midilast, AS_ONLY $t_asonly): CDC $t_cdc (presented $t_on), UAC $t_uac (48 kHz $t_48)" \
+            "$OUT/usb_desc_test"
+    done
+done
 
 [ -f build/felucca.fwsc ] || { echo "run ./build.sh first"; exit 1; }
 
