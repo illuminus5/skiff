@@ -192,8 +192,9 @@ static inline void adpcm_next(const smp_zone_t *z, uint32_t *pos, int32_t *ps)
     (*pos)++;
 }
 /* voice: ph[0] position (samples), ph[1] fraction Q16, s[0] predictor, s[1] step
- * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] step Q16. ((2.0) A call per sample decoded, as it
- * always was: inlined, the render loop's cost grows past its budget, tests/target_budget.txt) */
+ * index, s[2] previous sample, s[3] current sample, s[4] zone, s[5] ((2.0.3) the declick: sample_note_on), s[6] its
+ * state, s[7] the CUT low-pass. ((2.0) A call per sample decoded, as it always was: inlined, the render loop's cost
+ * grows past its budget, tests/target_budget.txt) */
 static __attribute__((noinline)) int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
 {
     uint32_t pos = v->ph[0];
@@ -229,6 +230,9 @@ static void sample_note_on(track_t *t, voice_t *v)
         }
         v->s[4] = (int32_t)(zi == 0xFFFFu ? 0 : zi);
     }
+    v->s[5] = v->env ? clamp(v->s[7] + v->s[5], -32767, 32767) : 0;   /* ((2.0.3) struck while it still sounds (a ringing
+                                                                        * note again; MONO: every note): from where it
+                                                                        * was, falling away, not a click (sample_declick) */
     v->ph[0] = 0;
     v->ph[1] = 0;
     v->s[0] = 0;
@@ -238,6 +242,20 @@ static void sample_note_on(track_t *t, voice_t *v)
     v->s[7] = 0;                 /* lo-pass state */
     if (smp_set_missing(si))
         v->s[6] = 2;             /* 2 = no sample data: the sine (smp_sine; ph[0] its phase) */
+}
+
+/* ((2.0.3) found making the 2.0 video) a note struck while the voice still sounded starts from where it was (s[5],
+ * sample_note_on): that level added to the block, falling away (a time constant of 32 samples, -40 dB in 3 ms; no divide,
+ * and it reaches 0), not a click. Not inlined: sample_render's loop keeps its cost (tests/target_budget.txt) */
+static __attribute__((noinline)) void sample_declick(voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+{
+    int32_t off = v->s[5];
+    uint32_t i;
+    for (i = 0; i < n && off; i++) {
+        out[i] += voice_amp(off, m, i) << 1;
+        off -= (off >> 5) + (off > 0);
+    }
+    v->s[5] = off;
 }
 
 static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
@@ -287,6 +305,8 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
             break;
     }
     v->ph[1] = frac;
+    if (v->s[5])
+        sample_declick(v, out, n, m);
 }
 
 static const engine_t ENG_SAMPLE = {

@@ -392,6 +392,72 @@ static int drumkit_retrig_test(void)
           step1);
     return 0;
 }
+/* (2.0.3, found making the 2.0 video) SAMPLE struck again while it still sounds (MONO: the next note on its one voice):
+ * a steady sine in USR2 under every key, struck, then another key at block 30, the sine at its peak there: the second
+ * note starts the sample again (its position back at its start) and the steepest step at it is a small part of the
+ * level just before it, not the jump from that level to the second note's start */
+static int sample_retrig_test(void)
+{
+    static int16_t x[16000];
+    uint8_t *b = (uint8_t *)host_slots + 1u * SMP_USER_SIZE;
+    smp_user_hdr_t h;
+    track_t *t = &trk[0];
+    int32_t prev = 0, lvl = 0, step2 = 0;
+    uint32_t i, k, j, pos = 99999u;
+    slot_put(1, 1, 8000, 0);                             /* (one sound, 16000 samples) */
+    for (i = 0; i < 16000u; i++)                         /* (its peak at sample 959: the last before block 30) */
+        x[i] = (int16_t)(20000.0 * sin(i * 2.0 * 3.14159265 * 2.25 / 959.0));
+    memcpy(&h, b, sizeof h);
+    h.zone[0].lo = 0;
+    h.zone[0].hi = 127;
+    ima_enc(x, 16000u, b + SMP_USER_DATA + h.zone[0].off);
+    h.crc = st_crc32(b + SMP_USER_DATA, h.data_len);
+    memcpy(b, &h, sizeof h);
+    smp_user_scan(1);
+    for (k = 0; k < NTRK; k++)
+        for (j = 0; j < NVOICE; j++)
+            trk[k].v[j].active = trk[k].v[j].gate = 0;
+    host_tracks_init();
+    song.g[G_RTYPE] = 0;
+    host_preset(t, ENGI_SAMPLE, 0);
+    t->p[P_E0] = (int16_t)(SMP_NSETS + 1u);
+    t->p[P_E2] = t->p[P_E6] = 0;                         /* (BITS, DRIVE off, CUTOFF open, no sends) */
+    t->p[P_E4] = 127;
+    t->p[P_DIST] = t->p[P_CHOR] = t->p[P_REV] = t->p[P_DLY] = 0;
+    t->p[P_ATK] = 0;
+    t->p[P_DEC] = t->p[P_SUS] = 127;
+    t->p[P_VOICE] = V_MONO;
+    {
+        int32_t o[2 * CTL];
+        mix_block(o, CTL);                               /* (the engine in) */
+    }
+    trk_note_on(t, 60, 100);
+    for (k = 0; k < 40u; k++) {
+        int32_t o[2 * CTL];
+        if (k == 30u) {
+            lvl = abs(prev);
+            trk_note_on(t, 62, 100);                     /* (MONO: the same voice, struck again) */
+        }
+        mix_block(o, CTL);
+        if (k == 30u)
+            for (j = 0; j < NVOICE; j++)
+                if (t->v[j].active && t->v[j].note == 62)
+                    pos = t->v[j].ph[0];
+        for (i = 0; i < CTL; i++) {
+            int32_t d = abs(mix_l[i] - prev);
+            prev = mix_l[i];
+            if (k >= 30u && k < 33u)
+                step2 = d > step2 ? d : step2;
+        }
+    }
+    trk_note_off(t, 60);
+    trk_note_off(t, 62);
+    t->p[P_VOICE] = V_POLY;
+    check("(2.0.3) SAMPLE struck again while it sounds (MONO): from its start, no click",
+          pos <= 2u * CTL && lvl > 2000 && step2 * 6 < lvl,
+          "position %u after the second note's block, step %d at it vs the level %d before", pos, step2, lvl);
+    return 0;
+}
 
 int main(void)
 {
@@ -566,6 +632,7 @@ int main(void)
 
     drumkit_test();
     drumkit_retrig_test();
+    sample_retrig_test();
     printf("%s\n", fails ? "SMPMIX TEST FAILED" : "smpmix test passed");
     return fails != 0;
 }

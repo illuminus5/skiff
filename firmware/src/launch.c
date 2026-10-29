@@ -28,6 +28,9 @@ typedef struct {
     uint8_t id, mlost;                             /* (phase 5) its pattern; 1: it comes without its automation */
     uint8_t reps;                                  /* .. the passes the one playing makes before it (a song's; 0 none) */
     uint8_t snd;                                   /* ((2.0, #30) 1: the entry's sound comes in with it, esnd) */
+    uint8_t same;                                  /* ((2.0.3, #71) 1: the pattern the track is on (bank.c stage_entry):
+                                                    * the swap leaves the track its own steps, timing and automation,
+                                                    * edited since this copy was made; the entry's sound and a new pass */
     uint32_t at;                                   /* BAR / BEAT: the launch_steps (a beat's, a bar's) it comes in on */
     step_t step[NSTEP];                            /* the pattern (after the swap: the one it replaced) */
     int16_t time[5];                               /* .. its LEN DIV SWING GATE DIR */
@@ -111,14 +114,14 @@ static int launch_ahead(const track_t *t, uint32_t len)
  * goes on across it as across any step (launch_swap); ((#30) not into another sound) */
 static int launch_carry(const track_t *t, const launch_t *q)
 {
-    return q->mode == LAUNCH_LOOP && t->p[P_DIR] == DIR_FWD && q->time[4] == DIR_FWD && !q->snd;
+    return q->mode == LAUNCH_LOOP && t->p[P_DIR] == DIR_FWD && (q->same || q->time[4] == DIR_FWD) && !q->snd;
 }
 /* .. the step after the one track t enters, as its ties see it (seq.c seq_step): such a switch at its end, the staged
  * pattern's first step; else own */
 static const step_t *launch_next(const track_t *t, uint32_t len, const step_t *own)
 {
     const launch_t *q = &launch_q[trk_index(t)];
-    return q->armed && launch_carry(t, q) && launch_ahead(t, len) ? &q->step[0] : own;
+    return q->armed && !q->same && launch_carry(t, q) && launch_ahead(t, len) ? &q->step[0] : own;
 }
 /* the swap (the audio ISR): the track's steps, timing and motion for the staged ones, the staged ones for them */
 static __attribute__((noinline)) void launch_swap(track_t *t)
@@ -127,32 +130,35 @@ static __attribute__((noinline)) void launch_swap(track_t *t)
     launch_t *q = &launch_q[k];
     motion_event_t *in = launch_in;
     uint32_t cin = q->motion.count, on = q->motion.on, carry = launch_carry(t, q);
-    memcpy(in, q->motion.event, cin * sizeof in[0]);
     if (!carry || !(t->seq_hold || seq_k[k]))      /* (the notes going out end; held or tied, too; ((2.0, #44) at a */
         seq_release(t);                            /* LOOP switch going forward, what its last step held for the */
                                                    /* incoming first's ties or TIE goes on: launch_next) */
     motion_restore(t);                             /* (the automation's values: the sound's own again) */
-    q->motion.count = 0;
-    q->motion.on = (uint8_t)(motion.on & (1u << k));
-    for (i = 0, n = 0; i < motion.count; i++)
-        if ((motion.event[i].place >> 6) == k)
-            q->motion.event[q->motion.count++] = motion.event[i];
-        else
-            motion.event[n++] = motion.event[i];
-    for (i = 0; i < cin && n < MOTION_MAX; i++)
-        motion.event[n++] = in[i];
-    memset(motion.event + n, 0, (MOTION_MAX - n) * sizeof motion.event[0]);
-    motion.count = (uint8_t)n;
-    motion.on = (uint8_t)((motion.on & ~(1u << k)) | (on & (1u << k)));
-    for (i = 0; i < NSTEP; i++) {
-        step_t s = t->step[i];
-        t->step[i] = q->step[i];
-        q->step[i] = s;
-    }
-    for (i = 0; i < 5u; i++) {
-        int16_t v = t->p[LAUNCH_TIME[i]];
-        t->p[LAUNCH_TIME[i]] = q->time[i];
-        q->time[i] = v;
+    if (!q->same) {                                /* ((2.0.3, #71) the same pattern: the track's own goes on, not q's
+                                                    * copy of it from before an edit; bank_poll_trk keeps nothing) */
+        memcpy(in, q->motion.event, cin * sizeof in[0]);
+        q->motion.count = 0;
+        q->motion.on = (uint8_t)(motion.on & (1u << k));
+        for (i = 0, n = 0; i < motion.count; i++)
+            if ((motion.event[i].place >> 6) == k)
+                q->motion.event[q->motion.count++] = motion.event[i];
+            else
+                motion.event[n++] = motion.event[i];
+        for (i = 0; i < cin && n < MOTION_MAX; i++)
+            motion.event[n++] = in[i];
+        memset(motion.event + n, 0, (MOTION_MAX - n) * sizeof motion.event[0]);
+        motion.count = (uint8_t)n;
+        motion.on = (uint8_t)((motion.on & ~(1u << k)) | (on & (1u << k)));
+        for (i = 0; i < NSTEP; i++) {
+            step_t s = t->step[i];
+            t->step[i] = q->step[i];
+            q->step[i] = s;
+        }
+        for (i = 0; i < 5u; i++) {
+            int16_t v = t->p[LAUNCH_TIME[i]];
+            t->p[LAUNCH_TIME[i]] = q->time[i];
+            q->time[i] = v;
+        }
     }
     if (q->snd)
         esnd_put(t, &esnd[k]);                     /* ((2.0, #30) the entry's sound) */

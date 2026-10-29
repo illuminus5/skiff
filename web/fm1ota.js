@@ -25,12 +25,14 @@ export const SMK_MODELS = ["SMK-37 Pro", "SMK-37 Elite", "MKE-P37"];
 export const needsStockUpdate = (id) => SMK_MODELS.includes(id.model) && id.version > 0 && id.version < 16;
 // (2.0.2, #64) why a running Skiff turned an official FM-1 file away, from where its reads stopped (firmware/src/ota.c
 // ota_stage, the counts pinned by tests/ota_test.c): after the header's 2, flash.bin's size (V16's file, a Skiff before
-// 2.0.2); within the boot area's 32 after the 3 before them, the head (the unit started on the other version). The
-// message's key (index_pkg.html), or null
+// 2.0.2); within the boot area's 32 after the 3 before them, the head (the unit started on the other version). (2.0.3,
+// #64) An SMK-37's head there is not V016's, the only SMK file the page takes: no version to name. The message's key
+// (index_pkg.html), or null
 export function stockRefusal(product, e) {
-  if (!e || e.code !== "stopped" || !/^FM-1_/.test(product)) return null;
-  if (e.served === 2) return "stockSkiffOld";
-  if (e.served >= 4 && e.served <= 35) return product === "FM-1_016" ? "stockNeedsV15" : "stockNeedsV16";
+  const smk = SMK_MODELS.includes(product.split("_")[0]);
+  if (!e || e.code !== "stopped" || (!smk && !/^FM-1_/.test(product))) return null;
+  if (e.served === 2 && !smk) return "stockSkiffOld";
+  if (e.served >= 4 && e.served <= 35) return smk ? "stockSmkHead" : product === "FM-1_016" ? "stockNeedsV15" : "stockNeedsV16";
   return null;
 }
 

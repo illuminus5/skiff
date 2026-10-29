@@ -323,7 +323,8 @@ int main(int argc, char **argv)
     }
     /* (2.0.2, #64) the official loader rewrites the head: a unit whose head is not the package's (V15's package on a unit
      * V16 started, or back) is refused, -5 at the head's first read after the 3 before it (that block differs), nothing
-     * erased: web/fm1ota.js stockRefusal names the other version from where the reads stopped */
+     * erased: web/fm1ota.js stockRefusal names the other version from where the reads stopped ((2.0.3) an SMK-37's:
+     * not V016's) */
     if (official) {
         reset_dev();
         nor[0x20] ^= 0xFFu;

@@ -69,7 +69,8 @@ static uint32_t chord_tones(const track_t *t, uint32_t mode, int32_t *root, int3
 
 /* the chord on note `root` as track t plays it now -> out (ascending), the number of notes (1..CHORD_MAX);
  * *rp its root, *maskp its tones above the root (bit i: i semitones; 0 = no chord). The root alone when CHRD
- * is OFF, on a kit, or for MONO / LEGATO / UNISON (their chord's root) */
+ * is OFF, on a kit, or for MONO / LEGATO / UNISON (their chord's root) with the ARP off ((2.0.3) the ARP plays a
+ * note at a time anyway: its chord whole) */
 static uint32_t chord_make(const track_t *t, uint32_t root, uint8_t *out, int32_t *rp, uint16_t *maskp)
 {
     int32_t iv[CHORD_MAX + 1u], r = (int32_t)root, x;
@@ -86,7 +87,7 @@ static uint32_t chord_make(const track_t *t, uint32_t root, uint8_t *out, int32_
         mask |= (uint16_t)(1u << (iv[i] % 12));
     *rp = r;
     *maskp = mask;
-    if (trk_vmode(t) != V_POLY) {                       /* one voice: the root */
+    if (trk_vmode(t) != V_POLY && !t->p[P_AMODE]) {     /* one voice: the root (the ARP: all of it) */
         out[0] = (uint8_t)clamp(r, 0, 127);
         return 1;
     }

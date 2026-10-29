@@ -68,6 +68,7 @@ static uint8_t pend_rec[PEND_N][BK_REC] __attribute__((section(".pool")));
  * another track on the same pattern that changed it is not undone; the staged one's, the track's when it comes in */
 static uint32_t trk_sig[NTRK] __attribute__((section(".pool")));
 static uint32_t q_sig[NTRK] __attribute__((section(".pool")));
+static uint32_t q_lsig[NTRK] __attribute__((section(".pool")));   /* ((2.0.3) track k's list as its next was staged */
 _Static_assert(BK_POOL == NPAT, "the pool is the bank's records");
 static uint8_t bk_bufc;                            /* the chunk + 1 bk_buf holds whole (0: none, or changed; a backup's
                                                     * LIST reads a chunk in, its GETs read on: bank_chunk) */
@@ -1046,7 +1047,8 @@ static void bank_poll_trk(uint32_t k)
     }
     if (q->done == 2u && transport_busy())
         return;
-    if ((trk_pid[k] || !q_empty(q)) && bk_pack_raw(bk_rec, k, q->step, q->time, &q->motion, (q->motion.on >> k) & 1u)) {
+    if (!q->same && (trk_pid[k] || !q_empty(q)) &&     /* ((2.0.3, #71) the same pattern: nothing went out) */
+        bk_pack_raw(bk_rec, k, q->step, q->time, &q->motion, (q->motion.on >> k) & 1u)) {
         id = trk_pid[k] ? trk_pid[k] - 1u : pool_alloc();   /* (a new pattern went out: the first free id) */
         if (trk_pid[k] && ((motion_lost >> k) & 1u))
             rec_motion_of(bk_rec, id);
@@ -1080,9 +1082,12 @@ static void bank_poll_trk(uint32_t k)
     }
     q->adv = 0;
     trk_pid[k] = (uint8_t)(q->id == PAT_NONE ? 0u : q->id + 1u);   /* ((1.2.1, #12) a rest: on no pattern) */
-    trk_sig[k] = q_sig[k];
     lists.cur[k] = (uint8_t)(q->slot % NENT);
-    motion_lost = (uint8_t)((motion_lost & ~(1u << k)) | (q->mlost ? 1u << k : 0u));
+    if (!q->same) {                                /* ((2.0.3, #71) the same pattern: its copy and automation as they
+                                                    * came in before, so an edit since is still kept when it goes out */
+        trk_sig[k] = q_sig[k];
+        motion_lost = (uint8_t)((motion_lost & ~(1u << k)) | (q->mlost ? 1u << k : 0u));
+    }
     bk.gen++;
     ui.force = 1;
 }
@@ -1091,6 +1096,12 @@ static void bank_poll(void)
     uint32_t k;
     for (k = 0; k < NTRK; k++)
         bank_poll_trk(k);
+}
+/* (2.0.3) track k's list as it stands: its entries' patterns, REPS (chains) and sounds (song_poll: staged again when
+ * it changed) */
+static uint32_t list_sig(uint32_t k)
+{
+    return proj_hash(lists.ent[k], sizeof lists.ent[k]) * 31u + proj_hash(lists.snd[k], sizeof lists.snd[k]);
 }
 /* playing, nothing staged for track k (q not armed): entry e staged, launch mode m; a song's (adv) after reps passes of
  * the one playing. 0 staged, 1 an empty entry, 2 .. without its automation (AUTOMATION FULL), 4 PATTERNS FULL (new
@@ -1104,7 +1115,7 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
 {
     track_t *t = &trk[k];
     launch_t *q = &launch_q[k];
-    uint32_t id = ent_pat(k, e), full = 0, i;
+    uint32_t id = ent_pat(k, e), full = 0, i, same;
     if (q->done || (!trk_pid[k] && !seq_is_empty(t) && pool_alloc() == NPAT))
         return 4;
     if ((adv == 2u || !bank_used(k, e)) && (adv || ent_rest(k, e))) {   /* ((2.0) adv 2: SONG ONCE's end, a rest on e
@@ -1117,7 +1128,9 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
         id = PAT_NONE;
     } else if (id == PAT_NONE || pat_decode(t, id, q->step, q->time, &q->motion))
         return 1;
-    if (motion.count - motion_count(t) + q->motion.count > MOTION_MAX) {
+    same = id != PAT_NONE && id == trk_pat(k);     /* ((2.0.3, #71) the pattern the track is on: it goes on as the
+                                                    * track has it, edits made before or after this copy (launch_swap) */
+    if (!same && motion.count - motion_count(t) + q->motion.count > MOTION_MAX) {
         q->motion.count = 0;                       /* (no room: the steps come in, not the automation) */
         full = 1;
     }
@@ -1137,6 +1150,8 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
     q->done = 0;
     q->snd = (uint8_t)(adv != 2u && esnd_make(k, lists.snd[k][e % NENT], &esnd[k]));   /* ((2.0, #30) its sound, made
                                                                                        * now: in at the swap) */
+    q->same = (uint8_t)same;
+    q_lsig[k] = list_sig(k);
     RING_PUBLISH();
     q->armed = 1;
     bk.gen++;
@@ -1212,6 +1227,13 @@ static void song_poll(void)
         song_end = 0;
     for (k = 0; k < NTRK; k++) {
         launch_t *q = &launch_q[k];
+        if (song.playing && q->armed && q->adv && !q->done && q_lsig[k] != list_sig(k)) {
+            q->armed = 0;                          /* ((2.0.3) the song's next staged, then the list changed (COPY+ */
+            RING_PUBLISH();                        /* into that entry, another pattern, its REPS, a sound): staged */
+            if (q->adv == 2u)                      /* again below from the list as it is; SONG ONCE's end too */
+                song_end &= (uint8_t)~(1u << k);
+            bk.gen++;
+        }
         blk = ent_block(k, cur = lists.cur[k] % NENT, &b0, &b1);
         wait = chain_go[k] && (!blk || cur == b1);  /* ((2.0, #44) a LOOP launch waiting for the chain's end: here */
         if (song.playing && !sp_was) {             /* (PLAY: a chain on pass 1, none whole yet; kept stopped: TAKE) */

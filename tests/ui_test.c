@@ -6583,6 +6583,113 @@ static int test_fx_latch(void)
     ok &= !ui.lock && !ui.layer && !perf_latched && !perf_held;
     bad += check("#57 a key held as FX locks (FX held, then HOME): let go, it stays on, latched; its next press turns "
                  "it off, so does closing the layer", ok);
+    ui_power_on();                                                /* ((2.0.3, #69) FX let go, C4 still held: */
+    btn_down(B_FX); frame(); key_down(lpf); frame();              /* CRUSH stays while it is, its effect playing) */
+    turn(EN_K2, 30);
+    btn_up(B_FX); frame();
+    a_bar();
+    ok = perf_k[1] == 30 && (perf_held & PF_BIT(PF_LPF)) && ui.layer == LAYER_FX;
+    key_up(lpf); frame();
+    a_bar();
+    ok &= !perf_k[1] && !perf_held && !ui.layer;
+    btn_down(B_FX); frame(); key_down(lpf); frame(); turn(EN_K2, 20);   /* FX again before the key is let go: */
+    btn_up(B_FX); frame(); btn_down(B_FX); frame();                     /* held by FX then */
+    key_up(lpf); frame();
+    a_bar();
+    ok &= perf_k[1] == 20 && ui.layer == LAYER_FX;
+    btn_up(B_FX); frame();
+    a_bar();
+    ok &= !perf_k[1];
+    btn_down(B_FX); frame(); key_down(lpf); frame(); turn(EN_K2, 25);   /* OCT+ meanwhile: kept, the octave not */
+    btn_up(B_FX); frame();
+    press(B_OCTUP); frame();
+    key_up(lpf); frame();
+    a_bar();
+    ok &= perf_k[1] == 25 && song.octave == 0;
+    bad += check("#69 FX let go, its effect key still held: the macros stay while it is, then come back; FX again "
+                 "meanwhile holds them; OCT+ keeps them", ok);
+    return bad;
+}
+
+/* (2.0.3, #70, PR #73) the octave in the header never covers the BPM: FM6's OPERATOR n and the project's letter before
+ * it leave too little room (OCT's number alone, or nothing); VOICE's short title the whole of it */
+static int test_head_oct(void)
+{
+    static uint16_t was[240 * H_HEAD];
+    int bad = 0, ok = 1, p, o;
+    uint32_t y, w;
+    char b[8];
+    ui_power_on();
+    set_engine_of(TSEL, ENGI_FM6);
+    proj_cur = 2;                                     /* (project C: its letter's box before the title) */
+    fmt_int(b, song.g[G_BPM]);
+    w = (uint32_t)(HB_BPM_X + text_w(&AF_M, b) + 3 + text_w(&AF_S, "BPM") + 4);   /* (the transport and the BPM) */
+    for (p = 0; p < 2; p++) {
+        go_title(p ? "VOICE" : "OPERATOR");
+        song.octave = 0;
+        ui.msg_t = 0;                                 /* (no message in the title's place) */
+        frame();
+        memcpy(was, host_screen + Y_HEAD * 240u, sizeof was);
+        for (o = -3; o <= 3; o++) {
+            song.octave = (int8_t)o;
+            frame();
+            for (y = 0; y < H_HEAD; y++)
+                ok &= !memcmp(was + y * 240u, host_screen + (Y_HEAD + y) * 240u, w * sizeof was[0]);
+            if (p && o)
+                ok &= memcmp(was, host_screen + Y_HEAD * 240u, sizeof was) != 0;
+        }
+    }
+    song.octave = 0;
+    proj_cur = PROJ_NO_SLOT;
+    bad += check("#70 the header's octave never covers the BPM (FM6's OPERATOR n: shortened or left out), VOICE shows it",
+                 ok && str_eq(page_head(), "VOICE") && !ui.home);
+    return bad;
+}
+
+/* (2.0.3, #72) KBD HOLD: ARP 2's HOLD with the ARP's MODE OFF holds the keys let go; a key pressed with no key down
+ * starts a new chord (the held ones end), one pressed while another is down joins; HOLD off, the ARP on or another
+ * track selected: what it holds ends; a DRUM track's keys are never held */
+static int test_kbd_hold(void)
+{
+    int bad = 0, ok;
+    track_t *t;
+    ui_power_on();
+    t = TSEL;
+    t->p[P_VOICE] = V_POLY;                                       /* (T1's first sound: LEGATO) */
+    t->p[P_AMODE] = 0;
+    t->p[P_AHOLD] = 1;
+    key_down(white(0)); key_down(white(2)); key_up(white(0)); key_up(white(2));
+    ok = gates() == 2u && kb_ped_trk == 1u;                       /* let go: sounding on */
+    key_down(white(4));
+    ok &= gates() == 1u;                                          /* none down: a new chord, the two end */
+    key_down(white(5));
+    ok &= gates() == 2u;                                          /* while another is down: it joins */
+    key_up(white(4)); key_up(white(5));
+    ok &= gates() == 2u;
+    bad += check("#72 KBD HOLD (ARP 2 HOLD, the ARP off): let go, the notes sound on; a key with none down starts a new "
+                 "chord; one pressed while another is down joins it", ok);
+    t->p[P_AHOLD] = 0;
+    events_block(CTL);
+    ok = !gates() && !kb_ped_trk;                                 /* HOLD off */
+    t->p[P_AHOLD] = 1;
+    key_down(white(0)); key_up(white(0));
+    t->p[P_AMODE] = 1;                                            /* the ARP on */
+    events_block(CTL);
+    ok &= !gates() && !kb_ped_trk;
+    t->p[P_AMODE] = 0;
+    key_down(white(0)); key_up(white(0));
+    sel_set(1);                                                   /* another track */
+    events_block(CTL);
+    ok &= !gates() && !kb_ped_trk;
+    bad += check("  HOLD off, the ARP on, another track selected: what it held ends", ok);
+    sel_set(NTRK - 1u);                                           /* T6: DRUM */
+    TSEL->p[P_AMODE] = 0;
+    TSEL->p[P_AHOLD] = 1;
+    key_down(white(0)); key_up(white(0));
+    bad += check("  a DRUM track's keys: never held", drum_track(TSEL) && !kb_ped_trk);
+    TSEL->p[P_AHOLD] = 0;
+    sel_set(0);
+    t->p[P_AHOLD] = 0;
     return bad;
 }
 
@@ -9530,6 +9637,8 @@ int main(void)
     bad += test_p9_pages();                           /* (Skiff phase 9) FX > DRIVE, ENV 2 */
     bad += test_six_tracks();                         /* Skiff phase 6: six tracks on the layers */
     bad += test_div_order();
+    bad += test_head_oct();
+    bad += test_kbd_hold();
     bad += test_knob_accel();
     bad += test_usb_level();
     bad += test_click_menu();

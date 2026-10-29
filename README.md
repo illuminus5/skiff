@@ -14,7 +14,10 @@ synths and drums, patterns and songs, live performance, and a screen that shows 
   <img src="https://img.shields.io/badge/hardware-M--VAVE%20FM--1%20%7C%20SMK--37%20Pro-555" alt="Hardware: M-VAVE FM-1 | SMK-37 Pro">
 </p>
 
-<p align="center"><b>New in 2.0.2:</b> notes up to 128 steps long, the way back to the official firmware takes V16 too,
+<p align="center"><b>New in 2.0.3:</b> KBD HOLD, whole chords into the arpeggiator on MONO sounds, sampled notes
+struck again without a click, Learn's videos re-made on 2.0, and fixes from your issues ·
+<a href="https://github.com/illuminus5/skiff/releases/tag/v2.0.3">the release notes</a><br>
+<b>New in 2.0.2:</b> notes up to 128 steps long, the way back to the official firmware takes V16 too,
 and fixes from your issues ·
 <a href="https://github.com/illuminus5/skiff/releases/tag/v2.0.2">the release notes</a><br>
 <b>New in 2.0.1:</b> fixes from your issues: FM6 sounds from DX7 banks no longer crackle, OCT+ in the
@@ -63,12 +66,12 @@ Custom firmware, at your own risk; the way back to the official firmware is belo
 connect the FM-1 by USB and follow it. The same page takes the FM-1 back to the official firmware (V15 or V16: the
 version it had before Skiff), saving a complete backup of your music first.
 
-**With Python 3:** download `skiff-2.0.2.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
+**With Python 3:** download `skiff-2.0.3.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
 and, with this repository's `tools/` folder,
 
 ```
 pip install mido python-rtmidi
-python tools/fm1_install.py skiff-2.0.2.fwsc
+python tools/fm1_install.py skiff-2.0.3.fwsc
 ```
 
 It takes about two minutes and the FM-1 restarts on Skiff.
@@ -76,11 +79,11 @@ It takes about two minutes and the FM-1 restarts on Skiff.
 **Back to the official firmware:** the installer page above, `python tools/fm1_install.py FM-1.fwsc` with M-VAVE's
 file, or M-VAVE's own updater. An FM-1 that ran V16 before Skiff goes back to V16, one that only ever ran V15 to V15:
 its start-up part decides, and the installer says which one it needs. M-VAVE's download page has given V16 since
-October 21 (2.0.2: tried in the emulator only so far); V15 is in M-VAVE's
+October 21 (Skiff 2.0.2 and later; done on a unit: back to V16, then on to Skiff again); V15 is in M-VAVE's
 [fm1_open repository](https://github.com/m-vave/fm1_open) as `sdk/firmware/FM-1_015.fwsc`. The official firmware
 writes its Bluetooth settings anew on its first start, so pair Bluetooth devices again if they don't connect.
 
-**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.0.2-smk37.fwsc` for
+**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.0.3-smk37.fwsc` for
 Python). Two steps come first: M-VAVE's firmware V016 on the keyboard, and a backup of its flash, which holds the
 keyboard's own key calibration. [SMK37.md](SMK37.md#install) has both, the way back and what to do if it does not
 start.
@@ -365,7 +368,11 @@ Felucca) first, and lists what it converted.
   with an A and a B patch and MORPH between them, one kit per project, edited a sound at a time on EDIT › SOUND;
   eight kits come as presets (1.2), each loading its own (FACTORY, DEEP, CLICK, INDUSTRIAL, SOFT, GLITCH, TRIBAL, LASER)
 - **Chord keys, arpeggiator, scales:** in-key chords with voicings; an arpeggiator with 14 modes, CHANCE,
-  SWING and HOLD; 16 scales with a white-key mode; MONO, LEGATO, UNISON and glide
+  SWING and HOLD; 16 scales with a white-key mode; MONO, LEGATO, UNISON and glide. (2.0.3) A chord goes whole into the
+  arpeggiator on MONO, LEGATO and UNISON sounds too. **KBD HOLD** (2.0.3): ARP 2 › HOLD ON with the ARP's MODE OFF
+  holds the notes you play without an arpeggio: let go and they go on sounding; the next key you press with no key
+  down starts a new chord, keys pressed while others are still down join it. HOLD off, the ARP on or another track
+  ends them
 - **MOD** (2.0: one page, LFO › MOD): KNOB 1 picks the route, 1 to 11. The first seven are fixed, drawn as a grid:
   the LFO's depths to PITCH, CUT, SHAPE and AMP and the envelope's to PITCH, CUT and SHAPE (1.x's LFO DEST and ENV
   DEST pages), only their AMOUNT turning; routes 8 to 11 are the modulation matrix
@@ -486,7 +493,7 @@ mutes, as on GLO and PERFORM: a tap mutes or unmutes the track, held it is cut u
 layer's macros: FILTER (left a low-pass, right a high-pass), CRUSH, THROW (the mix into the delay and the reverb) and
 DEPTH, how much of the effect you hear (with OCT UP or DN, its shimmer instead; with GATE, how deep it cuts). Let go
 of FX and they come back over a bar (MENU › CONTROL › RETURN: SNAP, 1 BEAT or 1 BAR, as MOMENTARY's values and
-PERFORM's throws); OCT+ with FX held keeps them.
+PERFORM's throws), or once you let go of the effect keys you are still holding; OCT+ with FX held keeps them.
 
 ## Engines
 
@@ -695,7 +702,7 @@ On the SMK-37: [SMK37.md](SMK37.md#if-it-does-not-start).
 **The screen says UPDATE MODE, or stays black while a computer sees a USB MIDI device named "Felucca
 Update":** an install was cut off, and the FM-1 waits in Skiff's update loader at every power-on. Nothing is
 lost. Connect it by USB and run the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) again
-(or `python tools/fm1_install.py skiff-2.0.2.fwsc`): it finishes the install. If the installer can't find it, plug
+(or `python tools/fm1_install.py skiff-2.0.3.fwsc`): it finishes the install. If the installer can't find it, plug
 the FM-1 straight into the computer: a USB hub or USB-sharing software can lose it when it switches to update mode.
 M-VAVE's own updater does not see the FM-1 in this state. (Since 1.3.2 the loader says UPDATE MODE on the screen;
 one an older Skiff left there keeps it black.)

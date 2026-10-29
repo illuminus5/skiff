@@ -1170,6 +1170,96 @@ static int song_sound(void)
     return bad;
 }
 
+/* (2.0.3, #71) one pattern on two entries in a row (A A B): the second plays its edits at once, made stopped or as the
+ * first plays (after the second's copy was staged: launch.c same), with its own sound; kept when it goes out */
+static int song_same(void)
+{
+    int bad = 0, ok;
+    uint32_t e0;
+    track_t *t = &trk[0];
+    fresh();
+    ui_launch = LAUNCH_LOOP;
+    e0 = t->eng_req;
+    simple(0, 30, 2, DIR_FWD);                        /* A: 2 steps (30..) on entries 1 and 2; B: 2 steps (50..) */
+    bank_put(0, 0, 0);
+    lists.ent[0][1][0] = lists.ent[0][0][0];
+    simple(0, 50, 2, DIR_FWD);
+    bank_put(0, 2, 0);
+    lists.snd[0][1][0] = (uint8_t)(e0 + 1u);          /* (the second A: its own sound, the engine's preset 3) */
+    lists.snd[0][1][1] = 2;
+    ent_go(0, 0);
+    t->step[0].note[0] = 37;                          /* an edit, stopped (not kept yet) */
+    lists.song = 1;
+    sg_play();
+    ok = heard(0, 37);
+    sg_frame();                                       /* (the second A staged: a copy from before the edits) */
+    ok &= launch_q[0].armed && bank_next(0) == 1u;
+    t->step[1].note[0] = 38;                          /* an edit as A plays, after that */
+    lv_next(1);
+    ok &= heard(0, 38);
+    sg_steps(1);                                      /* the second A */
+    ok &= heard(0, 37) && same_preset(t, e0, 2);
+    sg_steps(1);                                      /* (its frame took the swap in: on the second entry) */
+    ok &= heard(0, 38) && lists.cur[0] == 1u;
+    bad += check("(#71) one pattern on two entries in a row: the second plays its edits at once (made stopped, or as the "
+                 "first played), on its own sound", ok);
+    sg_steps(1);                                      /* B: A kept as it went out */
+    ok = heard(0, 50);
+    sg_steps(2);                                      /* A again (the list loops) */
+    ok &= heard(0, 37);
+    sg_steps(1);
+    ok &= heard(0, 38) && lists.cur[0] == 0u;
+    sg_stop();
+    ok &= keep_all() == 0 && ent_go(0, 1) == 0 && t->step[0].note[0] == 37 && t->step[1].note[0] == 38;
+    bad += check("  .. kept as it went out: B, then the first A with them; stopped, the second A: them", ok);
+    lists.song = 0;
+    return bad;
+}
+
+/* (2.0.3, found making the 2.0 video) the song's next entry staged, then the list changed: it comes in as the list is
+ * now (a pattern put into the empty entry after the one playing: that pattern, not a rest; its REPS turned after the
+ * entry after it was staged: as many passes) */
+static int song_next_edit(void)
+{
+    int bad = 0, ok;
+    uint32_t d;
+    fresh();
+    ui_launch = LAUNCH_LOOP;
+    simple(0, 30, 2, DIR_FWD);                        /* A (30..) on entry 1, C (70..) on 3, entry 2 empty (a rest); */
+    bank_put(0, 0, 0);                                /* D (50..) in the pool, on no entry */
+    simple(0, 70, 2, DIR_FWD);
+    bank_put(0, 2, 0);
+    simple(0, 50, 2, DIR_FWD);
+    bank_put(0, 5, 0);
+    d = ent_pat(0, 5);
+    lists.ent[0][5][0] = 0;
+    ent_go(0, 0);
+    lists.song = 1;
+    sg_play();
+    ok = heard(0, 30);
+    sg_frame();                                       /* (entry 2 staged: the rest) */
+    ok &= launch_q[0].armed && bank_next(0) == 1u;
+    lists.ent[0][1][0] = (uint8_t)(d + 1u);           /* D into entry 2 as A plays (as COPY+ puts one) */
+    lv_next(1);
+    ok &= heard(0, 31);
+    sg_steps(1);                                      /* (its frame staged entry 2 again) */
+    ok &= heard(0, 50);
+    bad += check("(2.0.3) SONG: the next entry staged, then a pattern put into it (empty, a rest): that pattern comes in",
+                 ok);
+    sg_frame();                                       /* (C staged after D's one pass) */
+    ok = launch_q[0].armed && bank_next(0) == 2u;
+    lists.ent[0][1][1] = 1;                           /* D x2, after that */
+    lv_next(1);
+    sg_steps(1);
+    ok &= heard(0, 50);                               /* D's second pass */
+    sg_steps(2);
+    ok &= heard(0, 70);
+    bad += check("  .. its REPS turned after the entry after it was staged: D twice, then C", ok);
+    sg_stop();
+    lists.song = 0;
+    return bad;
+}
+
 /* (#29) a song where every track has a list (T6 DRUM, its lane hits), all of one length, so all move on together, and
  * a pattern waiting to be written (an edit kept, stopped, that the autosave's quiet stop has not written yet): every
  * track on to its next entry at its pass end, the last one too, round and round */
@@ -1560,7 +1650,7 @@ int main(void)
 {
     int bad = layout() + fidelity() + keep() + entries() + staged_all() + last_track() + torn() + wear_and_wrap() +
               playing() + live() + scenes() + scenes_six() + song_test() + song_six() + song_rest() + song_once() +
-              song_chain() + song_sound() + migrate() + dx_kit_project();
+              song_chain() + song_sound() + song_same() + song_next_edit() + migrate() + dx_kit_project();
     printf("%s\n", bad ? "BANK TEST FAILED" : "pattern bank tests passed");
     return bad != 0;
 }

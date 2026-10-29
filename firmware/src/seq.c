@@ -895,35 +895,43 @@ static __attribute__((noinline)) void kb_lat(uint32_t k)
 }
 #endif
 
-#if BOARD_SMK37
-/* (SMK-37 Pro) the sustain pedal (smk_ui.c smk_pedal) holds the keys as MIDI IN's pedal its notes (midi_control.c):
- * while it is down, a key of the selected track let go keeps its notes (kb_ped) until the pedal goes up, another
+/* (SMK-37 Pro) the sustain pedal (smk_ui.c smk_pedal) holds the keys as MIDI IN's pedal its notes (midi_control.c);
+ * ((2.0.3, #72) KBD HOLD, both boards) so does ARP 2's HOLD with the ARP's MODE OFF. While it holds, a key of the
+ * selected track let go keeps its notes (kb_ped) until the hold ends (the pedal up; HOLD off, or the ARP on), another
  * track is selected, the track lets go of what it plays (panic_req: a preset, engine or project load) or the key is
- * pressed again (its notes end first). A DRUM track's keys end as they are let go */
-static uint8_t kb_ped[KB_N], kb_ped_trk;            /* the keys the pedal holds; their track + 1 (0: none) */
+ * pressed again (its notes end first); with KBD HOLD a key pressed with no key down starts a new chord (kb_fresh). A
+ * DRUM track's keys end as they are let go */
+static uint8_t kb_ped[KB_N], kb_ped_trk;            /* the keys held; their track + 1 (0: none) */
+static int kb_pedal(void)
+{
+#if BOARD_SMK37
+    return smk_pedal != 0;
+#else
+    return 0;
+#endif
+}
+static int kb_hold_on(const track_t *t) { return kb_pedal() || (t->p[P_AHOLD] && !t->p[P_AMODE]); }
 static void kb_up(uint32_t k)                       /* key k let go */
 {
     track_t *t = &trk[kb_trk[k] % NTRK];
-    if (smk_pedal && kb_trk[k] == song.sel && !drum_track(t)) {
+    if (kb_trk[k] == song.sel && !drum_track(t) && kb_hold_on(t)) {
         kb_ped[k] = 1;
         kb_ped_trk = (uint8_t)(song.sel + 1u);
     } else
         key_off(k, t);
 }
-static void kb_again(uint32_t k)                    /* key k pressed: what the pedal holds for it ends first */
+static __attribute__((noinline)) void kb_again(uint32_t k)   /* key k pressed: what the hold keeps for it ends first */
 {
     if (kb_ped[k]) {
         kb_ped[k] = 0;
         key_off(k, &trk[kb_trk[k] % NTRK]);
     }
 }
-/* events_block, before the keys: the pedal up, another track selected or pr (panic_req's bits) for its track, the
- * keys it holds end; a MONO track's sounding note last (else it would fall back to another one let go with it) */
-static void kb_ped_block(uint32_t pr)
+/* the keys held end; a MONO track's sounding note last (else it would fall back to another one let go with it). Not
+ * inlined, nor kb_again and kb_fresh: their loops stay out of the audio ISR's own cost (tests/target_budget.txt) */
+static __attribute__((noinline)) void kb_ped_end(void)
 {
-    uint32_t i = kb_ped_trk - 1u, k, last;
-    if (!kb_ped_trk || (smk_pedal && i == song.sel && !((pr >> i) & 1u)))
-        return;
+    uint32_t k, last;
     kb_ped_trk = 0;
     for (last = 0; last < 2u; last++)
         for (k = 0; k < KB_N; k++) {
@@ -934,7 +942,28 @@ static void kb_ped_block(uint32_t pr)
             }
         }
 }
+/* events_block, before the keys: the hold ended, another track selected or pr (panic_req's bits) for its track */
+static void kb_ped_block(uint32_t pr)
+{
+    uint32_t i = kb_ped_trk - 1u;
+    if (!kb_ped_trk || (i == song.sel && kb_hold_on(&trk[song.sel]) && !((pr >> i) & 1u)))
+        return;
+    kb_ped_end();
+}
+/* ((2.0.3, #72) KBD HOLD) key k pressed to play: with no other key down (playing), a new chord: what the hold kept ends
+ * first; pressed while others are down, it joins them. Not while the SMK's pedal is down: that keeps them all */
+static __attribute__((noinline)) void kb_fresh(uint32_t k)
+{
+    uint32_t j;
+    if (!kb_ped_trk || kb_pedal())
+        return;
+    for (j = 0; j < KB_N; j++)
+        if (j != k && kb_chn[j] && !kb_ped[j])
+            return;
+    kb_ped_end();
+}
 
+#if BOARD_SMK37
 /* the ten outer keys (smk_input.h's queue, from the scan): notes on the selected track as the others play them; in a
  * layer (its tiles are F3..G5's), NAME, the DRUM grid and under the splash nothing; SCREEN OFF's wake press silent */
 static void kb_outer(void)
@@ -951,8 +980,10 @@ static void kb_outer(void)
             if (kb_boot_hold || kb_asleep || (fm1_in.buttons & kb_mask) || kb_lock || song.grid)
                 continue;
             kb_note[k] = (uint8_t)kb_map(&trk[kb_trk[k]], kb_semi(k));
-            if (kb_note[k] != KB_SILENT)
+            if (kb_note[k] != KB_SILENT) {
+                kb_fresh(k);
                 key_on(k, &trk[kb_trk[k]]);
+            }
         } else if (kb_note[k] != KB_SILENT) {
             kb_up(k);
             kb_note[k] = KB_SILENT;
@@ -984,9 +1015,7 @@ static void keyboard_block(void)
         if (!((ch >> k) & 1u))
             continue;
         if ((cur >> k) & 1u) {                    /* the selected track; the key-up goes to the same one */
-#if BOARD_SMK37
             kb_again(k);
-#endif
             kb_trk[k] = song.sel;
             if (kb_asleep) {                      /* (SCREEN OFF: the wake press is swallowed) */
                 kb_note[k] = KB_SILENT;
@@ -1007,6 +1036,7 @@ static void keyboard_block(void)
                 kb_note[k] = (uint8_t)kb_map(&trk[kb_trk[k]], k);
             if (kb_note[k] == KB_SILENT)
                 continue;
+            kb_fresh(k);                          /* ((2.0.3, #72) KBD HOLD: a new chord, or one joined) */
             key_on(k, &trk[kb_trk[k]]);
 #ifdef FM1_INPUT_LAT
             kb_lat(k);
@@ -1019,11 +1049,7 @@ static void keyboard_block(void)
             }
             if (kb_note[k] == KB_SILENT)
                 continue;
-#if BOARD_SMK37
-            kb_up(k);
-#else
-            key_off(k, &trk[kb_trk[k] % NTRK]);
-#endif
+            kb_up(k);                             /* (held: the SMK's pedal, (2.0.3, #72) KBD HOLD) */
         }
     }
     kb_prev = cur;
@@ -1704,9 +1730,7 @@ static void events_block(uint32_t n)
         t->armp = t->p[P_AMODE];
         t->aholdp = t->p[P_AHOLD];
     }
-#if BOARD_SMK37
-    kb_ped_block(pr);                                 /* (the keys the pedal held: up, another track, a panic) */
-#endif
+    kb_ped_block(pr);                                 /* (the keys held: the hold's end, another track, a panic) */
     keyboard_block();
     while (mi_r != mi_w) {                            /* USB-MIDI (and TRS) in */
         uint32_t at = mi_r % MQ, pkt = midi_in_q[at], status = (pkt >> 8) & 0xFFu;

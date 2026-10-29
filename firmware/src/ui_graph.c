@@ -743,8 +743,8 @@ static void graph_chord(const track_t *t, uint16_t c)
         n = chord_make(t, (uint32_t)(60 + t->p[P_ROOT]), nn, &r, &mask);
         cap = "ON ROOT";
     }
-    if (trk_vmode(t) != V_POLY)
-        cap = "ROOT ONLY";                              /* MONO / LEGATO / UNISON */
+    if (trk_vmode(t) != V_POLY && !t->p[P_AMODE])
+        cap = "ROOT ONLY";                              /* MONO / LEGATO / UNISON ((2.0.3) the ARP takes it whole) */
     chord_name(b, (uint32_t)r, mask);
     cv_text_on(14, 8, &AF_M, b, T_TEXT, T_SURF);
     GFX_HOOK_ALIGN(0, 0, 0, 8 + AF_M.asc, AL_B, "chord caption on the name's baseline");

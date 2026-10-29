@@ -14,7 +14,7 @@ keyboard; the Starrykey 37 Play is not supported yet.
    its Bluetooth pairings, which no download can replace. Skiff never writes them, but a backup is the way back if
    anything else goes wrong.
 3. **Install:** the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) (Chrome or Edge) finds the
-   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.0.2-smk37.fwsc` (`-elite`, `-mke` for those
+   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.0.3-smk37.fwsc` (`-elite`, `-mke` for those
    models, not tried on a keyboard yet). About two minutes.
 
 Keep it plugged in and switched on while it writes. If the cable or the power is cut anyway, the keyboard stays in
@@ -29,7 +29,7 @@ This needs a computer with Windows or Linux, Python 3, this repository's `tools/
 reads the whole 1 MiB through the chip's built-in boot mode:
 
 1. With the keyboard on M-VAVE's V016 (or on Skiff) and connected:
-   `python tools/fm1_install.py --uboot skiff-2.0.2-smk37.fwsc`. The keyboard starts Skiff's update loader without
+   `python tools/fm1_install.py --uboot skiff-2.0.3-smk37.fwsc`. The keyboard starts Skiff's update loader without
    writing the firmware, then switches to the chip's boot mode: the computer sees a USB disk named `WL82 UBOOT1.00`.
    **If Windows offers to format it, cancel.**
 2. In an **administrator** terminal (on Linux: with `sudo`, and `/dev/sgN` as the device), from jl-uboot-tool's folder,
@@ -47,6 +47,11 @@ The installer's **Return to the official firmware**, with M-VAVE's unmodified `S
 complete backup of your Skiff music first), or `python tools/fm1_install.py SMK-37_Pro_016.fwsc`. Skiff writes
 M-VAVE's firmware with its own update loader, which never touches the calibration (M-VAVE's own loader, started from
 Skiff, can erase it: see "Back to stock" below). The calibration and the Bluetooth pairings stay.
+
+Skiff first checks that the keyboard's start-up part (the first 16 KB, which M-VAVE's file carries too) is V016's.
+If it is not (the keyboard came with another one, or a firmware before Skiff rewrote it), nothing is written and Skiff
+keeps running; the installer says so (2.0.3). M-VAVE's own updaters stop at the same check while Skiff runs. Please
+tell us on GitHub what the keyboard ran before Skiff (#64).
 
 ## If it does not start
 
@@ -128,7 +133,8 @@ loader 7,859 B (the limit: 7,936 B, below).
   down, a note played on the keys keeps sounding after its key is let go, until the pedal goes up or the key is
   struck again (MIDI OUT gets its note-off then). A DRUM track's keys ignore it. The wheels calibrate themselves
   (after genkigenki's layer). When another track is selected, the one before gets them back at rest, and the notes
-  the pedal held on it end.
+  the pedal held on it end. (2.0.3) KBD HOLD (ARP 2 › HOLD with the ARP off) holds the keys the same way; while the
+  pedal is down, a new chord doesn't end what it holds.
 - **Battery:** the SMK's own thresholds (530 / 560 / 602 raw), not yet checked on a unit.
 - **Button LEDs:** on or off. The FM-1's glow, breath and mid levels have no SMK hardware: lit or breathing shows
   on, and the glow and the mid level show dark. MENU > LEDS is hidden. KNOB BANK is lit while held, and FADER BANK

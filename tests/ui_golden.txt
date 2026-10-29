@@ -1,9 +1,9 @@
 # Skiff UI golden (tests/ui_render.c): FNV-1a 64 of every picture ui_render writes, then its name.
 # Rewritten by UI_GOLDEN_UPDATE=1 tests/run_tests.sh -- only for an intended change of the look.
-7bb22e8780e0c611 CRYPT_about
+8e727f4e635d1c35 CRYPT_about
 7b406cff888c0edf CRYPT_about_credits
 976a0b670244358f CRYPT_about_end
-d178f48cbb8945a9 CRYPT_about_rec
+c48d14f681696c2d CRYPT_about_rec
 d14a071f275c6385 CRYPT_arp
 5ffd1ed622497098 CRYPT_arp_2
 5efde6d80f6c8aa7 CRYPT_arp_on
@@ -227,7 +227,7 @@ a640211c5b3b79d0 CRYPT_song_copyplus
 ac3785bdfa5b2f17 CRYPT_song_rest_pick
 eda8d013d956b2bc CRYPT_song_sound
 bc35c7c0c3ecc61c CRYPT_song_sounds
-25c47329a06eb9cd CRYPT_splash
+4756305f336b3fc5 CRYPT_splash
 ae37ac6fa7460cb3 CRYPT_step
 67e3229e84561509 CRYPT_step_mark
 b722e4598b782da3 CRYPT_step_tiles
@@ -243,10 +243,10 @@ e28a10113a015c17 CRYPT_user_foot
 70347bc09e514016 CRYPT_voice_2
 c7a0c74aaa23b4b6 CRYPT_voice_2_uni
 e5f489b7140e9950 CRYPT_voice_glide
-fbb3a0c78525ab95 CUSTOM_CRYPT_about
+94942b0d0d742311 CUSTOM_CRYPT_about
 58e33ab8f98e8f41 CUSTOM_CRYPT_about_credits
 ac47d1a1bf5d5393 CUSTOM_CRYPT_about_end
-ded08f8944e6aa8b CUSTOM_CRYPT_about_rec
+0e2af840a15755df CUSTOM_CRYPT_about_rec
 b6a7880a42a5cbcb CUSTOM_CRYPT_arp
 618fbbc0f8288bfc CUSTOM_CRYPT_arp_2
 13c6ffe8947bed6f CUSTOM_CRYPT_arp_on
@@ -468,7 +468,7 @@ d9610d28c70ba071 CUSTOM_CRYPT_song_playing
 faa76a7454080148 CUSTOM_CRYPT_song_rest_pick
 816344c11d678d19 CUSTOM_CRYPT_song_sound
 86e5a7834c8be426 CUSTOM_CRYPT_song_sounds
-121fa018824a4f01 CUSTOM_CRYPT_splash
+516448adfa412309 CUSTOM_CRYPT_splash
 218eb199b74ad5f7 CUSTOM_CRYPT_step
 d413efa0663ef3c3 CUSTOM_CRYPT_step_mark
 468ba1b0c80a5bcb CUSTOM_CRYPT_step_tiles
@@ -484,10 +484,10 @@ d2d37ef6e92f98ce CUSTOM_CRYPT_take_partial
 79ff34823edf6265 CUSTOM_CRYPT_voice_2
 b2635aa7e5036074 CUSTOM_CRYPT_voice_2_uni
 9c3771c1bbcdb617 CUSTOM_CRYPT_voice_glide
-fbb3a0c78525ab95 CUSTOM_NEON_about
+94942b0d0d742311 CUSTOM_NEON_about
 58e33ab8f98e8f41 CUSTOM_NEON_about_credits
 ac47d1a1bf5d5393 CUSTOM_NEON_about_end
-ded08f8944e6aa8b CUSTOM_NEON_about_rec
+0e2af840a15755df CUSTOM_NEON_about_rec
 52c6c53eff824652 CUSTOM_NEON_arp
 4ace9b2cc148a5f9 CUSTOM_NEON_arp_2
 c1116ebb9b27fe92 CUSTOM_NEON_arp_on
@@ -709,7 +709,7 @@ d69ca969f5dde57e CUSTOM_NEON_song_rest
 87962efe4b81985b CUSTOM_NEON_song_rest_pick
 b4a7f6c7fbd2e5ff CUSTOM_NEON_song_sound
 5d370fc26da90fcf CUSTOM_NEON_song_sounds
-4642476d6ed7ea6e CUSTOM_NEON_splash
+0fdc647415ab6106 CUSTOM_NEON_splash
 c96606d07ca04eeb CUSTOM_NEON_step
 6e60d7c871c8b5b3 CUSTOM_NEON_step_mark
 dcc8ea6095b6df63 CUSTOM_NEON_step_tiles
@@ -725,10 +725,10 @@ eaa3b2e1cb06be20 CUSTOM_NEON_voice
 4dbaba5b961109f3 CUSTOM_NEON_voice_2
 651539f2321d70a4 CUSTOM_NEON_voice_2_uni
 d6323b948ce89067 CUSTOM_NEON_voice_glide
-9c7341e0e6250b25 CUSTOM_QUARK_about
+10d5b72d08a60ee9 CUSTOM_QUARK_about
 272b1c538c0417b6 CUSTOM_QUARK_about_credits
 32f558d5c8bb7951 CUSTOM_QUARK_about_end
-d3e41ca8091400d2 CUSTOM_QUARK_about_rec
+01c6c7d370e294a6 CUSTOM_QUARK_about_rec
 efe5e51233d71449 CUSTOM_QUARK_arp
 e10fb303a730524f CUSTOM_QUARK_arp_2
 9e10f12181c45d69 CUSTOM_QUARK_arp_on
@@ -950,7 +950,7 @@ db488cc8ce9ceef9 CUSTOM_QUARK_song_new
 bd432096a6a20621 CUSTOM_QUARK_song_rest_pick
 26243b9b43eb852c CUSTOM_QUARK_song_sound
 d2920a5a7eb34efa CUSTOM_QUARK_song_sounds
-416cb0cdf9d3bc4d CUSTOM_QUARK_splash
+595681f526ec67e3 CUSTOM_QUARK_splash
 d6775a2aa5adbff3 CUSTOM_QUARK_step
 9e71c2f5d855a5d3 CUSTOM_QUARK_step_mark
 faee4a12413b21f8 CUSTOM_QUARK_step_tiles
@@ -966,10 +966,10 @@ cc651918769c3748 CUSTOM_QUARK_user_foot
 5a801550b92937f4 CUSTOM_QUARK_voice_2
 068dd573bdd07ff2 CUSTOM_QUARK_voice_2_uni
 63b197c71fe4c8b1 CUSTOM_QUARK_voice_glide
-9c7341e0e6250b25 CUSTOM_SKIFF_about
+10d5b72d08a60ee9 CUSTOM_SKIFF_about
 272b1c538c0417b6 CUSTOM_SKIFF_about_credits
 32f558d5c8bb7951 CUSTOM_SKIFF_about_end
-d3e41ca8091400d2 CUSTOM_SKIFF_about_rec
+01c6c7d370e294a6 CUSTOM_SKIFF_about_rec
 dcd45277c15630cb CUSTOM_SKIFF_arp
 c0ed127f6a749547 CUSTOM_SKIFF_arp_2
 dc67b31cacd0356d CUSTOM_SKIFF_arp_on
@@ -1191,7 +1191,7 @@ b5402ebb5c3a9cea CUSTOM_SKIFF_song_chains
 b7ed969e42ab8a4c CUSTOM_SKIFF_song_rest_pick
 2d947dc4a79bd0e7 CUSTOM_SKIFF_song_sound
 5a1ab8994af1c9f4 CUSTOM_SKIFF_song_sounds
-6adeacc4a2ea41ad CUSTOM_SKIFF_splash
+cd518151ee62231f CUSTOM_SKIFF_splash
 c0dcc0f897d1c2cc CUSTOM_SKIFF_step
 16b61816279b43ac CUSTOM_SKIFF_step_mark
 531aff2799de09c3 CUSTOM_SKIFF_step_tiles
@@ -1207,10 +1207,10 @@ d5b13ce57b9ecd56 CUSTOM_SKIFF_undo_box
 43649eb56a3c94f3 CUSTOM_SKIFF_voice_2
 b58462d0f4241bb9 CUSTOM_SKIFF_voice_2_uni
 800d38984ddbf29b CUSTOM_SKIFF_voice_glide
-69f12b660a618753 HI-CON_about
+58190975efa07de6 HI-CON_about
 45b1484da3de2369 HI-CON_about_credits
 485a8dd85d6a206c HI-CON_about_end
-ed8077f45ac38efd HI-CON_about_rec
+de7253703cfe2d7c HI-CON_about_rec
 203ab4886e85143a HI-CON_arp
 27e02597c98cdc98 HI-CON_arp_2
 6fb0450b7452a4f4 HI-CON_arp_on
@@ -1432,7 +1432,7 @@ ba6f4087ed60e50d HI-CON_song_rest
 d33abb68ef9d2d1e HI-CON_song_rest_pick
 302a778271f844ba HI-CON_song_sound
 862ae52c06a7c73f HI-CON_song_sounds
-9062db8a482f73ce HI-CON_splash
+0d6436c11d2a5bab HI-CON_splash
 32f948fe2b3e98ac HI-CON_step
 fe5ab9ee7a712de5 HI-CON_step_mark
 c10a511522eda44a HI-CON_step_tiles
@@ -1448,10 +1448,10 @@ bc2e7261b5777a48 HI-CON_voice
 47478084fed9ef19 HI-CON_voice_2
 ee972cec5a663aec HI-CON_voice_2_uni
 54da1a184cfdc290 HI-CON_voice_glide
-7bb22e8780e0c611 LARGE_CRYPT_about
+8e727f4e635d1c35 LARGE_CRYPT_about
 7b406cff888c0edf LARGE_CRYPT_about_credits
 976a0b670244358f LARGE_CRYPT_about_end
-d178f48cbb8945a9 LARGE_CRYPT_about_rec
+c48d14f681696c2d LARGE_CRYPT_about_rec
 1c9326db96758c6b LARGE_CRYPT_arp
 478ba083442d973d LARGE_CRYPT_arp_2
 f61b8db2d231076a LARGE_CRYPT_arp_on
@@ -1673,7 +1673,7 @@ cab1b6f37c9f98f6 LARGE_CRYPT_song_playing
 066dc5b420adc706 LARGE_CRYPT_song_rest_pick
 aebc2d83c56358c9 LARGE_CRYPT_song_sound
 2f95bf3f5de28ff5 LARGE_CRYPT_song_sounds
-25c47329a06eb9cd LARGE_CRYPT_splash
+4756305f336b3fc5 LARGE_CRYPT_splash
 fa365a152e3ba8b9 LARGE_CRYPT_step
 85f824d9dbd15136 LARGE_CRYPT_step_mark
 07a6740887431a84 LARGE_CRYPT_step_tiles
@@ -1689,10 +1689,10 @@ bbb43f324795cb65 LARGE_CRYPT_user_foot
 ac2ad311307c3d85 LARGE_CRYPT_voice_2
 ac2ad311307c3d85 LARGE_CRYPT_voice_2_uni
 24fcb384a7d679f2 LARGE_CRYPT_voice_glide
-1bc596a214e032b5 LARGE_NEON_about
+78161a2b9423a5c9 LARGE_NEON_about
 19e21770e8770398 LARGE_NEON_about_credits
 68d7c5aa89a096a3 LARGE_NEON_about_end
-6a61e1352607ad30 LARGE_NEON_about_rec
+8bef53b5512748ec LARGE_NEON_about_rec
 905818ddd255b125 LARGE_NEON_arp
 c5393b8718ace45e LARGE_NEON_arp_2
 9d399d4ecff68cd1 LARGE_NEON_arp_on
@@ -1914,7 +1914,7 @@ aa3599e7dfb372dd LARGE_NEON_song_playing
 0495a0ae7ecc90cc LARGE_NEON_song_rest_pick
 957f412a8cff0bea LARGE_NEON_song_sound
 3a2d1eeedc7929e3 LARGE_NEON_song_sounds
-b3f748c5ba5fa050 LARGE_NEON_splash
+c7f2d20118ff02d8 LARGE_NEON_splash
 ce0efa55e9a5badd LARGE_NEON_step
 c3a8dbb50284e4da LARGE_NEON_step_mark
 d2292648cb5f302f LARGE_NEON_step_tiles
@@ -1930,10 +1930,10 @@ abbf9442d25e44a7 LARGE_NEON_voice
 26bdd7343f88c7a9 LARGE_NEON_voice_2
 26bdd7343f88c7a9 LARGE_NEON_voice_2_uni
 d255565ab2ad528a LARGE_NEON_voice_glide
-f7789d71a83c8f38 LARGE_QUARK_about
+182d47586a95fb8d LARGE_QUARK_about
 b515ea9ee4d620cf LARGE_QUARK_about_credits
 c8b84d9858bc80dd LARGE_QUARK_about_end
-a35391ac48edd834 LARGE_QUARK_about_rec
+ddcde7ab96340c41 LARGE_QUARK_about_rec
 a7699759b913f311 LARGE_QUARK_arp
 81108550b004456c LARGE_QUARK_arp_2
 5367479d9732769f LARGE_QUARK_arp_on
@@ -2155,7 +2155,7 @@ a7c442c0632f685a LARGE_QUARK_song_rest
 69b55362ce1fafe5 LARGE_QUARK_song_rest_pick
 a8ceba3646380666 LARGE_QUARK_song_sound
 9c9b9f162dc9e49d LARGE_QUARK_song_sounds
-bf6f8cff98d14bcf LARGE_QUARK_splash
+6bf8ec693edf2f7e LARGE_QUARK_splash
 43da5727dddf3fca LARGE_QUARK_step
 f5d91e3dff1792f8 LARGE_QUARK_step_mark
 50e282501c0e0736 LARGE_QUARK_step_tiles
@@ -2171,10 +2171,10 @@ df9d996b8d3f4877 LARGE_QUARK_step_tiles_drum
 f97c6504e19631a7 LARGE_QUARK_voice_2
 f97c6504e19631a7 LARGE_QUARK_voice_2_uni
 e62595409207f4b4 LARGE_QUARK_voice_glide
-1b8caa43cc10d1c8 LARGE_SKIFF_about
+37736e6a763d0f85 LARGE_SKIFF_about
 407e133abca45b01 LARGE_SKIFF_about_credits
 5deedbbeb09de76a LARGE_SKIFF_about_end
-1fd23c833fb49b75 LARGE_SKIFF_about_rec
+2d162a7f14c45430 LARGE_SKIFF_about_rec
 1919218073432383 LARGE_SKIFF_arp
 441d399f110914fd LARGE_SKIFF_arp_2
 a0231cd49666b90b LARGE_SKIFF_arp_on
@@ -2396,7 +2396,7 @@ bbc842775f6d9f83 LARGE_SKIFF_song_new
 5a7fec981e7986d4 LARGE_SKIFF_song_rest_pick
 56c97d7277279ec0 LARGE_SKIFF_song_sound
 4d8d2e3b449c5ff7 LARGE_SKIFF_song_sounds
-5d7fed0c07eb16a8 LARGE_SKIFF_splash
+d8a26c1b8b33813e LARGE_SKIFF_splash
 172bc29d75427d91 LARGE_SKIFF_step
 29ac214b55edfbc1 LARGE_SKIFF_step_mark
 58e4e02e6922f804 LARGE_SKIFF_step_tiles
@@ -2412,10 +2412,10 @@ fed8ac467c6c1e53 LARGE_SKIFF_user_foot
 d7d818ddc0431686 LARGE_SKIFF_voice_2
 d7d818ddc0431686 LARGE_SKIFF_voice_2_uni
 35bd27d867b2fb82 LARGE_SKIFF_voice_glide
-1bc596a214e032b5 NEON_about
+78161a2b9423a5c9 NEON_about
 19e21770e8770398 NEON_about_credits
 68d7c5aa89a096a3 NEON_about_end
-6a61e1352607ad30 NEON_about_rec
+8bef53b5512748ec NEON_about_rec
 8d6c256cf16cc50b NEON_arp
 ebf41f5e870cbcc2 NEON_arp_2
 f0c4b8727105eded NEON_arp_on
@@ -2639,7 +2639,7 @@ f87f243860031880 NEON_song_rest
 8b3e54bd8ef84b97 NEON_song_rest_pick
 c9538febf77d200d NEON_song_sound
 14f3ce37265a2048 NEON_song_sounds
-b3f748c5ba5fa050 NEON_splash
+c7f2d20118ff02d8 NEON_splash
 3c8db93bc277ea61 NEON_step
 e40cffb1683e4d0d NEON_step_mark
 b732c46b74f18b40 NEON_step_tiles
@@ -2655,10 +2655,10 @@ b14c486a5002c5e0 NEON_voice
 62fbe098ac9dae46 NEON_voice_2
 24d9e62ca68159c6 NEON_voice_2_uni
 5d12230b57fe543d NEON_voice_glide
-e034433ea3c22447 PAPER_about
+5ab21e8c28faab31 PAPER_about
 17c5c1fd74334b10 PAPER_about_credits
 7026b69890b630f0 PAPER_about_end
-c9d74f92940d4a08 PAPER_about_rec
+1aaaf665e073309e PAPER_about_rec
 ce8d3d20f8571dc7 PAPER_arp
 e3c990b8a98bc689 PAPER_arp_2
 927d7a0bc22ffe3d PAPER_arp_on
@@ -2880,7 +2880,7 @@ dca3358b84b45c85 PAPER_song_rest
 d233176bd7ad4bb6 PAPER_song_rest_pick
 5eee041417a65e04 PAPER_song_sound
 eba5612a222bf378 PAPER_song_sounds
-41c4e429ae41ac4f PAPER_splash
+9489bec37f51d34f PAPER_splash
 b65c86687b14d83e PAPER_step
 db7f00ec95560ca3 PAPER_step_mark
 df2a768ad8152660 PAPER_step_tiles
@@ -2902,10 +2902,10 @@ dd2c60d0a0f712a6 PAPER_voice_glide
 fee43c6ce8c54275 PHLINE_NEON_six_home
 4e7899be754154c0 PHLINE_QUARK_home
 cb7963f36bafe78c PHLINE_QUARK_six_home
-f7789d71a83c8f38 QUARK_about
+182d47586a95fb8d QUARK_about
 b515ea9ee4d620cf QUARK_about_credits
 c8b84d9858bc80dd QUARK_about_end
-a35391ac48edd834 QUARK_about_rec
+ddcde7ab96340c41 QUARK_about_rec
 f0f31931553bdc98 QUARK_arp
 68c62c149b7a0502 QUARK_arp_2
 adfaa1a7032e76da QUARK_arp_on
@@ -3129,7 +3129,7 @@ e3cf3a9e107fd4bc QUARK_song_playing
 86a7cf988e0bd725 QUARK_song_rest_pick
 ecf95f643f1617a6 QUARK_song_sound
 93761f7ec3bd7004 QUARK_song_sounds
-bf6f8cff98d14bcf QUARK_splash
+6bf8ec693edf2f7e QUARK_splash
 b8860221a86e098e QUARK_step
 18d52a1157ae7dca QUARK_step_mark
 9f85569f187231ec QUARK_step_tiles
@@ -3145,10 +3145,10 @@ d5987ab09a28a806 QUARK_voice
 893b270ea5327b18 QUARK_voice_2
 b44c8316939b74d2 QUARK_voice_2_uni
 95a643bb842f71e3 QUARK_voice_glide
-1b8caa43cc10d1c8 SKIFF_about
+37736e6a763d0f85 SKIFF_about
 407e133abca45b01 SKIFF_about_credits
 5deedbbeb09de76a SKIFF_about_end
-1fd23c833fb49b75 SKIFF_about_rec
+2d162a7f14c45430 SKIFF_about_rec
 dabc0c9d6e5f58a0 SKIFF_arp
 865c84d6c5f448ba SKIFF_arp_2
 c3ed8808d3c1f6ef SKIFF_arp_on
@@ -3372,7 +3372,7 @@ a023a74732e85dc0 SKIFF_song_rest
 1e49e6996b18fe78 SKIFF_song_rest_pick
 371ba4044a27ca4c SKIFF_song_sound
 e12bfd4253c44d60 SKIFF_song_sounds
-5d7fed0c07eb16a8 SKIFF_splash
+d8a26c1b8b33813e SKIFF_splash
 be3797e720d65fa9 SKIFF_step
 6d365a42f7184317 SKIFF_step_mark
 041b914d8fd72502 SKIFF_step_tiles

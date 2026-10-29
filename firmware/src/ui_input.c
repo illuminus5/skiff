@@ -1789,7 +1789,7 @@ static void seq_entry(uint32_t pressed)
         }
         n = chord_make(t, note, ch, &r, &mask);        /* (CHRD OFF, a kit: the note alone; MONO: the root) */
         if (t->p[P_VOICE] && !ENGINES[t->engine]->oneshot) {   /* (drums: hits stack as a chord) */
-            st->note[0] = ch[0];
+            st->note[0] = (uint8_t)clamp(r, 0, 127);      /* (the chord's root: (2.0.3) with the ARP on, ch is the chord) */
             st->n = 1;
             if (!st->hit)
                 st->acc = 0;                              /* ((2.0) one note, a new one: not tied) */
@@ -1955,6 +1955,9 @@ static void layer_unlock(void);
 static void layer_home_lock(void);
 static void rec_clear_poll(void);
 static void tl_undo_take(track_t *t, const char *name);
+/* (2.0.3, #69) the FX layer's macros held (ui.c mom_poll, mom_keep): FX held (or locked), or let go with keys pressed
+ * with it still held, its map up and their effects playing */
+static int fx_map(void) { return (ui.ly == LAYER_FX && layer_held()) || (ui.layer == LAYER_FX && kb_layer); }
 
 /* (Skiff U1) EDIT's step clear on NOTES / the grid: an undo copy first, one for a run of them (the same track,
  * nothing else changed since, under 1.5 s apart); page_tap keeps undo.after / t_ms for the next */
@@ -2103,8 +2106,9 @@ static void ui_input(void)
         usb_serial_apply();                             /* (MENU > USB SERIAL: when the menu has closed) */
     settings_later_poll();                              /* (Felucca #197: LIST / FAV written once the view is left) */
     follow_poll();                                      /* ((1.3, Felucca #242) the step pages follow the play position) */
-    if (mom_poll(mom_down(), layer_open() == LAYER_FX))   /* ((1.3) MOMENTARY: LFO let go (or the menu, a layer ..): back */
-        ui_message("BACK");                             /* ((2.0, D 2A) over RETURN; FX's macros too) */
+    if (mom_poll(mom_down(), fx_map()))                 /* ((1.3) MOMENTARY: LFO let go (or the menu, a layer ..): back */
+        ui_message("BACK");                             /* ((2.0, D 2A) over RETURN; FX's macros too, (2.0.3, #69) once
+                                                         * its map has gone) */
     midi_pc_poll();                                     /* ((1.3) MIDI Program Change) */
     ml_poll();                                          /* ((1.3) MIDI LEARN: a CC came for the picked parameter) */
     if (scr_input(pressed, notes)) {                    /* MENU > SCREEN OFF: dark, or the wake gesture: swallowed */
@@ -2113,7 +2117,7 @@ static void ui_input(void)
         return;                                         /* (before the buttons' timers: no tap or hold after it) */
     }
     if (((pressed >> panel.btn[B_OCTUP]) & 1u) &&      /* ((1.3) MOMENTARY: OCT+ with LFO held: kept (no octave); (2.0, */
-        (mom_keep(mom_down(), layer_open() == LAYER_FX) | (layer_open() == LAYER_PERF && throw_keep()))) {   /* D 2A) */
+        (mom_keep(mom_down(), fx_map()) | (layer_open() == LAYER_PERF && throw_keep()))) {   /* D 2A) */
         pressed &= ~(1u << panel.btn[B_OCTUP]);         /* FX's macros, PERFORM's throws too) */
         ui_message("KEPT");
     }

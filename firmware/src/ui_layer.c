@@ -154,8 +154,9 @@ static void layer_arm(uint32_t pressed, uint32_t now)
         }
 }
 
-/* the armed layer lets go (its button up, or its lock closed): FX's macros come back ((2.0, D 2A) over RETURN: ui.c
- * mom_poll; FX LATCH: they stay while it is locked); one that opened, or a combo: KNOB 1..4 quiet for a while (#39: the
+/* the armed layer lets go (its button up, or its lock closed): FX's macros come back once its map has gone ((2.0, D 2A)
+ * over RETURN: ui.c mom_poll; (2.0.3, #69) not while a key pressed with FX is held; FX LATCH: they stay while it is
+ * locked); one that opened, or a combo: KNOB 1..4 quiet for a while (#39: the
  * knob still turning is not the page's) */
 static void layer_let_go(uint32_t quiet)
 {

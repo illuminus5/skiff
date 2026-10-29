@@ -2108,8 +2108,12 @@ async function updater() {
   ok(stockRefusal("FM-1_015", stopped(4)) === "stockNeedsV16" && stockRefusal("FM-1_016", stopped(4)) === "stockNeedsV15"
      && stockRefusal("FM-1_016", stopped(35)) === "stockNeedsV15" && stockRefusal("FM-1_016", stopped(2)) === "stockSkiffOld"
      && stockRefusal("FM-1_015", stopped(3)) === null && stockRefusal("FM-1_015", stopped(36)) === null
-     && stockRefusal("SMK-37 Pro_016", stopped(4)) === null && stockRefusal("FM-1_015", stopped(4, "lost")) === null,
+     && stockRefusal("FM-1_015", stopped(4, "lost")) === null,
     "installer: where a running Skiff stopped reading an official FM-1 file names the version the unit needs, or a Skiff too old for V16");
+  ok(stockRefusal("SMK-37 Pro_016", stopped(4)) === "stockSmkHead" && stockRefusal("SMK-37 Pro_016", stopped(35)) === "stockSmkHead"
+     && stockRefusal("SMK-37 Pro_016", stopped(2)) === null && stockRefusal("SMK-37 Pro_016", stopped(36)) === null
+     && stockRefusal("SMK-37 Pro_016", stopped(4, "lost")) === null && stockRefusal("Other_016", stopped(4)) === null,
+    "installer: (2.0.3, #64) an SMK-37 whose start-up part is not V016's is told so (nothing written), not to replug");
 }
 
 await editorMock();
