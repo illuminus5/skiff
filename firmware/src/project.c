@@ -84,6 +84,9 @@
  *
  * Built on the Mac too (tests/project_test.c, -DPROJ_HOST): the part above the #ifndef
  * PROJ_HOST needs core.h, params.c (TP) and engines.c. */
+#if FELUCCA_TAPE
+#include "tape_store.h"
+#endif
 #define PROJ_MAGIC 0x534B4631u                 /* (Skiff) "SKF1": FUN9 + the steps' NUDGE (see the top) */
 #define PROJ_MAGIC2 0x534B4632u                /* (Skiff phase 5) "SKF2": no steps, each track's list (proj_pack2) */
 #define PROJ_MAGIC_V9 0x46554E39u              /* "FUN9": FUN8, 64 bytes longer (the DRUM lane levels, 99 parameters) */
@@ -137,6 +140,10 @@ typedef struct {
     uint8_t scene[PROJ_SCENES];                /* (SKF2) the scenes (bank.c) */
     uint8_t dx_on;                             /* (Skiff phase 7) 1: dx is the project's DRUM-X kit; 0 none (the factory's) */
     dx_lane_t dx[DV_NLANE];                    /* (SKF3) the DRUM-X kit (drumx_voice.c dx_kit), one for every DRUM-X track */
+#if FELUCCA_TAPE
+    uint8_t tape[TAPE_STORE_BYTES]; /* decoded TP1 metadata, never tape audio */
+#endif
+    uint8_t drum_comp[DC_TRACKS][DC_BYTES];
     uint32_t sum;
 } project_t;
 #if FELUCCA_LEGACY
@@ -207,8 +214,16 @@ static const proj_fmt_t PROJ_SKF3 = {PROJ_MAGIC3, PROJ_STORE3, 6u, PROJ_SCENES, 
 static const proj_fmt_t PROJ_SKF4 = {PROJ_MAGIC4, PROJ_STORE4, 6u, PROJ_SCENES, 1u};
 _Static_assert(PROJ_ENT4 + NTRK * (NENT * 4u + 1u) + PROJ_SCENES + 2u + 1u + DV_NLANE * 11u + NTRK * FM6_PACKED +
                1u + 2u * GSID_COUNT + NTRK * (4u + SID_COUNT) + PROJ_NAME_LEN + 4u <= PROJ_STORE4, "SKF4 holds it all");
+#define PROJ_MAGIC5 0x534B4635u
+#define PROJ_STORE5 2816u
+static const proj_fmt_t PROJ_SKF5={PROJ_MAGIC5,PROJ_STORE5,6u,PROJ_SCENES,1u};
 #define PROJ_SKF (&PROJ_SKF4)                  /* the format a save writes */
 #define PROJ_NAME_AT(f) ((f)->size - 4u - PROJ_NAME_LEN)
+#if FELUCCA_TAPE
+#define PROJ_TAPE_AT (PROJ_STORE4-4u-PROJ_NAME_LEN-TAPE_STORE_BYTES)
+_Static_assert(PROJ_ENT4+NTRK*(NENT*4u+1u)+PROJ_SCENES+2u+1u+DV_NLANE*11u+NTRK*FM6_PACKED+
+    1u+2u*GSID_COUNT+NTRK*(4u+SID_COUNT)<=PROJ_TAPE_AT,"TP1 overlaps SKF4 parameters");
+#endif
 #define PROJ_FM6_AT(f) (PROJ_NAME_AT(f) - (f)->nt * FM6_PACKED)
 #define PROJ_DX_MARK 0x58u                    /* ('X') the kit follows */
 #define PROJ_DX_AT(f) (PROJ_FM6_AT(f) - 1u - DV_NLANE * sizeof(dx_lane_t))   /* (a dx format's) */
@@ -226,7 +241,7 @@ _Static_assert(P_COUNT >= PROJ_NP && PROJ_NX <= PROJ_PX_MAX, "the parameters pas
 _Static_assert(68u + 6u * (PROJ_NP + 2u + NENT * 2u + 1u) + PROJ_SCENES <=
                PROJ_STORE3 - 4u - PROJ_NAME_LEN - 6u * FM6_PACKED - 1u - DV_NLANE * 11u - 2u - 6u * PROJ_PX_MAX,
                "SKF3's tracks, lists and scenes end before its PX block");
-typedef union { uint32_t align; uint8_t raw[FELUCCA_LEGACY ? PROJ_STORE_SIZE : PROJ_STORE4]; } project_store_t;   /* ((2.0)
+typedef union { uint32_t align; uint8_t raw[FELUCCA_LEGACY ? PROJ_STORE_SIZE : PROJ_STORE5]; } project_store_t;   /* ((2.0)
                                                 * SKF4's, the largest record it reads; the converter's SKF1) */
 _Static_assert(G_COUNT == 27u, "FUN7 globals retain original IDs");
 #if FELUCCA_LEGACY
@@ -616,7 +631,7 @@ static int proj_import(project_t *q, const void *b, int n)
     if (!proj_import_any(q, b, n) || !proj_engines_ok(q))
         return 0;
 #if FELUCCA_LEGACY
-    if (proj_fmt_of(b, n) != &PROJ_SKF3 && proj_fmt_of(b, n) != &PROJ_SKF4 &&   /* (Skiff phase 9) the CHORUS MODE */
+    if (proj_fmt_of(b, n) != &PROJ_SKF5 && proj_fmt_of(b, n) != &PROJ_SKF3 && proj_fmt_of(b, n) != &PROJ_SKF4 &&   /* (Skiff phase 9) the CHORUS MODE */
         (q->g[G_CMODE] || q->g[G_CFDBK])) {
         q->g[G_CMODE] = q->g[G_CFDBK] = 0;          /* and FEEDBACK: in an older format the old GM drum part's level */
         q->sum = proj_sum(q);                       /* and reverb send, read above: as at power-on) */
@@ -640,7 +655,7 @@ static void proj_ent_none(project_t *q);
 static const proj_fmt_t *proj_fmt_of(const void *b, int n)
 {
     const uint32_t *w = (const uint32_t *)b;
-    const proj_fmt_t *f = n < 8 ? 0 : w[0] == PROJ_MAGIC4 ? &PROJ_SKF4 : w[0] == PROJ_MAGIC3 ? &PROJ_SKF3 :
+    const proj_fmt_t *f = n < 8 ? 0 : w[0] == PROJ_MAGIC5 ? &PROJ_SKF5 : w[0] == PROJ_MAGIC4 ? &PROJ_SKF4 : w[0] == PROJ_MAGIC3 ? &PROJ_SKF3 :
                           FELUCCA_LEGACY && w[0] == PROJ_MAGIC2 ? &PROJ_SKF2 : 0;
     return f && n >= (int)f->size && w[1] == f->size ? f : 0;
 }
@@ -1020,6 +1035,11 @@ static int proj_pack4(project_store_t *out, const project_t *q)
         if (!(n = sid_put(b + pos, q->t[t].p))) return 0;
         pos += n;
     }
+#if FELUCCA_TAPE
+    {tape_store_state_t check;int present=tape_store_decode(&check,q->tape);
+        if(pos>PROJ_TAPE_AT||present<0)return 0;
+        if(present)memcpy(b+PROJ_TAPE_AT,q->tape,TAPE_STORE_BYTES);}
+#endif
     {
         char nm[PROJ_NAME_LEN + 1u];
         memcpy(b + PROJ_NAME_AT(&PROJ_SKF4), nm, proj_name_get(nm, (const uint8_t *)q->name));
@@ -1073,6 +1093,13 @@ static int proj_unpack4(project_t *q, const uint8_t *b)
             q->t[t].step[e].time = ST_REST;               /* (empty: the patterns hold the steps) */
 #endif
     }
+#if FELUCCA_TAPE
+    if(pos<=PROJ_TAPE_AT){
+        tape_store_state_t check;int present=tape_store_decode(&check,b+PROJ_TAPE_AT);
+        if(present<0)return 0;
+        if(present)memcpy(q->tape,b+PROJ_TAPE_AT,TAPE_STORE_BYTES);
+    }
+#endif
 #if FELUCCA_LEGACY
     chain_defaults(&q->chain);
 #endif
@@ -1083,6 +1110,35 @@ static int proj_unpack4(project_t *q, const uint8_t *b)
     q->sum = proj_sum(q);
     return 1;
 }
+/* SKF5 wraps an unchanged SKF4 record. Explicit size/hash and extension validation
+ * reject malformed data before runtime restore or backup writes. No new sectors. */
+_Static_assert(8u+PROJ_STORE4+DC_TRACKS*DC_BYTES<=PROJ_STORE5-4u-PROJ_NAME_LEN,"SKF5 bounds");
+static int proj_pack5(project_store_t *out,const project_t *q)
+{
+    if(!dc_valid(q->drum_comp,sizeof q->drum_comp)||!proj_pack4(out,q))return 0;
+    uint8_t *b=out->raw;
+    for(uint32_t i=PROJ_STORE4;i;i--)b[i+7u]=b[i-1u];
+    memcpy(b,&PROJ_SKF5.magic,4);memcpy(b+4,&PROJ_SKF5.size,4);
+    memset(b+8u+PROJ_STORE4,0,PROJ_STORE5-8u-PROJ_STORE4);
+    memcpy(b+8u+PROJ_STORE4,q->drum_comp,sizeof q->drum_comp);
+    memcpy(b+PROJ_NAME_AT(&PROJ_SKF5),b+8u+PROJ_NAME_AT(&PROJ_SKF4),PROJ_NAME_LEN);
+    uint32_t sum=proj_hash(b,PROJ_STORE5-4u);memcpy(b+PROJ_STORE5-4u,&sum,4);return 1;
+}
+static int proj_unpack5(project_t *q,const uint8_t *b)
+{
+    uint32_t sum;memcpy(&sum,b+PROJ_STORE5-4u,4);
+    for(uint32_t i=8u+PROJ_STORE4+DC_TRACKS*DC_BYTES;i<PROJ_NAME_AT(&PROJ_SKF5);i++)if(b[i])return 0;
+    if(memcmp(b+8u+PROJ_NAME_AT(&PROJ_SKF4),b+PROJ_NAME_AT(&PROJ_SKF5),PROJ_NAME_LEN))return 0;
+    if(sum!=proj_hash(b,PROJ_STORE5-4u)||!dc_valid(b+8u+PROJ_STORE4,DC_TRACKS*DC_BYTES)||
+       proj_fmt_of(b+8,PROJ_STORE4)!=&PROJ_SKF4||!proj_unpack4(q,b+8))return 0;
+    memcpy(q->drum_comp,b+8u+PROJ_STORE4,sizeof q->drum_comp);q->sum=proj_sum(q);return 1;
+}
+static const proj_fmt_t *proj_save_fmt(const project_t *q)
+{
+    const uint8_t *b=(const uint8_t *)q->drum_comp;
+    for(uint32_t i=0;i<sizeof q->drum_comp;i++)if(b[i])return &PROJ_SKF5;
+    return &PROJ_SKF4;
+}
 /* q -> an SKF2 or (Skiff phase 6) SKF3 record, format f (its steps and motion not: they are the patterns'): 0 for a
  * value no format can hold, or a format of more tracks than this firmware has. Its first f->nt tracks, the first f->sc
  * scene bytes: SKF2 holds four tracks, their scenes. (2.0) SKF4: proj_pack4 */
@@ -1090,6 +1146,7 @@ static int proj_pack2(project_store_t *out, const project_t *q, const proj_fmt_t
 {
     uint8_t *b = out->raw;
     uint32_t pos = 68u, t, i, sum;
+    if (f == &PROJ_SKF5) return proj_pack5(out,q);
     if (f == &PROJ_SKF4) return proj_pack4(out, q);
     if (f->nt > NTRK || f->sc > PROJ_SCENES) return 0;
     for (t = 0; t < f->nt; t++)
@@ -1144,6 +1201,7 @@ static uint32_t proj_slot_refs(uint32_t id)
     for (sl = 0; sl < 4u; sl++) {
         const uint8_t *b = proj_slot[sl].raw;
         const proj_fmt_t *f = proj_fmt_of(b, sizeof proj_slot[sl]);
+        if(f==&PROJ_SKF5){b+=8;f=&PROJ_SKF4;}
         np = b[66];
         if (f == &PROJ_SKF4)
             off = PROJ_ENT4, w = 4u;
@@ -1161,6 +1219,7 @@ static uint32_t proj_slot_refs(uint32_t id)
 static int proj_unpack2(project_t *q, const uint8_t *b, const proj_fmt_t *f)
 {
     uint32_t pos = 68u, t, i, magic, size, sum, np = b[66];
+    if (f == &PROJ_SKF5) return proj_unpack5(q,b);
     if (f == &PROJ_SKF4) return proj_unpack4(q, b);
     memcpy(&magic, b, 4); memcpy(&size, b + 4, 4); memcpy(&sum, b + f->size - 4u, 4);
     if (f->nt > NTRK || f->sc > PROJ_SCENES || magic != f->magic || size != f->size ||
@@ -1364,6 +1423,10 @@ static void project_capture(project_t *p)
         p->dx_on = 1;                              /* the factory's when loaded; a project of before as it was) */
         memcpy(p->dx, dx_kit, sizeof p->dx);
     }
+#if FELUCCA_TAPE
+    skiff_tape_store(p->tape);
+#endif
+    memcpy(p->drum_comp,drum_comp,sizeof drum_comp);
     p->sum = proj_sum(p);
 }
 
@@ -1388,11 +1451,11 @@ static int project_save_as(uint32_t slot, const char *name)
         memcpy(p->name, name, str_len(name) < PROJ_NAME_LEN ? str_len(name) : PROJ_NAME_LEN);
     }
     proj_wire_gen++;
-    if (!proj_pack2(&proj_wire, p, PROJ_SKF)) { ui_message("SAVE FORMAT ERROR"); return 2; }
+    if (!proj_pack2(&proj_wire, p, proj_save_fmt(p))) { ui_message("SAVE FORMAT ERROR"); return 2; }
 
 #if FELUCCA_FLASH
     if (flash_ok) {
-        if (st_save(OBJ_PROJECT0 + (slot & 3u), &proj_wire, PROJ_SKF->size)) {
+        if (st_save(OBJ_PROJECT0 + (slot & 3u), &proj_wire, ((const uint32_t *)proj_wire.raw)[1])) {
             ui_message("SAVE ERROR");
             return 2;
         }
@@ -1477,7 +1540,10 @@ static int project_restore_runtime(const project_t *input)
 {
     project_t *p = &proj_scratch;
     uint32_t i, k;
-    if (!proj_ok(input) || !proj_engines_ok(input)) return 1;
+    if (!proj_ok(input) || !proj_engines_ok(input)||!dc_valid(input->drum_comp,sizeof input->drum_comp)) return 1;
+#if FELUCCA_TAPE
+    {tape_store_state_t check;if(tape_store_decode(&check,input->tape)<0)return 1;}
+#endif
     if (p != input) memcpy(p, input, sizeof *p);
 #if FELUCCA_LEGACY
     proj_drums_to_part(p);                              /* a RAM slot of firmware before 1.0 */
@@ -1489,6 +1555,11 @@ static int project_restore_runtime(const project_t *input)
     panic_req = (1u << NTRK) - 1u;
     fm1_irq_off();                                      /* the audio ISR must not see half a project */
     seq_stop();
+    memcpy(drum_comp,p->drum_comp,sizeof drum_comp);for(uint32_t dc=0;dc<DC_TRACKS;dc++)dc_reset_audio(dc);
+#if FELUCCA_TAPE
+    skiff_tape_project_reset();
+    skiff_tape_restore(p->tape);
+#endif
     launch_drop();                                      /* (Skiff) the bank's staged patterns: not over it (launch.c) */
     transport_req = 0;
 #if FELUCCA_LEGACY
@@ -1771,6 +1842,13 @@ static uint32_t autosave_sig(void)
     h = as_mix(h, trk_pid, sizeof trk_pid);
     i = (ui_prefs & PREF_RESTORE_OFF) != 0;           /* (RESTORE LAST back ON: a round, the project written) */
     h = as_mix(h, &i, sizeof i);
+#if FELUCCA_TAPE
+    {uint32_t v[4]={tape_seq_length,tape_filter,tape_lfo,tape_live&TAPE_STORE_LIVE_MASK};
+        h=as_mix(h,v,sizeof v);
+        for(i=0;i<6;i++){uint32_t send=tape_send[i];h=as_mix(h,&send,sizeof send);}
+        for(i=0;i<TS_STEPS;i++){uint32_t step=tape_steps[i];h=as_mix(h,&step,sizeof step);}}
+#endif
+    for(uint32_t dc=0;dc<sizeof drum_comp;dc++)h=(h^((const uint8_t *)drum_comp)[dc])*16777619u;
     return as_mix(h, proj_name, sizeof proj_name);
 }
 
@@ -1879,7 +1957,11 @@ static void project_new(void)
     transport_req = 2;
     panic_req = (1u << NTRK) - 1u;
     fm1_irq_off();
+    for(uint32_t dc=0;dc<DC_TRACKS;dc++)dc_defaults(dc);
     seq_stop();
+#if FELUCCA_TAPE
+    skiff_tape_project_reset();
+#endif
     launch_drop();
     transport_req = 0;
     memset(&motion, 0, sizeof motion);
@@ -1971,7 +2053,7 @@ static void autosave_poll(void)
     if (!(ui_prefs & PREF_RESTORE_OFF)) {
         project_capture(&proj_scratch);
         proj_wire_gen++;
-        as.err = !proj_pack2(&proj_wire, &proj_scratch, PROJ_SKF) || st_save(OBJ_AUTOSAVE, &proj_wire, PROJ_SKF->size) != 0;
+        as.err = !proj_pack2(&proj_wire, &proj_scratch, proj_save_fmt(&proj_scratch)) || st_save(OBJ_AUTOSAVE, &proj_wire, ((const uint32_t *)proj_wire.raw)[1]) != 0;
         if (as.err)
             return;
         as.writes++;

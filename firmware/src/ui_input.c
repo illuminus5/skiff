@@ -135,6 +135,10 @@ static uint32_t oct_leds(void)
         return 1u | OCT_BREATH;
     if (layer_set_open())                               /* a SET layer: OCT- puts back (UNDO), OCT+ nothing ((2.0) */
         return 1u | (keep_ready() ? OCT_BREATH : 0u);   /* PERFORM: OCT+ keeps the throws) */
+#if FELUCCA_TAPE
+    if(ui.menu==3 && !ui.confirm)
+        return OCT_BREATH | (tape_wanted && tape_status_frames ? OCT_BREATH_DN : 0u);
+#endif
     if (ui.menu && !ui.confirm)
         return ui.menu >= 2u ? 1u :                    /* (ABOUT: OCT- back, lit) */
                menu_act(ui.menu_sel) ? (ui.menu_sel != MI_LCLEAR || ml_count() ? OCT_BREATH : 0u) :   /* CALIBRATION /
@@ -1500,6 +1504,12 @@ static void edit_param(uint32_t slot, int32_t steps)
     const page_t *pg = cur_page();
     const param_desc_t *d;
     int32_t v;
+#if FELUCCA_TAPE
+    if(pg->fam==FAM_FX && pg->graph==GR_NONE){
+        if(slot==0)tape_send[song.sel%NTRK]=(uint32_t)clamp((int32_t)tape_send[song.sel%NTRK]+steps,0,100);
+        return;
+    }
+#endif
     if (pg->graph == GR_FEEL) {                           /* (Skiff 2.0) FEEL: CHANCE RATCHET NUDGE TYPE of the selection */
         follow_hold();                                    /* ((1.3) the edited steps stay on the screen) */
         feel_turn(TSEL, slot, steps);
@@ -1516,6 +1526,11 @@ static void edit_param(uint32_t slot, int32_t steps)
     if (sheet_of(pg->graph)) {                            /* (Skiff phase 7, 8; FM6 LAB) a sheet: its window (SHEETS) */
         sheet_of(pg->graph)->knob(slot, steps);
         return;
+    }
+    if(pg->graph==GR_DCOMP){
+        uint32_t value=dc_get(song.sel,page_lane(),slot);
+        const param_desc_t *d=slot<3?ins_desc(IT_COMP,slot):&TP[P_IMIX];
+        dc_set(song.sel,page_lane(),slot,(uint32_t)param_turn(d,(int32_t)value,steps));return;
     }
     if ((pg->graph == GR_LANES || pg->graph == GR_LMIX) && slot == 0u) {   /* (Skiff U3, R6) LANES: KNOB 1 the lane (the
                                                          * grid's too), KNOB 2 its level (params.c page_desc); ((2.0, #36)
@@ -1859,6 +1874,9 @@ static void cursor_turn(int32_t s)
  *     (SAVE held undoes it). Up to 1.0.3 it did that on HOME and PRESETS only */
 static void presets_turn(int32_t s)
 {
+    if(!ui.home&&cur_page()->graph==GR_DCOMP){
+        uint8_t *lane=page_lane_p();*lane=(uint8_t)clamp((int32_t)*lane+s,0,7);return;
+    }
     const page_t *pg = cur_page();
     uint32_t g = pg->graph;
     if (ui.home || g == GR_BROWSE) {
@@ -2282,6 +2300,10 @@ static void ui_input(void)
     if (((pressed >> panel.btn[B_PLAY]) & 1u) && (ui.menu || ui.confirm))
         play_press();                                   /* (Skiff U1) PLAY over the menu and a dialog too (they return
                                                          * before the buttons below) */
+#if FELUCCA_TAPE
+    if(ui.menu==3){tape_page_on=1;tape_ui_input(notes|lkeys,pressed,oct);return;}
+    tape_page_on=0;
+#endif
     if (ui.menu) {                                   /* SAVE / REC taps do nothing here (HOME: above) */
         if (ui.save_t0)
             ui.save_t0 |= 2u;

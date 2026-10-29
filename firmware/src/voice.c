@@ -532,6 +532,7 @@ static void engine_block(track_t *t)
             v->stage = v->stage2 = 0;
             v->env = v->env_out = v->env2 = 0;
         }
+        dc_reset_audio((uint32_t)(t-trk));
         t->engine = eng_idx(t->eng_req);
         memset(eng_part(t), 0, eng_size(t));          /* (Skiff) the part's shared engine area, the new engine's now: from
                                                        * zero, as at power-on (engines.c eng_mem; a light track's eng_lite) */
@@ -692,6 +693,19 @@ static int lanes_panned(const track_t *t)
     const int16_t *p = &t->p[P_LPAN0];
     return (p[0] | p[1] | p[2] | p[3] | p[4] | p[5] | p[6] | p[7]) != 0;
 }
+static __attribute__((noinline)) void dc_render(track_t *t,voice_t *v,int32_t *b,uint32_t n,const vmod_t *m)
+{
+    uint32_t lane=(uint32_t)v->s[0]&7u;
+    ENGINES[t->engine]->render(t,v,b,n,m);
+    dc_process(t,lane,b,n);
+    int32_t level=clamp(t->p[P_LN0+lane],0,127);
+    if(level<127){int32_t gain=level*level*2+(level*level>>6);for(uint32_t i=0;i<n;i++)b[i]=(int32_t)((int64_t)b[i]*gain/32768);}
+}
+static __attribute__((noinline)) void dc_voice_add(track_t *t,voice_t *v,int32_t *out,uint32_t n,const vmod_t *m)
+{
+    int32_t b[CTL];spread_clear(b);dc_render(t,v,b,n,m);
+    for(uint32_t i=0;i<n;i++)out[i]+=b[i];
+}
 static __attribute__((noinline)) void lpan_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     int32_t vb[CTL], pan = t->p[P_LPAN0 + ((uint32_t)v->s[0] & 7u)], w = pan < 0 ? -pan : pan;
@@ -699,7 +713,8 @@ static __attribute__((noinline)) void lpan_render(track_t *t, voice_t *v, int32_
     uint32_t i;
     n = n > CTL ? CTL : n;
     spread_clear(vb);
-    ENGINES[t->engine]->render(t, v, vb, n, m);
+    if(dc_on(t,(uint32_t)v->s[0]&7u))dc_render(t,v,vb,n,m);
+    else ENGINES[t->engine]->render(t, v, vb, n, m);
     for (i = 0; i < n; i++) {                           /* (|vb| < 2^17, w <= 64: no overflow) */
         out[i] += vb[i];
         sd[i] += (vb[i] * w) >> 6;
@@ -717,8 +732,10 @@ static void lfo_pitch(int32_t lfo, int32_t d, int32_t *p16, int32_t *fine)
                                                      * nearest (1 is then 0.42 ct, not 0) */
 }
 static void smx_render(track_t *t, voice_t *v, uint32_t k, int32_t *dst, uint32_t n, const vmod_t *m);   /* (fx.c) */
-static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
+/* Keep voice/lane rendering out of the mix/sends loop: one bounded render call per track. */
+static __attribute__((noinline)) uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
 {
+    if(drum_engine(t->engine))drum_comp_state[(uint32_t)(t-trk)].clock+=n;
     const engine_t *e = ENGINES[t->engine];
     const int16_t *p = t->p;
     uint32_t i;
@@ -821,6 +838,8 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         if (t->lpan_on && t->p[P_LPAN0 + ((uint32_t)v->s[0] & 7u)])   /* ((2.0, #36) a lane off C: its share of the
                                                                       * sides (lpan_render) */
             lpan_render(t, v, out, n, &m);
+        else if(drum_engine(t->engine)&&dc_on(t,(uint32_t)v->s[0]&7u))
+            dc_voice_add(t,v,t->spread_on>v->side?sb:out,n,&m);
         else if (t->engine == ENGI_SAMPLE && v->s[4] >= 0x8000)   /* ((Skiff, #21) a user sample's sound: its LEVEL and
                                                                 * sends, fx.c) */
             smx_render(t, v, ti, t->spread_on > v->side ? sb : out, n, &m);

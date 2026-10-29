@@ -913,6 +913,18 @@ static void graph_slicer(const track_t *t, uint16_t c)
  * its pattern looped, no swing): full up to the box's top, down by DEPTH at each hit (the source's colour under it,
  * a DRUM source's KICK lane only), back in a line over RELEASE; a hit's dip from the bar before runs into the bar's
  * start. BY OFF (or the track itself): the empty box */
+/* EDIT > DRUM COMP: the same eight-fader layout as EDIT > LANES.
+ * Each fader is that lane's compressor MIX; all themes reuse the lane widgets. */
+static void graph_dcomp(const track_t *t,uint16_t c)
+{
+    uint32_t selected=page_lane(),track=(uint32_t)(t-trk);
+    for(uint32_t lane=0;lane<DC_LANES;lane++){
+        int32_t x=3+29*(int32_t)lane;
+        int sel=lane==selected;
+        lane_fader_of(t,lane,x,82,76,(int32_t)dc_get(track,lane,3)*70/127,sel,c);
+        lane_tile(t,lane,x,90,sel);
+    }
+}
 static void graph_duck(const track_t *t, uint16_t c)
 {
     uint32_t src = (uint32_t)t->p[P_DKSRC], k = (uint32_t)(t - trk), i, x, nh = 0;
@@ -1543,6 +1555,10 @@ static uint32_t graph_signature(void)
         for (i = 0; i < 4u; i++)
             h ^= (uint32_t)graph_project_used(i) << (20u + i);
         h += graph_pname_sig;
+    }
+    if(pg->graph==GR_DCOMP){
+        h=(h^page_lane())*16777619u;
+        for(uint32_t dc=0;dc<DC_BYTES;dc++)h=(h^((const uint8_t *)drum_comp[song.sel%DC_TRACKS])[dc])*16777619u;
     }
     if (pg->graph == GR_LANES || pg->graph == GR_LMIX)   /* (Skiff U3) the levels, the lane; ((2.0, #36) the pans; #35 */
         for (i = 0; i < 8u; i++)                         /* a user kit's lanes: an upload) */
@@ -2579,6 +2595,7 @@ static void draw_graph(void)
         case GR_SLCR:
             graph_slicer(t, c);
             break;
+        case GR_DCOMP: graph_dcomp(t,c);break;
         case GR_DUCK:                                /* (Skiff) */
             graph_duck(t, c);
             break;

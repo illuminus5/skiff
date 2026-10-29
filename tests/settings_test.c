@@ -234,7 +234,7 @@ int main(void)
                s.s.rec == 0xD5u && s.s.prefs == 31u && s.s.layers == 32u);
         assert(s.cpal_cols[0] == 0x40u && s.cpal_cols[21] == 0x40u + 21u && s.ml[0] == 0x80u && s.ml[29] == 0x80u + 29u &&
                s.fav[14][0] == 0x0Fu && !s.fav[14][8] && !s.fav[14][29] && !s.fav[ENGI_DIGITAL][2] &&
-               !s.fav[ENGI_DIGITAL][31] && s.fav[8][0] == 1u && s.room[0] == 0x33u && s.room[31] == 0x33u);
+               !s.fav[ENGI_DIGITAL][31] && s.fav[8][0] == 1u && s.room[0] == 0x55u && s.room[16] == 0x33u && s.room[31] == 0x33u);
         memset(favorites.factory, 0, sizeof favorites.factory);
         t = s;
         assert(settings_import(&t, sizeof t) == 1 && !memcmp(&t, &s, sizeof t) &&
@@ -259,4 +259,5 @@ int main(void)
     assert(settings_import(&p, 3) == 0 && settings_import(&p, -1) == 0);
     assert(settings_import(&p, sizeof p - 1) == 0);
     puts("Settings: PER1/PER2/PER3 migration, palette ids, calibration, HOLD, LEDS, CLICK / COUNT-IN and independent feature preservation passed.");
+    return 0;
 }

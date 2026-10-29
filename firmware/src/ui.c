@@ -287,7 +287,7 @@ static struct {
     uint8_t hot_col, hot_t;      /* column whose knob was just turned (drawn white) */
     uint8_t menu;                /* 0 off, 1 list, 2 about + credits (HOME held) */
     uint8_t menu_sel;            /* MENU: the row (menu_items.c MI_*; its tab MI_TAB), kept while the device runs */
-    uint8_t menu_row[5];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
+    uint8_t menu_row[5 + FELUCCA_TAPE];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
     volatile uint8_t mpc[NTRK];  /* ((1.3) MIDI Program Change per track, 0x80 | program, 0 none: midi_control.c mpc_io
                                   * notes it, midi_pc_poll loads it) */
     uint16_t menu_scroll;        /* continuous ABOUT + CREDITS position, pixels */
@@ -532,7 +532,7 @@ static uint32_t large_kind(void)
     uint32_t g;
     if (!(ui_prefs & PREF_LARGE))
         return LK_OFF;
-    if (ui.layer)
+    if (ui.layer || (FELUCCA_TAPE && ui.menu == 3))
         return LK_LABEL;
     if (ui.home)
         return LK_TALL;
@@ -629,6 +629,7 @@ static int page_visible(uint32_t i)
         return TSEL->eng_req % NENGINES == sh->eng;
     if (PAGES[i].graph == GR_LANES)
         return TSEL->eng_req % NENGINES == ENGI_DRUM;
+    if(PAGES[i].graph==GR_DCOMP)return drum_engine(TSEL->eng_req%NENGINES);
     if (PAGES[i].graph == GR_LMIX)                      /* ((2.0, #36) a kit's: DRUM, DRUM-X) */
         return drum_engine(TSEL->eng_req % NENGINES);
     if (PAGES[i].graph == GR_SMIX)                     /* ((#21) a SAMPLE track's on a USR set with samples) */
@@ -1344,6 +1345,7 @@ typedef struct {
     uint8_t eng, preset, user;
     uint8_t pid;                 /* (Skiff phase 5) the pattern the track was on (trk_pid): only there does it undo */
     uint8_t fm6_slot;            /* the track's FM6 patch and its SLOT (eng_fm6.c): an edited or a project's */
+    uint8_t drum_comp[DC_BYTES];
     uint8_t fm6[FP_SIZE + 1u];   /* patch is the track's own, not a factory one */
     dx_lane_t dx[DV_NLANE];      /* (Skiff phase 7, UNDO_KIT) the DRUM-X kit as it was */
     int16_t p[P_COUNT];
@@ -1473,6 +1475,7 @@ static uint32_t track_sig(const track_t *t)      /* the sound (an FM6 track's pa
         h = fnv(h, dx_kit, sizeof dx_kit);
     for (uint32_t j = 0; j < motion.count; j++)
         if ((motion.event[j].place >> 6) == k) h = fnv(h, &motion.event[j], sizeof motion.event[j]);
+    h=fnv(h,drum_comp[trk_index(t)],DC_BYTES);
     return h ^ ((motion.on >> k) & 1u);
 }
 static uint32_t motion_sig(const track_t *t)     /* the track's motion only (the sound moves while it plays) */
@@ -1634,6 +1637,7 @@ static void load_begin(track_t *t, uint32_t what)
     undo.preset = t->preset;
     undo.user = t->user;
     memcpy(undo.p, t->p, sizeof undo.p);
+    memcpy(undo.drum_comp,drum_comp[i],DC_BYTES);
     memcpy(undo.step, t->step, sizeof undo.step);
     memcpy(undo.fm6, fm6_patch[i], FP_SIZE);
     undo.fm6_slot = fm6_slot[i];
@@ -1695,6 +1699,7 @@ static void motion_undo_take(track_t *t, uint32_t tag)
     undo.preset = t->preset;
     undo.user = t->user;
     memcpy(undo.p, t->p, sizeof undo.p);
+    memcpy(undo.drum_comp,drum_comp[i],DC_BYTES);
     memcpy(undo.step, t->step, sizeof undo.step);
     memcpy(undo.fm6, fm6_patch[i], FP_SIZE);
     undo.fm6_slot = fm6_slot[i];
@@ -1739,6 +1744,9 @@ static int undo_swap(undo_t *c)
     c->motion_backup = current_motion;
     fm1_irq_off();                                /* the audio ISR must not see half a sound */
     if (c->what & UNDO_SOUND) {
+        uint32_t track=trk_index(t);uint8_t old[DC_BYTES];
+        memcpy(old,drum_comp[track],DC_BYTES);memcpy(drum_comp[track],c->drum_comp,DC_BYTES);
+        memcpy(c->drum_comp,old,DC_BYTES);dc_reset_audio(track);
         uint8_t e = t->eng_req, pr = t->preset, u = t->user;
         panic_req |= (uint8_t)(1u << trk_index(t));
         t->eng_req = c->eng;
@@ -1985,6 +1993,7 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     }
     pi = preset_orig(e, pi % e->npresets);
     t->preset = (uint8_t)pi;
+    fm1_irq_off();dc_defaults(trk_index(t));fm1_irq_on();
     preset_fill(t->p, e, pi);
     if (kit)                                          /* ((Skiff phase 9) DRUM-X: the preset's kit, the project's: */
         memcpy(dx_kit, DX_KITS[kit - 1u], sizeof dx_kit);   /* one undo copy holds it, as INIT's: sound_init) */
@@ -2053,6 +2062,7 @@ static void sound_init(void)
 
 static void track_defaults(track_t *t)
 {
+    dc_defaults(trk_index(t));
     uint32_t i;
     for (i = 0; i < P_E0; i++)
         t->p[i] = TP[i].def;

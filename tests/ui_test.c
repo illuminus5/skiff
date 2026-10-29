@@ -1572,9 +1572,9 @@ static int test_menu_tabs(void)
     ui_prefs = 0;
     bad += check("MENU tabs: DISPLAY CONTROL AUDIO SYSTEM MIDI ((1.3) MIDI appended), rows in a run, 6 shown fit the page; "
                  "tab gaps constant (S, LARGE)",
-                 ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
+                 ok && MTAB_COUNT == 5u + FELUCCA_TAPE && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
                  mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 6u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN) */
-                 mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC && mtab_rows(MTAB_MIDI) == 10u);   /* ((Skiff) SYSTEM: CPU
+                 mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC + (FELUCCA_USB_ROUTING ? (FELUCCA_USB_6CH ? UAC_CHANNELS : 2u) : 0u) && mtab_rows(MTAB_MIDI) == 10u);   /* ((Skiff) SYSTEM: CPU
                                                          * CLOCK; (Skiff 2.0) USB SERIAL with the console only) */
 
     ui_power_on();
@@ -1591,7 +1591,13 @@ static int test_menu_tabs(void)
     turn(EN_ALGO, 1); ok &= ui.menu_sel == MI_LOWCUT && menu_tab() == MTAB_AUDIO;
     turn(EN_ALGO, -1); ok &= ui.menu_sel == MI_BPMLOCK;   /* (back at the row left there) */
     turn(EN_ALGO, -1); ok &= ui.menu_sel == MI_SCROFF;
+#if FELUCCA_TAPE
+    turn(EN_ALGO,-1);ok &= ui.menu_sel==MI_TAPE && menu_tab()==MTAB_TAPE;
+#endif
     turn(EN_ALGO, -1); ok &= ui.menu_sel == MI_CLOCK && menu_tab() == MTAB_MIDI;   /* (wraps; (1.3) MIDI last) */
+#if FELUCCA_TAPE
+    turn(EN_ALGO,1);ok &= ui.menu_sel==MI_TAPE;
+#endif
     turn(EN_ALGO, 1); ok &= ui.menu_sel == MI_SCROFF;
     bad += check("MENU: ALGORITHM steps between the tabs and wraps, each tab back at its last row", ok && ui.menu == 1);
     turn(EN_ALGO, 1); turn(EN_PRESET, -1);            /* CONTROL: from FX LATCH up to KNOB ACCEL */
@@ -3001,9 +3007,9 @@ static int test_edit_cycle(void)
 #endif
     {   /* #97: a DRUM track's lane levels on EDIT > LANES ((Skiff U3, R6) one page: KNOB 1 the lane, KNOB 2 its level;
          * N5: VOICE and VOICE 2 change nothing on the hits, not there) */
-        static const char *const CYC_K[] = {"EDIT 1", "EDIT 2", "LANES", "LANE MIX", "EDIT 1"};
+        static const char *const CYC_K[] = {"EDIT 1", "EDIT 2", "LANES", "LANE MIX", "DRUM COMP", "EDIT 1"};
         set_engine_of(TSEL, ENGI_DRUM);
-        bad += check("EDIT cycle (DRUM): EDIT 1 EDIT 2 LANES (2.0) LANE MIX, EDIT 1", engine_cycle(CYC_K, NELEM(CYC_K)));
+        bad += check("EDIT cycle (DRUM): EDIT 1 EDIT 2 LANES LANE MIX DRUM COMP, EDIT 1", engine_cycle(CYC_K, NELEM(CYC_K)));
         go_title("LANES"); frame();
         ok = TSEL->p[P_LN5] == 127;
         turn(EN_K1, 5 - (int32_t)ui.lane);
@@ -3035,7 +3041,7 @@ static int test_edit_cycle(void)
                      str_eq(cur_page()->title, "EDIT 1") && !memcmp(ui.msg, "NO LANES ON ", 12));
     }
     {   /* (Skiff phase 7, 8) DRUM-X: its lane levels, and SOUND, the sheet of a sound of the project's kit (ui_dx.c) */
-        static const char *const CYC_X[] = {"EDIT 1", "EDIT 2", "SOUND", "LANE MIX", "EDIT 1"};   /* ((U3) LANES: the
+        static const char *const CYC_X[] = {"EDIT 1", "EDIT 2", "SOUND", "LANE MIX", "DRUM COMP", "EDIT 1"};   /* ((U3) LANES: the
                                                                                                 * sheet's LEVL) */
         static dx_lane_t keep[DV_NLANE];
         uint32_t pr;
@@ -3043,7 +3049,7 @@ static int test_edit_cycle(void)
         memcpy(keep, dx_kit, sizeof keep);
         set_engine_of(TSEL, ENGI_DRUMX);
         go_title("EDIT 1"); ui.fam_last[FAM_EDIT] = ui.page;   /* (EDIT reopens its last page: from the first) */
-        bad += check("EDIT cycle (DRUM-X): EDIT 1 EDIT 2 SOUND (2.0) LANE MIX, EDIT 1", engine_cycle(CYC_X, NELEM(CYC_X)));
+        bad += check("EDIT cycle (DRUM-X): EDIT 1 EDIT 2 SOUND LANE MIX DRUM COMP, EDIT 1", engine_cycle(CYC_X, NELEM(CYC_X)));
         ui_prefs |= PREF_BPM_LOCK;                    /* (SELECT: the pages, the sheet's rows) */
         dx_ui_lane = DV_KICK; dx_ui_win = 0;
         go_title("SOUND"); frame();
@@ -3074,7 +3080,9 @@ static int test_edit_cycle(void)
         ok = str_eq(cur_page()->title, "LANE MIX");   /* ((U3) no VOICE on the hits), its lane the sheet's */
         ok &= page_lane() == DV_SNARE && lock_id(2) == P_LPAN0 + DV_SNARE;
         turn(EN_SELECT, 1);
-        ok &= str_eq(cur_page()->title, "LANE MIX");
+        ok &= str_eq(cur_page()->title, "DRUM COMP") && page_lane()==DV_SNARE;
+        turn(EN_SELECT, 1);ok &= str_eq(cur_page()->title,"DRUM COMP");
+        turn(EN_SELECT, -1);ok &= str_eq(cur_page()->title,"LANE MIX");
         turn(EN_SELECT, -1);
         ok &= str_eq(cur_page()->title, "SOUND") && dx_ui_win == 3u;
         turn(EN_SELECT, -3);
@@ -3083,7 +3091,7 @@ static int test_edit_cycle(void)
         ok &= str_eq(cur_page()->title, "EDIT 2");
         turn(EN_SELECT, 1);
         ok &= str_eq(cur_page()->title, "SOUND") && dx_ui_win == 0u;
-        bad += check("SELECT past the sheet's foot: (2.0) LANE MIX on the sheet's sound, nothing after it (U3); back: the "
+        bad += check("SELECT past the sheet's foot: (2.0) LANE MIX then DRUM COMP on the same sound; clamp at last page; back: the "
                      "sheet's foot; up past its top: EDIT 2; on: its top", ok);
         key_down(13); frame(); key_up(13); frame();   /* (the first C is key 7: 13 is F#, HAT CL) */
         bad += check("a key struck on the track picks the sound edited (HAT CL)", dx_ui_lane == DV_HATC && str_eq(page_head(), "SOUND CH"));
@@ -8131,8 +8139,8 @@ static int test_u4(void)
         TSEL->engine = TSEL->eng_req;
         go_page(GR_DXSND); frame();
         page_pos(ti);
-        bad += check("#7 the sheets show where they are: FM6 OPERATOR 3/6, ALL OPS 4/6, DRUM-X SOUND 3/4 ((2.0) LANE MIX "
-                     "after it)", ok && str_eq(ti, "3/4"));
+        bad += check("#7 the sheets show where they are: FM6 OPERATOR 3/6, ALL OPS 4/6, DRUM-X SOUND 3/5 (LANE MIX and DRUM COMP "
+                     "after it)", ok && str_eq(ti, "3/5"));
     }
     ui_power_on();                                      /* F7: no silent dead ends */
     ui_prefs |= PREF_BPM_LOCK;                          /* (SELECT: the pages) */
@@ -8515,6 +8523,9 @@ static int test_select_pages(void)
     turn(EN_SELECT, 5);
     ok = str_eq(cur_page()->title, "DUCK");                          /* ((U3) FX (phase 9: DRIVE; 1.3: INSERT, INSERT 2)
                                                                       * SLICER DUCK: the buses are GLO's) */
+#if FELUCCA_TAPE
+    press(B_FX);ok &= str_eq(cur_page()->title,"TAPE SEND");
+#endif
     press(B_FX);
     ok &= str_eq(cur_page()->title, "FX");                           /* (FX's button steps on from there: round) */
     turn(EN_SELECT, 5);
@@ -8672,7 +8683,7 @@ static int test_large(void)
 static int test_menu_prefs(void)
 {
     int bad = 0, ok = 1;
-    uint32_t k, j, seen = 0;
+    uint32_t k,j; uint64_t seen=0;
     static uint16_t shot[MTAB_COUNT][240 * 240];
     ui_power_on();
     ui_prefs = 0;
@@ -8681,7 +8692,7 @@ static int test_menu_prefs(void)
     for (k = 0; k < MTAB_COUNT; k++) {              /* ALGORITHM right through the tabs, PRESETS through each one's rows */
         ok &= menu_tab() == k && ui.menu_sel == mtab_first(k);
         for (j = 0; j < mtab_rows(k); j++) {
-            seen |= 1u << ui.menu_sel;
+            seen |= 1ull << ui.menu_sel;
             turn(EN_PRESET, 1);
         }
         ok &= ui.menu_sel == mtab_first(k);         /* (round the tab, back at its first row) */
@@ -8690,7 +8701,7 @@ static int test_menu_prefs(void)
         for (j = 0; j < k; j++) ok &= memcmp(shot[j], shot[k], sizeof shot[k]) != 0;
         turn(EN_ALGO, 1);
     }
-    ok &= seen == (1u << MI_COUNT) - 1u && ui.menu_sel == 0u;
+    ok &= seen == (1ull << MI_COUNT) - 1ull && ui.menu_sel == 0u;
     bad += check("MENU: ALGORITHM and PRESETS reach every row, each tab a page of its own", ok);
     /* ANIM */
     ui.menu_sel = MI_ANIM;
@@ -9587,10 +9598,19 @@ static int test_playhead_line(void)
     return bad;
 }
 
+#include "tape_ui_test.inc"
+#if FELUCCA_TAPE
+#include "tape_fx_ui_test.inc"
+#endif
+#ifndef UI_PORT_ONLY
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     int bad = 0;
+#if FELUCCA_TAPE
+    bad += test_tape_aux_page();
+    bad += test_tape_fx_pages();
+#endif
     bad += test_large_face();
     bad += test_sound_loads();
     bad += test_rec();
@@ -9697,3 +9717,5 @@ int main(void)
     return bad ? 1 : 0;
 }
 #endif
+
+#endif /* UI_PORT_ONLY */

@@ -120,7 +120,7 @@ static void drumx_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
     vmod_t ml;
     if (!L)
         return;
-    m = vmod_level(m, &ml, clamp(p[P_LN0 + lane], 0, 127));   /* the lane's LEVEL, as DRUM's (dsp.c) */
+    m = vmod_level(m, &ml, (dc_on(t,lane)?127:clamp(p[P_LN0 + lane], 0, 127)));   /* the lane's LEVEL, as DRUM's (dsp.c) */
     if (n > CTL)
         n = CTL;
     dx_run(&dx_kit[lane], &L->x, p[P_E0], L->st * 16 + (p[P_E1] - 64) * 3, p[P_E3] - 64, p[P_E2] - 64, p[P_E4] - 64,

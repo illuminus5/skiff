@@ -397,7 +397,7 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     vmod_t ml;
     if (!L)
         return;
-    m = vmod_level(m, &ml, clamp(p[P_LN0 + ln], 0, 127));   /* the lane's LEVEL (dsp.c); 100 %: the ramp as it was */
+    m = vmod_level(m, &ml, (dc_on(t,ln)?127:clamp(p[P_LN0 + ln], 0, 127)));   /* the lane's LEVEL (dsp.c); 100 %: the ramp as it was */
     if (n > CTL)
         n = CTL;
     if (drum_user(p)) {                                  /* ((2.0, #35) a user kit: the lane's sample) */

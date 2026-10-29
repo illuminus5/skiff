@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+#include "usb_routing.c"
 /* Effects: per-track DIST insert, then sends into three
  * shared buses (chorus, tempo delay, reverb). Mono buses (HALL with its stereo difference), stereo dry mix. */
 #define DLY_LEN 65536u           /* 1.49 s: 1/4 at 40 BPM fits */
@@ -93,7 +94,8 @@ static struct {                          /* HALL's state (in the pool: no .bss) 
 #define rev_side (hl.sd)
 
 /* (Skiff 1.3) FX > INSERT's TYPEs (track_insert, below); (2.0, D 2A) the drives' and CRUSH's shapes are DRIVE's too */
-enum { IT_OFF, IT_SOFT, IT_HARD, IT_FOLD, IT_FUZZ, IT_CRUSH, IT_PHASER, IT_FLANGER, IT_CHORUS, IT_N };
+enum { IT_OFF, IT_SOFT, IT_HARD, IT_FOLD, IT_FUZZ, IT_CRUSH, IT_PHASER, IT_FLANGER, IT_CHORUS, IT_COMP, IT_N };
+_Static_assert(IT_COMP==9 && IT_N==NELEM(N_ITYPE),"Append-only INSERT type names");
 /* the drives' and CRUSH's shape of v (a voice's full scale 32768; v already through the drive): the curve the INSERT
  * and DRIVE graphs draw too (ui_pgraph.c graph_insert, graph_drive) */
 static inline int32_t ins_shape(uint32_t ty, int32_t v, uint32_t sh)
@@ -315,6 +317,15 @@ static uint32_t div_samples(uint32_t div)
     return div < 6u ? quarter / DIV_DEN[div] : div < 10u ? quarter << (div - 5u) : quarter / DIV_DEN[div % 6u];
 }
 
+#if FELUCCA_TAPE
+#include "tape_inputs.h"
+#include "tape_fx.h"
+#define TAPE_NO_SYSTEM_HEADERS 1
+#include "tape_core.h"
+#undef TAPE_NO_SYSTEM_HEADERS
+static tape_t tape_state;
+static volatile uint8_t tape_wanted; /* audio-side commands only in this prototype */
+#endif
 #include "perform.c"                                 /* the FX hold layer's effects (the master) */
 #include "click.c"                                   /* the metronome's click (after the master: audio.c) */
 #include "duck.c"                                    /* (Skiff) ducking: a track under another's hits (mix_part) */
@@ -646,11 +657,17 @@ static __attribute__((noinline)) void cho_mode(const int32_t *cho_in, const int3
         fx.cho_w++;
         wet[i] = fx.cho_y << 1;
     }
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[2][i]=wet[i];
+#endif
     for (i = 0; i < n; i++) {                           /* the delay as in fx_buses */
         int32_t x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)];
         fx.dly_lp += mulq15(x - fx.dly_lp, col);
         dly_buf[fx.dly_w & (DLY_LEN - 1u)] = (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, dfb), -32768, 32767);
         fx.dly_w++;
+#if FELUCCA_USB_6CH
+        usb_fx_return[1][i]=mulq15(x << 1, dmix);
+#endif
         wet[i] += mulq15(x << 1, dmix);
     }
 }
@@ -682,6 +699,28 @@ static int32_t part_buf[CTL];                            /* a part's block (mix_
 #define SM1_d send_d
 #define SM1_v send_r
 #define SM1_b part_buf
+#endif
+
+#if FELUCCA_TAPE
+/* Prefader stereo send: unity at 100%, with source pan/spread preserved.
+ * Core sums are separate; CPU0 reads them only after C1_WAIT. */
+static __attribute__((noinline)) void tape_track_send(track_t *t,const int32_t *b,const int32_t *d,
+    uint32_t n,int32_t gl,int32_t gr,int32_t dl,int32_t dr SM_DECL)
+{
+    uint32_t k=(uint32_t)(t-trk),c=0;
+    if((!tape_wanted&&!tape_state.enabled) || k>=6 || !tape_send_block[k] || t->p[P_MUTE])return;
+#if FELUCCA_CPU2
+    c=sm==&mx[1];
+#endif
+    int32_t gain=(int32_t)tape_send_block[k];
+    for(uint32_t i=0;i<n;i++){
+        int32_t x=b[i],y=d?d[i]:0;
+        int32_t l=(int32_t)(((int64_t)x*gl+(int64_t)y*dl)/4096);
+        int32_t r=(int32_t)(((int64_t)x*gr+(int64_t)y*dr)/4096);
+        tape_input[c].l[i]+=(int32_t)((int64_t)l*gain/100);
+        tape_input[c].r[i]+=(int32_t)((int64_t)r*gain/100);
+    }
+}
 #endif
 
 /* the model changed (to rt): the old one's block fades out (HALL's stereo difference with it), its buffers are
@@ -734,15 +773,25 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
         dly_buf[fx.dly_w & (DLY_LEN - 1u)] =
             (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
         fx.dly_w++;
+#if FELUCCA_USB_6CH
+        usb_fx_return[2][i]=y;
+        usb_fx_return[1][i]=mulq15(x << 1,dmix);
+#endif
         y += mulq15(x << 1, dmix);
         wet[i] = y;
     }
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[0][i]=-wet[i];
+#endif
     rt = song.g[G_RTYPE] == 1 || song.g[G_RTYPE] == 2 ? song.g[G_RTYPE] : 0;   /* (phase 9) HALL) */
     hl.side = 0;
     if (rt != fx.rtype)
         rev_switch(rev_in, wet, n, rt);
     else
         rev_model((uint32_t)rt, rev_in, wet, n);
+#if FELUCCA_USB_6CH
+    for(i=0;i<n;i++)usb_fx_return[0][i]+=wet[i];
+#endif
 }
 
 /* after the buses: HALL's stereo difference to the left and from the right of the dry mix (the wet bus adds the
@@ -783,6 +832,8 @@ static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_
  *                        aliasing as the old samplers), LPF (two one-pole low-passes at F_CUTOFF after them);
  *   PHASR                RATE (F_LFOHZ), DEPTH (the sweep around ~850 Hz: 0 still .. the whole 150 Hz .. 4.8 kHz),
  *                        FDBK (0 .. 0.7): four all-pass stages, mono, per track;
+ *   COMP                THRESH (-48..0 dB), RATIO (1..12:1), RELEASE (20..1000 ms); linked peak compression
+ *                       with fixed 3 ms attack, no makeup gain, and the existing INSERT MIX.
  *   FLANG CHOR           RATE, DEPTH, FDBK: a 256-sample line per track (5.8 ms); FLANG swept 0.25 .. 5 ms (a squared
  *                        triangle), feedback 0 .. 0.85; CHOR a sine around 3.2 ms (+-2.3 ms at DEPTH 127), feedback
  *                        0 .. 0.4. A DC blocker on the swept copy (a clipped loud input is lopsided).
@@ -814,6 +865,7 @@ typedef struct {
     int16_t line[IL_LEN];               /* FLANG / CHOR, at a quarter (headroom) */
 } ins_t;
 static ins_t ins[NTRK] __attribute__((section(".pool")));
+#include "compressor_math.h"
 
 static inline int32_t ins_mixq(int32_t m) { return m >= 127 ? 32768 : m <= 0 ? 0 : m * 258; }   /* MIX -> Q15 */
 /* a triangle of the sweep's place q, 0 .. 65534 (Q16) */
@@ -922,6 +974,37 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
     }
 }
 
+/* COMP shares INSERT storage: hp is Q24 linked gain. No additional pool RAM.
+ * A track is owned by one render core; no shared detector or cross-core reads.
+ * Threshold/ratio/release are block snapshots. Fixed 3 ms attack; no makeup.
+ * d/e get the same gain as b so SPREAD and panned drum lanes stay linked. */
+static __attribute__((noinline)) void ins_compress(ins_t *s,const track_t *t,int32_t *b,
+                                                  int32_t *d,int32_t *e,uint32_t n,int32_t tw)
+{
+    uint32_t peak=0;
+    for(uint32_t i=0;i<n;i++){
+        uint32_t a=cmp_abs(b[i]);if(a>peak)peak=a;
+        if(d){a=cmp_abs(d[i]);if(a>peak)peak=a;}
+        if(e){a=cmp_abs(e[i]);if(a>peak)peak=a;}
+    }
+    uint32_t release=(uint32_t)(16777216000ull/(44100u*cmp_release_ms((uint32_t)clamp(t->p[P_IC],0,127))));
+    /* Peak hold/release prevents the gain following individual waveform lobes. */
+    if(peak>(uint32_t)s->lp1)s->lp1=(int32_t)peak;
+    else s->lp1+=(int32_t)(((int64_t)((int32_t)peak-s->lp1)*(release*n))/16777216);
+    int32_t target=(int32_t)(cmp_target((uint32_t)s->lp1,(uint32_t)clamp(t->p[P_IA],0,127),
+                                     (uint32_t)clamp(t->p[P_IB],0,127)));
+    for(uint32_t i=0;i<n;i++){
+        int32_t error=target-s->hp;
+        uint32_t coefficient=error<0?126332u:release; /* 1-exp(-1/(0.003*FS)), Q24 */
+        s->hp+=(int32_t)(((int64_t)error*coefficient)/16777216);
+        s->w+=clamp(tw-s->w,-SL_SLOPE,SL_SLOPE);
+        int32_t gain=s->hp,x=b[i];
+        b[i]=pf_mix(x,(int32_t)((int64_t)x*gain/16777216),s->w);
+        if(d){x=d[i];d[i]=pf_mix(x,(int32_t)((int64_t)x*gain/16777216),s->w);}
+        if(e){x=e[i];e[i]=pf_mix(x,(int32_t)((int64_t)x*gain/16777216),s->w);}
+    }
+}
+
 /* the INSERT at rest at once (mix_part: TYPE turned OFF while the part was silent, its fade never ran) */
 static __attribute__((noinline)) void ins_rest(track_t *t)
 {
@@ -930,7 +1013,7 @@ static __attribute__((noinline)) void ins_rest(track_t *t)
 }
 
 /* the track's INSERT on its block b (mix_part): nothing while TYPE is OFF or MIX is 0 and faded */
-static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint32_t n)
+static __attribute__((noinline)) void track_insert_linked(track_t *t, int32_t *b, int32_t *d, int32_t *e, uint32_t n)
 {
     ins_t *s = &ins[(uint32_t)(t - trk) % NTRK];
     int32_t ty = clamp(t->p[P_ITYPE], 0, IT_N - 1), tw;
@@ -944,13 +1027,18 @@ static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint3
         }
         memset(s, 0, sizeof *s);                        /* starting: no stale line or filter */
         s->type = (uint8_t)ty;
+        if(ty==IT_COMP)s->hp=16777216;
     }
-    if (s->type >= IT_PHASER)
+    if(s->type==IT_COMP)
+        ins_compress(s,t,b,d,e,n,tw);
+    else if (s->type >= IT_PHASER)
         ins_swept(s, t, b, n, tw);
     else
         ins_drive(s, t, b, n, tw);
     t->ins_run = s->w != 0;                             /* (mix_part calls again while it fades) */
 }
+
+static __attribute__((noinline)) void track_insert(track_t *t,int32_t *b,uint32_t n){track_insert_linked(t,b,0,0,n);}
 
 /* (Skiff 1.3, from Felucca's #148) SPREAD: a POLY or UNISON part whose SPREAD is above 0. Its voices start left and
  * right of PAN in turn (voice.c voice_start; UNISON's detuned voices alternate), at PAN -/+ SPREAD / 2 (127: hard left
@@ -986,8 +1074,12 @@ static __attribute__((noinline)) void lpan_mix(track_t *t, const int32_t *b, con
             SM(d)[i] += mulq15(xs, dl);
         if (r)
             SM(v)[i] += mulq15(xs, r);
-        SM(l)[i] += ((x - yl) * gl) >> 12;
-        SM(r)[i] += ((x - yr) * gr) >> 12;
+        int32_t left=((x-yl)*gl)>>12,right=((x-yr)*gr)>>12;
+        SM(l)[i]+=left;SM(r)[i]+=right;
+#if FELUCCA_USB_ROUTING
+        uint32_t usb_mask=usb_route_modes[(uint32_t)(t-trk)];
+        if(usb_mask)usb_route_track(usb_mask,i,left,right);
+#endif
     }
     t->peak = pk;
 }
@@ -995,6 +1087,9 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
 {
     int32_t *d = SPREAD_BUF(t), *e = t->lpan_on ? LPAN_BUF(t) : 0;
     uint32_t i, k = (uint32_t)(t - trk);
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask = usb_route_modes[k];
+#endif
     int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN], s = (t->p[P_SPRD] + 1) >> 1;
     int32_t pa = clamp(pan - s, -64, 63), pb = clamp(pan + s, -64, 63);
     int32_t gla = 4096 - (pa > 0 ? pa * 64 : 0), gra = 4096 + (pa < 0 ? pa * 64 : 0);
@@ -1008,7 +1103,7 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             d[i] = (d[i] << 1) - b[i];                  /* left - right */
     track_dist(t, b, n);
     if (t->p[P_ITYPE] | t->ins_run)
-        track_insert(t, b, n);                          /* (the mono sum, as DRIVE) */
+        track_insert_linked(t, b, d, e, n);              /* COMP links stereo components; other inserts keep mono processing */
     slicer_track_sd(t, b, d, e, n);
     if (((pf.mute >> k) & 1u) || t->p[P_MUTE] || pf.mg[k] != 32768) {   /* (the mute's ramp on both: from the same start,
                                                                           * the same; (2.0) a MUTE's too) */
@@ -1028,9 +1123,17 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             duck_apply(k, e, n);
     }
     if (e) {
+#if FELUCCA_TAPE
+        int32_t tl=4096-(pan>0?pan*64:0),tr=4096+(pan<0?pan*64:0);
+        tape_track_send(t,b,d,n,tl,0,-tl,0 SM_ARG(sm));
+        tape_track_send(t,b,e,n,0,tr,0,-tr SM_ARG(sm));
+#endif
         lpan_mix(t, b, d, e, n SM_ARG(sm));
         return;
     }
+#if FELUCCA_TAPE
+    tape_track_send(t,b,d,n,glm,grm,gld,grd SM_ARG(sm));
+#endif
     for (i = 0; i < n; i++) {
         int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x, y = ((d[i] >> 2) * lvl) >> 10;
         int32_t xs = clamp(x, -xmax, xmax);
@@ -1042,8 +1145,15 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
             SM(d)[i] += mulq15(xs, dl);
         if (r)
             SM(v)[i] += mulq15(xs, r);
-        SM(l)[i] += ((x * glm) >> 12) + ((y * gld) >> 12);
-        SM(r)[i] += ((x * grm) >> 12) + ((y * grd) >> 12);
+        {
+            int32_t l = ((x * glm) >> 12) + ((y * gld) >> 12);
+            int32_t rr = ((x * grm) >> 12) + ((y * grd) >> 12);
+            SM(l)[i] += l;
+            SM(r)[i] += rr;
+#if FELUCCA_USB_ROUTING
+            if (usb_mask) usb_route_track(usb_mask, i, l, rr);
+#endif
+        }
     }
     t->peak = pk;
 }
@@ -1087,6 +1197,55 @@ static __attribute__((noinline)) void smx_render(track_t *t, voice_t *v, uint32_
     }
 }
 
+/* Mono tracks use the same explicit DSP/mix boundary as mix_spread. Keeps
+ * lane/voice rendering separate from the sample loop that feeds level/pan/sends. */
+static __attribute__((noinline)) void mix_mono(track_t *t,int32_t *b,uint32_t n SM_DECL)
+{
+    uint32_t i;
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask=usb_route_modes[(uint32_t)(t-trk)];
+#endif
+
+        int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN];
+        int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
+        int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
+        int32_t xmax = c > d ? c : d;
+        xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
+        track_dist(t, b, n);
+        if (t->p[P_ITYPE] | t->ins_run)
+            track_insert(t, b, n);                      /* ((1.3) the INSERT: off, nothing) */
+        slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
+        if (((pf.mute >> (t - trk)) & 1u) || t->p[P_MUTE] || pf.mg[t - trk] != 32768)   /* perform.c (RAM): a black */
+            AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */
+        if ((duck_on >> (t - trk)) & 1u)
+            duck_apply((uint32_t)(t - trk), b, n);      /* (Skiff) duck.c: under its source's hits */
+#if FELUCCA_TAPE
+        tape_track_send(t,b,0,n,gl,gr,0,0 SM_ARG(sm));
+#endif
+        for (i = 0; i < n; i++) {
+            int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
+            int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
+            if (a > pk)
+                pk = a;
+            if (c)
+                SM(c)[i] += mulq15(xs, c);
+            if (d)
+                SM(d)[i] += mulq15(xs, d);
+            if (r)
+                SM(v)[i] += mulq15(xs, r);
+            {
+                int32_t l = (x * gl) >> 12, rr = (x * gr) >> 12;
+                SM(l)[i] += l;
+                SM(r)[i] += rr;
+#if FELUCCA_USB_ROUTING
+                if (usb_mask) usb_route_track(usb_mask, i, l, rr);
+#endif
+            }
+        }
+        t->peak = pk;
+
+}
+
 /* one synth part into the dry mix and the sends (of sm: mx[0]; mx[1] on the second core); a part with no voice sounding
  * costs the LFO tick and a cleared buffer only (after the DIST tail has run out) */
 #if FELUCCA_CPU2
@@ -1097,6 +1256,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
 {
     int32_t *b = SM(b);
     uint32_t i;
+#if FELUCCA_USB_ROUTING
+    uint32_t usb_mask = usb_route_modes[(uint32_t)(t - trk)];
+#endif
 #if FELUCCA_CPU2
     uint32_t nr;
 #endif
@@ -1129,36 +1291,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
             mod_end(t);
         return;
     }
-    {
-        int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN];
-        int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
-        int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
-        int32_t xmax = c > d ? c : d;
-        xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
-        track_dist(t, b, n);
-        if (t->p[P_ITYPE] | t->ins_run)
-            track_insert(t, b, n);                      /* ((1.3) the INSERT: off, nothing) */
-        slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
-        if (((pf.mute >> (t - trk)) & 1u) || t->p[P_MUTE] || pf.mg[t - trk] != 32768)   /* perform.c (RAM): a black */
-            AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */
-        if ((duck_on >> (t - trk)) & 1u)
-            duck_apply((uint32_t)(t - trk), b, n);      /* (Skiff) duck.c: under its source's hits */
-        for (i = 0; i < n; i++) {
-            int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
-            int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
-            if (a > pk)
-                pk = a;
-            if (c)
-                SM(c)[i] += mulq15(xs, c);
-            if (d)
-                SM(d)[i] += mulq15(xs, d);
-            if (r)
-                SM(v)[i] += mulq15(xs, r);
-            SM(l)[i] += (x * gl) >> 12;
-            SM(r)[i] += (x * gr) >> 12;
-        }
-        t->peak = pk;
-    }
+    mix_mono(t,b,n SM_ARG(sm));
     if (MOD(t).on)
         mod_end(t);                                     /* the stored values back */
 }
@@ -1183,6 +1316,9 @@ static void c1_parts(uint32_t arg)                      /* arg: the tracks (bit 
 {
     uint32_t i, n = arg >> 8;
     mixsum_t *sm = &mx[1];
+#if FELUCCA_TAPE
+    for(i=0;i<n;i++)tape_input[1].l[i]=tape_input[1].r[i]=0;
+#endif
     for (i = 0; i < n; i++)
         sm->l[i] = sm->r[i] = sm->c[i] = sm->d[i] = sm->v[i] = 0;
     for (i = 0; i < NPART; i++)
@@ -1233,10 +1369,46 @@ static __attribute__((noinline)) AUDIO_RAM void perf_master(int32_t *out, uint32
     }
 }
 
+
+
+#if FELUCCA_TAPE
+#include "tape_sequence.h"
+#include "tape_bridge.h"
+#endif
+
+static __attribute__((noinline)) void mix_finish(int32_t *out,uint32_t n,int perf,int32_t mg)
+{
+    uint32_t i;
+    if (perf) {
+        AUDIO_FAR(perf_master)(out, n);
+#if FELUCCA_TAPE
+        skiff_tape_output(out,n);
+#endif
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        int32_t l = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
+        int32_t r = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
+        master_out(&l, &r);
+        out[2u * i] = l;
+        out[2u * i + 1u] = r;
+    }
+    /* tape final output */
+#if FELUCCA_TAPE
+    skiff_tape_output(out,n);
+#endif
+}
+
 static void mix_block(int32_t *out, uint32_t n)
 {
     uint32_t i;
     int perf;
+#if FELUCCA_TAPE
+    if(tape_wanted||tape_state.enabled)tape_input_begin(n);
+#endif
+#if FELUCCA_USB_ROUTING
+    usb_route_begin(n);
+#endif
     int32_t mg = fx_usb_fixed ? MASTER_FULL : (int32_t)song.master_q12;   /* (USB LEVEL FIXED: MASTER after) */
     for (i = 0; i < n; i++)
         send_c[i] = send_d[i] = send_r[i] = mix_l[i] = mix_r[i] = 0;
@@ -1280,15 +1452,5 @@ static void mix_block(int32_t *out, uint32_t n)
     fx_buses(send_c, send_d, send_r, wet, n);
     if (hl.side)
         rev_side_mix(mix_l, mix_r, n);                  /* HALL: stereo */
-    if (perf) {
-        AUDIO_FAR(perf_master)(out, n);
-        return;
-    }
-    for (i = 0; i < n; i++) {
-        int32_t l = (((mix_l[i] + wet[i]) >> 2) * mg) >> 10;
-        int32_t r = (((mix_r[i] + wet[i]) >> 2) * mg) >> 10;
-        master_out(&l, &r);
-        out[2u * i] = l;
-        out[2u * i + 1u] = r;
-    }
+    mix_finish(out,n,perf,mg);
 }
