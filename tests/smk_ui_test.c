@@ -681,6 +681,61 @@ static int test_pedal(void)
     return bad;
 }
 
+/* (2.1, #74) QNT SOLO on the SMK-37: the outer black keys carry the black keys' run on (C#3 D#3 below, G#5 A#5 above),
+ * a note each; the pedal holds a black key too, and with KBD HOLD on its release ends it, the chord held */
+static uint32_t gated_n(const track_t *t)
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < NVOICE; i++)
+        n += t->v[i].active && t->v[i].gate;
+    return n;
+}
+static int test_solo(void)
+{
+    static const uint8_t BED[4] = {1, 3, 32, 34}, NOTE[4] = {52, 53, 74, 76};   /* C#3 D#3 G#5 A#5: E3 F3 D5 E5 */
+    int bad = 0, ok = 1;
+    uint32_t i;
+    track_t *t = &trk[0];
+    smk_power_on();
+    song.sel = 0;
+    song.octave = 0;
+    t->p[P_TRANS] = 0;
+    t->p[P_VOICE] = V_POLY;
+    t->p[P_SCALE] = 1;                            /* C major */
+    t->p[P_ROOT] = 0;
+    t->p[P_QUANT] = QN_SOLO;
+    t->p[P_CHRD] = CH_DIA3;
+    fm1_in.wheel[0] = 535;
+    fm1_in.wheel[1] = 629;
+    pedal_to(0);
+    for (i = 0; i < 4u; i++) {
+        fm1_in.key_vel[BED[i]] = 100u;
+        outer_to(BED[i], 100);
+        ok &= sounding(t, NOTE[i] + 12u * SOLO_OCT) && gated_n(t) == 1u;
+        outer_to(BED[i], 0);
+        ok &= !gated_n(t);
+    }
+    bad += check("SMK SOLO: the outer black keys go on with the run (C#3 D#3 below, G#5 A#5 above), a note each", ok);
+    t->p[P_AMODE] = 0;
+    t->p[P_AHOLD] = 1;                            /* KBD HOLD */
+    fm1_in.key_vel[7u + SMK_KEY_F3] = fm1_in.key_vel[10u + SMK_KEY_F3] = 100u;
+    pedal_to(1);
+    key_to(7, 1);                                 /* C4: C E G */
+    key_to(7, 0);
+    key_to(10, 1);                                /* D#4: D4 */
+    key_to(10, 0);
+    ok = gated_n(t) == 4u && sounding(t, 60) && sounding(t, 64) && sounding(t, 67) && sounding(t, 62u + 12u * SOLO_OCT);
+    pedal_to(0);
+    ok &= gated_n(t) == 3u && sounding(t, 60) && !sounding(t, 62u + 12u * SOLO_OCT) && kb_ped[7] && !kb_ped[10];
+    t->p[P_AHOLD] = 0;
+    events_block(CTL);
+    bad += check("SMK SOLO, KBD HOLD: the pedal holds a black key too; let go, it ends, KBD HOLD keeps the chord (HOLD "
+                 "off: it ends)", ok && !gated_n(t));
+    t->p[P_QUANT] = QN_OFF;
+    t->p[P_CHRD] = CH_OFF;
+    return bad;
+}
+
 static int test_shift(void)
 {
     int bad = 0, ok, i;
@@ -766,6 +821,7 @@ int main(void)
     bad += test_menu();
     bad += test_wheels();
     bad += test_pedal();
+    bad += test_solo();
     bad += test_shift();
     bad += test_master();
     bad += test_clock_out();

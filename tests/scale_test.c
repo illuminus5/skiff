@@ -507,9 +507,61 @@ static void seq_trn_test(void)
     puts("scales: QNT SEQ+T moves the sequence by TRN then snaps (steps unchanged, nothing held); other QNT values ignore TRN");
 }
 
+/* (2.1, #74) QNT SOLO: the white keys as WHITE; the black keys walk the same scale, five an octave, C#4 the root
+ * (SOLO_OCT octaves up). Over both boards' keys: the FM-1's F3..G5 (0..26) and the SMK-37's C3..C6 (kb_semi: -5..31) */
+static void solo_test(void)
+{
+    /* the black keys C#3 .. A#5 (from F3) and their notes with ROOT C, before TRN and the octave: C major (7 notes) and
+     * the major pentatonic (5 notes: a C on every C#) */
+    static const int8_t SEMI[15] = {-4, -2, 1, 3, 5, 8, 10, 13, 15, 17, 20, 22, 25, 27, 29};
+    static const uint8_t NOTE[2][15] = {
+        {52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76},   /* MAJ: E3 F3 G3 A3 B3 C4 .. E5 */
+        {48, 50, 52, 55, 57, 60, 62, 64, 67, 69, 72, 74, 76, 79, 81},   /* PEN: C3 D3 E3 G3 A3 C4 .. A5 */
+    };
+    static const uint8_t SCALE[2] = {1, 5};
+    track_t *t = &trk[0];
+    uint32_t s, i, white;
+    int32_t k, root, oct, trans;
+    memset(trk, 0, sizeof trk);
+    host_tracks_init();
+    t->engine = t->eng_req = 0;
+    for (s = 0; s < 2u; s++) {
+        t->p[P_SCALE] = SCALE[s];
+        for (root = 0; root < 12; root++)
+            for (oct = -3; oct <= 3; oct++)
+                for (trans = -24; trans <= 24; trans++) {
+                    t->p[P_ROOT] = (int16_t)root;
+                    t->p[P_TRANS] = (int16_t)trans;
+                    t->p[P_QUANT] = QN_SOLO;
+                    for (i = 0; i < 15u; i++)
+                        assert(kb_pitch(t, (uint32_t)SEMI[i], oct) ==
+                               (uint32_t)clamp(NOTE[s][i] + root + 12 * (oct + SOLO_OCT) + trans, 0, 127));
+                    for (k = -5, i = 0, white = 0; k <= 31; k++) {   /* the white keys: WHITE's notes */
+                        uint32_t solo = kb_pitch(t, (uint32_t)k, oct);
+                        if (key_black((uint32_t)k)) {
+                            i++;
+                            continue;
+                        }
+                        t->p[P_QUANT] = QN_WHITE;
+                        assert(solo == kb_pitch(t, (uint32_t)k, oct) && solo != KB_SILENT);
+                        t->p[P_QUANT] = QN_SOLO;
+                        white++;
+                    }
+                    assert(i == 15u && white == 22u);
+                }
+    }
+    t->p[P_SCALE] = 1;                              /* the panel's keys (kb_map): C#4 the root, F#5 an octave up */
+    t->p[P_ROOT] = t->p[P_TRANS] = 0;
+    song.octave = 0;
+    assert(kb_map(t, 8) == 60u + 12u * SOLO_OCT && kb_map(t, 25) == 72u + 12u * SOLO_OCT && kb_map(t, 7) == 60u);
+    t->p[P_QUANT] = QN_OFF;
+    puts("scales: QNT SOLO's black keys walk the scale (7 and 5 notes, C3..C6, roots, octaves, TRN); white keys as WHITE");
+}
+
 int main(void)
 {
     host_tracks_init();
+    solo_test();
     mapping_test();
     key_events_test();
     seq_quant_test();

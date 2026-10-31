@@ -81,6 +81,13 @@ P_E0 117. No command changed. Projects keep 103 values a track (the layout befor
 them past 127). Projects (SKF4) and user presets (version 6) store parameters by stored id, so the pans are new ids
 and the engine values keep theirs: a record written before them loads with the lanes at C.
 
+**Skiff 2.1 chord follow (146 parameters):** three track parameters, `FOLLOW` (135: OFF, T1..T6, the track whose
+chords this one follows; never itself), `MODE` (136: KEY, SCALE, FIT) and `NOTE` (137: ROOT, LOW, HIGH, LAST), went
+in before the engine parameters, which moved to 138..145: P_COUNT 146, P_E0 138. No command changed. Their stored ids
+are 143..145 (a parameter added after the lane pans takes its id + 8), so a record written before them loads with
+FOLLOW OFF. `UP_PUT` still takes a pattern after the values but stores none (as since 2.0): past 144 values a record
+by count has no room for one, so the device keeps every user preset as version 6.
+
 ## Framing
 
 A request is `F0 7D 46 4C <cmd> <args...> F7`:
@@ -493,7 +500,8 @@ grid lives in the steps themselves, so every engine has it:
 - **Sound loads and undo.** A load that changes a track's sound (`PRESET`, `SET` of `G_ENGSEL`, `UP_LOAD`,
   and the same on the device) changes the sound only: the engine and the parameters of the sound. It
   never changes the steps, nor the track's own parameters: `P_LEVEL`, `P_PAN`, `P_MUTE` (0, 39, 40), the
-  ARP pages, SCALE and LEN / DIV / SWING / GATE (17..32), the SLICER (45..48). It does drop the track's recorded
+  ARP pages, SCALE and LEN / DIV / SWING / GATE (17..32), the SLICER (45..48), CHORD (81, 82), DIR (91), DUCK
+  (92..94), (2.1) FOLLOW (135..137). It does drop the track's recorded
   motion (the device's SAVE held brings it back). (Before 1.0 a preset also
   set the arp and replaced the steps with its pattern; a factory preset turned the SLICER off.) The byte
   layout of every command is unchanged. Patterns are loaded on the device (SAVE > PATTERNS, PERFORM) or

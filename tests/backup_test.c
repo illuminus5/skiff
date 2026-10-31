@@ -403,16 +403,18 @@ int main(void)
         static const int16_t SL[5] = {FM6_NFACTORY + 2, 1, FM6_NFACTORY + 4, FM6_NFACTORY + 2, FM6_NFACTORY + 2};
         memset(&ub, 0, sizeof ub);
         ub.magic = UP_BANK_MAGIC; ub.rsize = sizeof(up_rec_t); ub.nslot = UP_PER_BANK;
+        const uint32_t np = 91u;                        /* ((2.1) 1.0.2's records by count: E0..E7 the last eight) */
         for (uint32_t k = 0; k < 5u; k++) {             /* slots 1..5: B3, F2, B5 (empty), B3 on DRUM, B3 */
             up_rec_t *r = &ub.r[k];
             uint32_t e = k == 3u ? ENGI_DRUM : ENGI_FM6;
-            r->used = UP_USED; r->ver = UP_VER; r->engine = (uint8_t)e; r->np = P_COUNT;
+            r->used = UP_USED; r->ver = UP_VER; r->engine = (uint8_t)e; r->np = (uint8_t)np;
             r->name[0] = (char)('A' + k);
-            for (uint32_t i = 0; i < P_COUNT; i++) up_set_value(r, i, param_desc_of(e, i)->def);
-            up_set_value(r, P_E7, SL[k]);                 /* (the raw stored value: B slots as 1.0.2 wrote them) */
+            for (uint32_t i = 0; i < np; i++)
+                up_set_value(r, i, param_desc_of(e, i < np - 8u ? i : P_E0 + i - (np - 8u))->def);
+            up_set_value(r, np - 1u, SL[k]);              /* (E7, the raw stored value: B slots as 1.0.2 wrote them) */
         }
         ub.r[4].name[1] = 'X';
-        up_set_value(&ub.r[4], P_E0, 3);                 /* (another sound than slot 1's) */
+        up_set_value(&ub.r[4], np - 8u, 3);              /* (E0: another sound than slot 1's) */
         memset(&bk, 0, sizeof bk);
         bk.magic = FM6_BANK_MAGIC; bk.ver = 1; bk.nslot = FM6_BANK_N; bk.used = 1u << 2;
         memcpy(bk.v[2], FM6_FACTORY[5], FM6_PACKED);

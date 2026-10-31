@@ -762,6 +762,59 @@ static void graph_chord(const track_t *t, uint16_t c)
                  !on ? T_RAISE : note % 12u == (uint32_t)r % 12u ? T_ACCENT : c, T_SURF);
     }
 }
+/* (2.1) FOLLOW (SCL 3): the chord of the track it follows, as CHORD draws one: its name over the keys from the C below
+ * its lowest note, its notes in that track's colour, the note this track goes by (NOTE) ACCENT; on the name's baseline
+ * what this track does with it ("T2 KEY +5", "T2 SCALE -2", "T2 FIT"). OFF, a kit to follow, no chord yet: notes */
+static void graph_follow(const track_t *t)
+{
+    static const uint8_t BLACK[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};
+    uint32_t l = (uint32_t)t->p[P_FOLLOW] - 1u, i, lo, cnt, w, by, rel;
+    const fol_src_t *s;
+    char b[12], cap[24];
+    if (l >= NTRK || l == trk_index(t)) {
+        panel_note("FOLLOW OFF", "[K1] A TRACK TO FOLLOW", 0);
+        return;
+    }
+    s = &fol_src[l];
+    str_cpy(cap, N_DKSRC[l + 1u], sizeof cap);
+    if (chord_kit(&trk[l])) {
+        str_cpy(cap + str_len(cap), " PLAYS A KIT", sizeof cap - str_len(cap));
+        panel_note(cap, "NO CHORDS TO FOLLOW", 0);
+        return;
+    }
+    if (!s->pc) {
+        str_cpy(cap + str_len(cap), ": NO CHORD YET", sizeof cap - str_len(cap));
+        panel_note(cap, "PLAYS AS WRITTEN", 0);
+        return;
+    }
+    rel = (s->pc >> s->root | (uint32_t)s->pc << (12u - s->root)) & 0xFFFu;   /* (its notes above its root) */
+    if (rel == 1u)
+        str_cpy(b, N_NOTE[s->root % 12u], sizeof b);   /* (a single note: its name) */
+    else
+        chord_name(b, s->root, rel);
+    cv_text_on(14, 8, &AF_M, b, T_TEXT, T_SURF);
+    str_cpy(cap + str_len(cap), " ", sizeof cap - str_len(cap));
+    str_cpy(cap + str_len(cap), N_FMODE[t->p[P_FMODE] % 3], sizeof cap - str_len(cap));
+    if (t->p[P_FMODE] != FM_FIT) {
+        int32_t sh = fol_shift(t, s);
+        str_cpy(cap + str_len(cap), sh > 0 ? " +" : " ", sizeof cap - str_len(cap));
+        fmt_int(cap + str_len(cap), sh);
+    }
+    GFX_HOOK_ALIGN(0, 0, 0, 8 + AF_M.asc, AL_B, "follow caption on the name's baseline");
+    cv_text_r(226, 8 + AF_M.asc - AF_S.asc, &AF_S, cap, T_MID, T_SURF);
+    by = t->p[P_FMODE] == FM_FIT || t->p[P_FNOTE] == FN_ROOT ? 128u + s->root :   /* (the note it goes by: 128 + a */
+         t->p[P_FNOTE] == FN_LOW ? s->lo : t->p[P_FNOTE] == FN_HIGH ? s->hi : s->last;   /* pitch class, every octave) */
+    lo = s->lo - s->lo % 12u;
+    cnt = s->hi - lo < 24u ? 24u : 36u;
+    w = 216u / cnt;
+    GFX_HOOK_ALIGN(0, 0, 240, 0, AL_H | AL_CELLS | AL_N(cnt), "follow keys centred");
+    for (i = 0; i < cnt; i++) {
+        uint32_t note = lo + i, on = note >= s->lo && note <= s->hi && ((s->pc >> (note % 12u)) & 1u);
+        int32_t x = 13 + (int32_t)(i * w);
+        cv_rrect(x, BLACK[note % 12u] ? 36 : 62, (int32_t)w - 2, 48, w > 6u ? 3 : 2,
+                 !on ? T_RAISE : (by >= 128u ? note % 12u == by - 128u : note == by) ? T_ACCENT : T_TRK(l), T_SURF);
+    }
+}
 /* the four sends as faders under their cards: a RAISE slot, the THEME fill from the bottom, a cap */
 static void graph_fx(const track_t *t, uint16_t c)
 {
@@ -1532,6 +1585,11 @@ static uint32_t graph_signature(void)
         for (i = 0; i < CHORD_MAX; i++)
             h = (h ^ chord_last[song.sel].note[i]) * 16777619u;
         h ^= (uint32_t)t->engine * 389u;             /* (MONO and kits follow the sounding engine) */
+    }
+    if (pg->graph == GR_FOLLOW) {                    /* ((2.1) the chord of the track it follows, that track's sound) */
+        const fol_src_t *s = &fol_src[(uint32_t)(t->p[P_FOLLOW] + NTRK - 1) % NTRK];
+        h = (h ^ (s->pc + 4099u * s->lo + 257u * s->hi + 65537u * s->last)) * 16777619u;
+        h ^= (uint32_t)trk[(uint32_t)(t->p[P_FOLLOW] + NTRK - 1) % NTRK].engine * 389u;
     }
     if (pg->graph == GR_MOD)
         h ^= (mod_ui_route + 1u) * 40503u;
@@ -2572,6 +2630,10 @@ static void draw_graph(void)
         case GR_CHORD:
             cv_oy = pad;
             graph_chord(t, c);
+            break;
+        case GR_FOLLOW:                              /* ((2.1) as CHORD's) */
+            cv_oy = pad;
+            graph_follow(t);
             break;
         case GR_FX:
             graph_fx(t, c);

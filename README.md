@@ -14,7 +14,10 @@ synths and drums, patterns and songs, live performance, and a screen that shows 
   <img src="https://img.shields.io/badge/hardware-M--VAVE%20FM--1%20%7C%20SMK--37%20Pro-555" alt="Hardware: M-VAVE FM-1 | SMK-37 Pro">
 </p>
 
-<p align="center"><b>New in 2.0.3:</b> KBD HOLD, whole chords into the arpeggiator on MONO sounds, sampled notes
+<p align="center"><b>New in 2.1:</b> chord follow, a bass line or an arp that moves with another track's chords, and
+QUANTIZE SOLO, chords on the white keys and a tune on the black ones ·
+<a href="https://github.com/illuminus5/skiff/releases/tag/v2.1">the release notes</a><br>
+<b>New in 2.0.3:</b> KBD HOLD, whole chords into the arpeggiator on MONO sounds, sampled notes
 struck again without a click, Learn's videos re-made on 2.0, and fixes from your issues ·
 <a href="https://github.com/illuminus5/skiff/releases/tag/v2.0.3">the release notes</a><br>
 <b>New in 2.0.2:</b> notes up to 128 steps long, the way back to the official firmware takes V16 too,
@@ -66,12 +69,12 @@ Custom firmware, at your own risk; the way back to the official firmware is belo
 connect the FM-1 by USB and follow it. The same page takes the FM-1 back to the official firmware (V15 or V16: the
 version it had before Skiff), saving a complete backup of your music first.
 
-**With Python 3:** download `skiff-2.0.3.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
+**With Python 3:** download `skiff-2.1.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
 and, with this repository's `tools/` folder,
 
 ```
 pip install mido python-rtmidi
-python tools/fm1_install.py skiff-2.0.3.fwsc
+python tools/fm1_install.py skiff-2.1.fwsc
 ```
 
 It takes about two minutes and the FM-1 restarts on Skiff.
@@ -83,7 +86,7 @@ October 21 (Skiff 2.0.2 and later; done on a unit: back to V16, then on to Skiff
 [fm1_open repository](https://github.com/m-vave/fm1_open) as `sdk/firmware/FM-1_015.fwsc`. The official firmware
 writes its Bluetooth settings anew on its first start, so pair Bluetooth devices again if they don't connect.
 
-**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.0.3-smk37.fwsc` for
+**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.1-smk37.fwsc` for
 Python). Two steps come first: M-VAVE's firmware V016 on the keyboard, and a backup of its flash, which holds the
 keyboard's own key calibration. [SMK37.md](SMK37.md#install) has both, the way back and what to do if it does not
 start.
@@ -372,7 +375,10 @@ Felucca) first, and lists what it converted.
   arpeggiator on MONO, LEGATO and UNISON sounds too. **KBD HOLD** (2.0.3): ARP 2 › HOLD ON with the ARP's MODE OFF
   holds the notes you play without an arpeggio: let go and they go on sounding; the next key you press with no key
   down starts a new chord, keys pressed while others are still down join it. HOLD off, the ARP on or another track
-  ends them
+  ends them. **QUANTIZE SOLO** (2.1, #74): chords on the white keys, a tune on the black ones, single notes of the
+  same scale (see [Scale keyboard](#scale-keyboard)). **Chord follow** (2.1): a track set to FOLLOW another plays in
+  that track's chords: a bass or an arp written in C moves to F as the chord track plays F (see
+  [Chord follow](#chord-follow))
 - **MOD** (2.0: one page, LFO › MOD): KNOB 1 picks the route, 1 to 11. The first seven are fixed, drawn as a grid:
   the LFO's depths to PITCH, CUT, SHAPE and AMP and the envelope's to PITCH, CUT and SHAPE (1.x's LFO DEST and ENV
   DEST pages), only their AMOUNT turning; routes 8 to 11 are the modulation matrix
@@ -667,12 +673,44 @@ notes; the octave buttons shift them by full octaves. Set QNT to OFF for the nor
 the keys like SNAP and also maps the sequenced notes onto the current ROOT / SCALE as they play (the steps are not
 changed; drum kits are never quantized).
 
+QNT **SOLO** (2.1, #74) plays chords on the white keys and a tune on the black ones. The white keys play as with
+WHITE, CHRD's chords too. The black keys walk the same scale one note at a time, five to an octave: C#4 plays ROOT,
+F#3, G#3 and A#3 the three scale notes below it, and the run goes up to F#5, seven scale notes above (on the SMK-37,
+C#3, D#3, G#5 and A#5 carry it on). A black key never plays a chord, in live recording and step entry too; KBD HOLD
+doesn't hold it, and pressing one leaves the held chord sounding (the SMK-37's sustain pedal still holds every key);
+with the ARP on it sounds directly, and is recorded so, while the white keys' chords go into the arpeggio. SCALE
+LEDS light the black keys too. A Skiff before 2.1 opens a SOLO track as SEQ+T: every key snapped to the scale.
+
 Scales: chromatic (CHR), major (MAJ), natural minor (MIN), Dorian (DOR), Mixolydian (MIX), major pentatonic (PEN),
 minor pentatonic (MPEN), harmonic minor (HARM), Phrygian (PHRY), Lydian (LYD), Locrian (LOC), ascending melodic minor
 (MEL), minor blues (BLUES), whole tone (WHOLE), half-whole diminished (DIMHW) and whole-half diminished (DIMWH). Scales
 with other than seven notes continue across the white keys without repeating notes. Drum kits and incoming MIDI keep
 their own note mapping. Press **SEL** again for the **CHORD** page: CHRD picks the chord keys (OFF, the scale's triads
 or sevenths, or a fixed shape) and VOIC the voicing.
+
+### Chord follow
+
+Press **SEL** a third time for the **FOLLOW** page (2.1). Write a bass line or an arp once, in the track's own key
+(its ROOT), and let another track's chords move it. Only the following track is set; the chord track needs nothing.
+
+- **FOLLOW** (KNOB 1): OFF, or the track whose chords this one follows (T1..T6; never itself).
+- **MODE** (KNOB 2): **KEY** moves every note by the distance from this track's ROOT to the chord's note, the nearest
+  way (up to six semitones up, five down): C E G under an F chord plays F A C. **SCALE** moves the notes along this
+  track's own SCALE by as many scale steps, so they stay in key: C E G in C major under Am plays A C E. **FIT** moves
+  each note to the nearest note of the chord itself (a tie goes down), for arps and pads over any chord.
+- **NOTE** (KNOB 3, for KEY and SCALE): which note of the chord counts: its **ROOT** (worked out from its notes,
+  inversions too: F for A C F), its lowest (**LOW**: A for A C F), its highest (**HIGH**) or the one started last
+  (**LAST**).
+
+The chord is the notes of the chord track's latest step (as they sound), or the keys and MIDI notes it holds: a key
+pressed with none held starts a new chord, the ones pressed while it is held join it (an arpeggio's held chord, not
+each of its notes; QUANTIZE SOLO's black keys are a tune, not the chord). It stays until the next one, and a muted
+chord track still leads. Every note the following track sounds moves as it starts: its steps, its keys, MIDI IN and
+its ARP. A note already sounding, or tied on, keeps its pitch; on a step where the chord changes, the chord comes
+first. What you record or enter is what you played, so a take plays back as you heard it and moves again with the
+chords. STOP clears the chords: the following tracks play as written until their chord track plays again. Drum kits
+neither follow nor lead. MIDI OUT sends the keys as pressed. The page shows the chord, the note it goes by and what
+the track does with it ("T2 KEY +5"). A Skiff before 2.1 ignores FOLLOW: the tracks play as written.
 
 ## Build from source
 
@@ -702,7 +740,7 @@ On the SMK-37: [SMK37.md](SMK37.md#if-it-does-not-start).
 **The screen says UPDATE MODE, or stays black while a computer sees a USB MIDI device named "Felucca
 Update":** an install was cut off, and the FM-1 waits in Skiff's update loader at every power-on. Nothing is
 lost. Connect it by USB and run the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) again
-(or `python tools/fm1_install.py skiff-2.0.3.fwsc`): it finishes the install. If the installer can't find it, plug
+(or `python tools/fm1_install.py skiff-2.1.fwsc`): it finishes the install. If the installer can't find it, plug
 the FM-1 straight into the computer: a USB hub or USB-sharing software can lose it when it switches to update mode.
 M-VAVE's own updater does not see the FM-1 in this state. (Since 1.3.2 the loader says UPDATE MODE on the screen;
 one an older Skiff left there keeps it black.)

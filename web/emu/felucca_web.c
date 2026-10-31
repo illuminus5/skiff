@@ -254,6 +254,51 @@ static void cdc_task(void) {}
 /* --------------------------------------------------------- the device --- */
 static uint32_t web_booted, web_boot_ms, web_last_frame;
 
+#ifdef FOLLOW_DEMO
+/* (2.1, a demo build only: EMU_CFLAGS=-DFOLLOW_DEMO) a song for the chord follow, PLAY to hear it: T1 SOFT PAD holds C Am
+ * F G a bar each; T2 SQR BASS's one-bar line and T3 SYNTH PLUCK's arp, both written in C, follow T1 (SCL > FOLLOW: KEY
+ * and SCALE, by its ROOT); T6 a beat */
+static void follow_demo(void)
+{
+    static const uint8_t CH[4][3] = {{60, 64, 67}, {57, 60, 64}, {53, 57, 60}, {55, 59, 62}};
+    static const uint8_t BASS[16] = {36, 0, 48, 0, 36, 0, 43, 0, 36, 0, 48, 0, 46, 0, 43, 0};
+    static const uint8_t ARP[16] = {60, 64, 67, 72, 67, 64, 60, 64, 60, 64, 67, 72, 76, 72, 67, 64};
+    static const uint8_t BEAT[16] = {1, 0, 8, 0, 2, 0, 8, 0, 1, 0, 8, 1, 2, 0, 8, 8};   /* KICK 1, SNARE 2, CL HAT 8 */
+    uint32_t k, i;
+    for (k = 0; k < NTRK; k++) {
+        track_defaults_steps(&trk[k]);
+        trk[k].p[P_SLEN] = 16;
+    }
+    for (k = 0; k < 3u; k++) {
+        track_t *t = &trk[k];
+        set_engine_of(t, 0);
+        apply_preset_to(t, k == 0u ? 1u : k == 1u ? 2u : 8u);   /* SOFT PAD, SQR BASS, SYNTH PLUCK */
+        t->p[P_SCALE] = 1;
+        t->p[P_ROOT] = 0;
+        t->p[P_SDIV] = 2;
+    }
+    set_engine_of(&trk[NTRK - 1u], ENGI_DRUM);
+    apply_preset_to(&trk[NTRK - 1u], 0);
+    trk[0].p[P_SLEN] = 64;
+    for (i = 0; i < 64u; i++)
+        trk[0].step[i] = i % 16u ? (step_t){{0}, 0, ST_TIE, 0, 0}
+                                 : (step_t){{CH[i / 16u][0], CH[i / 16u][1], CH[i / 16u][2]}, 3, ST_NOTE, 0, 90};
+    for (i = 0; i < 16u; i++) {
+        if (BASS[i])
+            trk[1].step[i] = (step_t){{BASS[i]}, 1, ST_NOTE, 0, 110};
+        trk[2].step[i] = (step_t){{ARP[i]}, 1, ST_NOTE, 0, (uint8_t)(i % 4u ? 70 : 100)};
+        if (BEAT[i])
+            trk[NTRK - 1u].step[i] = (step_t){{0}, 0, ST_NOTE, 0, 100, BEAT[i]};
+    }
+    trk[1].p[P_SGATE] = 80;
+    trk[2].p[P_SGATE] = 50;
+    trk[1].p[P_FOLLOW] = trk[2].p[P_FOLLOW] = 1;        /* (T1) */
+    trk[1].p[P_FMODE] = FM_KEY;
+    trk[2].p[P_FMODE] = FM_SCALE;
+    song.g[G_BPM] = 108;
+}
+#endif
+
 /* main.c fm1_main's boot, up to the main loop (no USB, no UART, no panel setup) */
 static void web_power_on(void)
 {
@@ -279,6 +324,9 @@ static void web_power_on(void)
     unit_g_adopt = ui_set_rev < 2u;       /* main.c: (Skiff U3, R8) the unit's CLOCK MIDI IN TUNE */
     autosave_boot(boot_clean);            /* main.c: the last session's music (1.2, project.c) */
     unit_g_boot();
+#ifdef FOLLOW_DEMO
+    follow_demo();
+#endif
     web_boot_ms = fm1_ms + 430u;         /* main.c: 30 + 400 ms before the first frame */
     web_booted = 1;
 }

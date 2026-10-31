@@ -76,9 +76,10 @@ typedef struct {
     up_rec_t r[UP_PER_BANK];
 } up_bank_t;
 _Static_assert(sizeof(up_rec_t) == 192, "user preset record layout");
-_Static_assert(P_COUNT <= UP_PMAX * 2u && SID_COUNT <= UP_SIDS, "user preset record: P_COUNT, the SIDs");
+_Static_assert(SID_COUNT <= UP_SIDS, "user preset record: the SIDs");
 /* (Skiff) packed[132..143] held the pattern's NUDGE (see the top); (phase 5) a user preset holds no pattern and nothing
- * reads one, so (1.3) the parameters may pass 132 into it: firmware before maps them by count, as any np */
+ * reads one, so (1.3) the parameters may pass 132 into it: firmware before maps them by count, as any np. (2.1) Past
+ * UP_PMAX * 2 (P_COUNT 146) only version 6 holds them all: SAVE and UP_PUT write nothing else */
 static up_bank_t up_bank[UP_SLOTS / UP_PER_BANK];
 
 static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
@@ -160,7 +161,7 @@ static void up_bank_check(uint32_t b, int len)
 /* the record's values in today's P_* order (mapped by count, see above; (2.0) v6 by stored id); def = the defaults */
 static void up_params(const up_rec_t *r, int16_t *out, const int16_t *def)
 {
-    int16_t values[UP_PMAX * 2u];
+    int16_t values[UP_SIDS];                     /* (a record by count's np: up_valid keeps it below) */
     uint32_t i;
     if (r->ver >= UP_VER_SID) {
         for (i = 0; i < P_COUNT; i++)
@@ -207,12 +208,14 @@ static void up_pat_norm(uint8_t *note, uint8_t *flags)   /* tie: no note; rest: 
     }
 }
 
-/* UP_PUT arguments: slot, engine, name, P_COUNT x v14, 16 x (note, flags) [, kind, 16 x hi] -> *r (values not
- * yet clamped); 0 ok, 1 bad arguments. *slot gets the slot byte when there is one. kind 1 (and its 16 bytes):
- * a drum grid, the pairs the low 7 bits of each step's hits and accents, hi bit 0 / 1 their bit 7 (lane 8) */
+/* UP_PUT arguments: slot, engine, name, P_COUNT x v14, 16 x (note, flags) [, kind, 16 x hi] -> *r, a version 6
+ * record (values not yet clamped); 0 ok, 1 bad arguments (*r as it was). *slot gets the slot byte when there is one.
+ * The pattern (kind 1 and its 16 bytes: a drum grid) is checked and passed over: (2.0) a user preset holds none, and
+ * (2.1) past UP_PMAX * 2 values a record by count has no room left for one */
 static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
 {
-    uint32_t i, n, k, end;
+    uint32_t i, n, k, end, engine;
+    int16_t v[P_COUNT];
     if (na < 3u)
         return 1;
     *slot = a[0];
@@ -223,40 +226,23 @@ static int up_parse(const uint8_t *a, uint32_t na, up_rec_t *r, uint32_t *slot)
     if (a[0] >= UP_SLOTS || a[1] >= NENGINES || (!FELUCCA_LEGACY && !FELUCCA_FM4 && a[1] == ENGI_DIGITAL) ||
         2u + n >= na || !up_name_ok(a + 2, n) || (na != end && (na != end + 17u || a[end] > 1u)))
         return 1;                                /* ((2.0) DIGITAL: none, as up_valid) */
-    up_rec_t staged, *target = r;
-    r = &staged;
+    for (i = 0; i < P_COUNT; i++, k += 2u) {
+        int32_t value = (int32_t)((a[k] & 127u) | (a[k + 1] & 127u) << 7) - 8192;
+        if (value < -64 || value > 127)
+            return 1;
+        v[i] = (int16_t)value;
+    }
+    engine = a[1];
+#if FELUCCA_LEGACY
+    if (drum_from_phys(engine, &v[P_E0]) || drum_from_perc(engine, &v[P_E0]))
+        engine = ENGI_DRUM;                      /* (an editor of before the DRUM engine) */
+#endif
     memset(r, 0, sizeof *r);
     r->used = UP_USED;
-    r->ver = UP_VER;
-    r->engine = a[1];
-    r->np = P_COUNT;
+    r->engine = (uint8_t)engine;
     for (i = 0; i < n; i++)
         r->name[i] = (char)a[2 + i];
-    for (i = 0; i < P_COUNT; i++, k += 2u)
-        {
-            int32_t value = (int32_t)((a[k] & 127u) | (a[k + 1] & 127u) << 7) - 8192;
-            if (value < -64 || value > 127) return 1;
-            up_set_value(r, i, (int16_t)value);
-        }
-    if (na >= k + 33u + 16u && a[k + 32u] == 1u) {    /* a drum grid */
-        r->ver = UP_VER_GRID;
-        for (i = 0; i < 16u; i++) {
-            uint32_t hi = a[k + 33u + i];
-            r->note[i] = (uint8_t)((a[k + 2u * i] & 127u) | (hi & 1u) << 7);
-            r->flags[i] = (uint8_t)(((a[k + 2u * i + 1u] & 127u) | (hi & 2u) << 6) & r->note[i]);
-        }
-        *target = *r;
-        return 0;
-    }
-    for (i = 0; i < 16u; i++, k += 2u) {
-        r->note[i] = a[k];
-        r->flags[i] = a[k + 1];
-        up_pat_norm(&r->note[i], &r->flags[i]);
-    }
-#if FELUCCA_LEGACY
-    up_migrate(r);                               /* (an editor of before the DRUM engine) */
-#endif
-    *target = *r;
+    up_set_sound(r, v);
     return 0;
 }
 

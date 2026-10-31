@@ -560,6 +560,10 @@ static int card_dead(const page_t *pg, uint32_t c)
         return 1;
     if (id == P_SPRD && trk_vmode(t) != V_POLY && trk_vmode(t) != V_UNISON)   /* ((1.3) SPREAD: POLY / UNISON only) */
         return 1;
+    if ((id == P_FMODE || id == P_FNOTE) &&             /* ((2.1) FOLLOW OFF (or itself): MODE, NOTE do nothing; */
+        ((uint32_t)t->p[P_FOLLOW] - 1u >= NTRK || (uint32_t)t->p[P_FOLLOW] - 1u == song.sel % NTRK ||
+         (id == P_FNOTE && t->p[P_FMODE] == FM_FIT)))   /* FIT takes the whole chord: NOTE nothing) */
+        return 1;
     return pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_DRUM && id == P_E6 &&
            drum_kit_plays(t->p[P_E0]) != DK_STD;
 }

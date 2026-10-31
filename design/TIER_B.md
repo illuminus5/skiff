@@ -320,7 +320,8 @@ references there); the counted parts follow, then zeros up to the name.
 - `parts` and `phys` aren't stored: every project since 1.0 has `PROJ_PARTS` and `PROJ_PHYS`, which the reader sets.
 - #30, an entry's sound: byte 0 = 0 none, 1..NENGINES a factory preset of engine byte0 - 1 (byte 1 its index), 0x80 +
   slot a user preset (byte 1 0). What it does when the entry comes in is the feature's spec, after Tier B.
-- #36's lane pans are 8 track parameters (SIDs 135–142): no bytes of their own.
+- #36's lane pans are 8 track parameters (SIDs 135–142): no bytes of their own. (2.1) The chord follow's three (SIDs
+  143–145, P_COUNT 146) take 18 bytes: 2,294 + 18 of the 2,560 in use, room for about 41 more a track.
 - A project holds no steps or automation (the pool does, as since SKF2): `project_t` drops `step[]`, the old chain
   and its motion store (`proj_scratch` 8,140 -> about 2,850 bytes). That waits for step 5: until the old readers
   leave, they decode steps into `project_t` (`proj_migrate` makes patterns of them), and `proj_slot` holds the older
@@ -385,7 +386,8 @@ references there); the counted parts follow, then zeros up to the name.
 - `UP_VER_SID` 6 in the same 192-byte record and bank (UPB1, record size unchanged): the values by SID over the
   value area and the old pattern's 32 bytes (`sid[]`, 176 bytes, room for 41 more parameters); `np` is how many.
   `up_set_sound` writes one; SAVE › USER and the editor's `UP_PUT` both do (the pattern an editor sends is not kept).
-  `UP_GET` of one answers 16 rests and kind 0.
+  `UP_GET` of one answers 16 rests and kind 0. (2.1) With P_COUNT 146 a record by count (versions 4, 5) no longer holds
+  every value beside its pattern: `up_parse` stages UP_PUT as version 6 directly (30 ids of room left).
 - `up_params` reads it by SID (a newer record's ids passed over, an older one's at their defaults); `up_bank_check`
   leaves its bytes alone (no pattern to normalize, no PHYS DRUM / SAMPLE PERC migration: 2.0 writes neither).
 - Versions 1–5 are still read until step 5 moves 1–3 to the converter.

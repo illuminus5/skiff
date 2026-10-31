@@ -38,10 +38,11 @@ static int motion_param(uint32_t id)
     return id < P_COUNT && (id <= P_REL || (id >= P_ED_FLT && id <= P_LD_AMP) ||
         (id >= P_DIST && id <= P_REV) || id == P_GLIDE || id == P_PAN ||
         id == P_DETUNE || (id >= P_FM1_ATK && id <= P_FM4_LEVEL) || (id >= P_LN0 && id != P_DIR && id != P_DKSRC &&
-        (id < P_LSYNC || id > P_LPOL) && id != P_ESYNC) || id == P_SGATE);
+        (id < P_LSYNC || id > P_LPOL) && id != P_ESYNC && (id < P_FOLLOW || id > P_FNOTE)) || id == P_SGATE);
     /* (not the chord keys; the DRUM lane levels, E0..E7; (Skiff) not DIR: the pattern's; ducking's DEPTH and RELEASE,
      * not the track it ducks under: routing; GATE, the note length: a step's own as a lock, SEQ > NOTES' LENGTH; (1.3)
-     * not LFO SYNC TRIG POLARITY nor ENV SYNC: settings; SPREAD and the INSERT, its TYPE too: a lock switches it) */
+     * not LFO SYNC TRIG POLARITY nor ENV SYNC: settings; SPREAD and the INSERT, its TYPE too: a lock switches it; (2.1)
+     * not the chord follow: settings) */
 }
 static int motion_valid(const motion_store_t *m)
 {

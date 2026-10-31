@@ -326,9 +326,38 @@ static int kits(void)
     return bad;
 }
 
+/* (2.1, #74) QNT SOLO: a white key plays its chord (as WHITE), a black key its note alone, whatever CHRD and VOIC are */
+static int solo(void)
+{
+    int bad = 0, ok;
+    track_t *t = &trk[0];
+    uint32_t before, gen;
+    reset();
+    t->p[P_QUANT] = QN_SOLO;
+    t->p[P_CHRD] = CH_DIA3;
+    t->p[P_SCALE] = 2; t->p[P_ROOT] = 9;                           /* A minor: C4 plays the root, A4 */
+    key_down(K_C4);
+    bad += check("QNT SOLO: a white key as WHITE, its chord (A minor: C4 -> A4, A C E)",
+                 ngated(t) == 3u && gate_note(t, 69) && gate_note(t, 72) && gate_note(t, 76));
+    key_up(K_C4);
+    before = mo_w;
+    key_down(K_D4 + 1u);                                           /* D#4: the scale's 2nd degree, B */
+    ok = ngated(t) == 1u && gate_note(t, 71u + 12u * SOLO_OCT) && kb_chn[K_D4 + 1u] == 1u && mo_w == before + 1u;
+    key_up(K_D4 + 1u);
+    bad += check("  a black key: its note alone, one MIDI note out (D#4: B4); its release ends it", ok && !ngated(t));
+    t->p[P_CHRD] = CH_MAJ7; t->p[P_VOIC] = VC_BASS;                /* a fixed shape, a 4-note voicing */
+    gen = chord_last[0].gen;
+    key_down(K_C4 + 1u);                                           /* C#4: the root, A */
+    bad += check("  CHRD MAJ7 +OCT: a black key still one note (C#4: A4), the CHORD page keeps the last chord",
+                 ngated(t) == 1u && gate_note(t, 69u + 12u * SOLO_OCT) && chord_last[0].gen == gen);
+    key_up(K_C4 + 1u);
+    t->p[P_CHRD] = CH_OFF; t->p[P_VOIC] = VC_CLOSE; t->p[P_QUANT] = QN_OFF;
+    return bad;
+}
+
 int main(void)
 {
-    int bad = theory() + shapes_voicings() + keys() + arp_rec() + midi_in() + kits();
+    int bad = theory() + shapes_voicings() + keys() + arp_rec() + midi_in() + kits() + solo();
     printf("%s\n", bad ? "CHORD TEST FAILED" : "chord keys test passed");
     return bad != 0;
 }

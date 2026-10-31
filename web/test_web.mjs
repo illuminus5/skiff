@@ -52,24 +52,24 @@ async function editorMock() {
   const rq = async (r, o) => link.request(r, o);
   const info = E.parse[E.CMD.INFO](await rq(E.req.info()));
   ok(info.nengines === 15 && info.engines[1] === "-" && info.engines[12] === "FM6" && info.engines[13] === "SLICE" && info.engines[14] === "DRUM-X"
- && info.engines[5] === "VOICE" && info.engines[6] === "TRIO" && info.engines[7] === "WHEEL" && info.engines[8] === "GRAIN" && info.engines[9] === "PHYS" && info.engines[10] === "DRUM" && info.engines[11] === "NOISE" && info.pcount === 143 && info.pe0 === 135 && info.engines[4] === "SAMPLE",
-    "editor: INFO (Skiff 2.0: P_COUNT 143, P_E0 135 from its wide-ids tag)");
+ && info.engines[5] === "VOICE" && info.engines[6] === "TRIO" && info.engines[7] === "WHEEL" && info.engines[8] === "GRAIN" && info.engines[9] === "PHYS" && info.engines[10] === "DRUM" && info.engines[11] === "NOISE" && info.pcount === 146 && info.pe0 === 138 && info.engines[4] === "SAMPLE",
+    "editor: INFO ((2.1) P_COUNT 146, P_E0 138 from its wide-ids tag)");
   {
-    /* (Skiff 1.3) wide ids: a track id from 128 on ((2.0) E0..E7 since P_E0 135, after the lane pans 127..134) goes as
-       scope 2 and comes back whole (GET, SET, DESC), in TRACK_PARAM's track byte (bit 6) and in a MOTION record's step
-       byte (bit 6); 127 (a lane's PAN) is still scope 0 */
-    const v0 = E.parse[E.CMD.GET](await rq(E.req.get(0, 138))).value;
-    const a = E.req.set(0, 138, 10), s = E.parse[E.CMD.SET](await rq(a)), g = E.parse[E.CMD.GET](await rq(E.req.get(0, 138)));
-    const d = E.parse[E.CMD.DESC](await rq(E.req.desc(0, 142)));
-    const tp = E.parse[E.CMD.TRACK_PARAM](await rq(E.req.trackParam(3, 137)));
+    /* (Skiff 1.3) wide ids: a track id from 128 on ((2.0) E0..E7 since P_E0 135, after the lane pans 127..134; (2.1) P_E0
+       138, after the chord follow 135..137) goes as scope 2 and comes back whole (GET, SET, DESC), in TRACK_PARAM's track
+       byte (bit 6) and in a MOTION record's step byte (bit 6); 127 (a lane's PAN) is still scope 0 */
+    const v0 = E.parse[E.CMD.GET](await rq(E.req.get(0, 141))).value;
+    const a = E.req.set(0, 141, 10), s = E.parse[E.CMD.SET](await rq(a)), g = E.parse[E.CMD.GET](await rq(E.req.get(0, 141)));
+    const d = E.parse[E.CMD.DESC](await rq(E.req.desc(0, 145)));
+    const tp = E.parse[E.CMD.TRACK_PARAM](await rq(E.req.trackParam(3, 140)));
     const e0 = E.req.get(0, 127);
-    const mo = E.parse[E.CMD.MOTION](await rq(E.req.motion(0, 3, { step: 5, param: 139, value: 9 }, info.ntrk)));
-    ok(a[1][0] === 2 && a[1][1] === 10 && s.scope === 0 && s.id === 138 && s.value === 10 && g.id === 138 && g.value === 10 &&
-       d.scope === 0 && d.id === 142 && d.label === "KEYTRK" && tp.track === 3 && tp.id === 137 && e0[1][0] === 0 && e0[1][1] === 127 &&
-       mo.events.some((e) => e.step === 5 && e.param === 139 && e.value === 9),
-       "editor: wide ids: SET / GET 138 and DESC 142 as scope 2, TRACK_PARAM 137 (bit 6), a motion record of 139; 127 scope 0");
+    const mo = E.parse[E.CMD.MOTION](await rq(E.req.motion(0, 3, { step: 5, param: 142, value: 9 }, info.ntrk)));
+    ok(a[1][0] === 2 && a[1][1] === 13 && s.scope === 0 && s.id === 141 && s.value === 10 && g.id === 141 && g.value === 10 &&
+       d.scope === 0 && d.id === 145 && d.label === "KEYTRK" && tp.track === 3 && tp.id === 140 && e0[1][0] === 0 && e0[1][1] === 127 &&
+       mo.events.some((e) => e.step === 5 && e.param === 142 && e.value === 9),
+       "editor: wide ids: SET / GET 141 and DESC 145 as scope 2, TRACK_PARAM 140 (bit 6), a motion record of 142; 127 scope 0");
     await rq(E.req.motion(0, 2, {}, info.ntrk));
-    await rq(E.req.set(0, 138, v0));
+    await rq(E.req.set(0, 141, v0));
   }
   let descs = 0;
   for (let i = 0; i < info.pcount; i++) if (E.parse[E.CMD.DESC](await rq(E.req.desc(0, i))).label) descs++;
@@ -120,6 +120,19 @@ async function editorMock() {
     const kept = E.parse[E.CMD.DUMP](await rq(E.req.dump()), info);
     ok(kept.p[81] === 2 && kept.p[82] === 4 && kept.preset === 3, "editor: a factory preset keeps CHRD and VOIC (the track's)");
     await rq(E.req.set(0, 81, 0));
+    /* (2.1) the chord follow (core.h P_FOLLOW P_FMODE P_FNOTE = 135..137, just before P_E0 138): the track's */
+    const fd = [];
+    for (let i = 135; i < 138; i++) fd.push(E.parse[E.CMD.DESC](await rq(E.req.desc(0, i))));
+    ok(fd.map((x) => x.label).join() === "FOLLOW,MODE,NOTE" && fd[0].names.join() === "OFF,T1,T2,T3,T4,T5,T6" &&
+       fd[1].names.join() === "KEY,SCALE,FIT" && fd[2].names.join() === "ROOT,LOW,HIGH,LAST" && fd.every((x) => x.def === 0),
+      "editor: (2.1) the chord follow 135..137 over DESC");
+    await rq(E.req.set(0, 135, 2));
+    await rq(E.req.set(0, 136, 1));
+    await rq(E.req.preset(0, 2));
+    const fk = E.parse[E.CMD.DUMP](await rq(E.req.dump()), info);
+    ok(fk.p[135] === 2 && fk.p[136] === 1 && fk.preset === 2, "editor: a factory preset keeps the chord follow (the track's)");
+    await rq(E.req.set(0, 135, 0));
+    await rq(E.req.set(0, 136, 0));
     /* the DRUM lane levels (core.h P_LN0..P_LN7 = 83..90, just before P_E0 91): percents, 100 % by default; the sound's,
        a factory preset sets them back */
     const lanes = [];
@@ -1209,7 +1222,7 @@ async function editorLive() {
   const dump = E.parse[C.DUMP](await pend, info);
   const ch = ev.pushes.find((f) => f.cmd === C.CHANGED);
   const cv = ch && E.parse[C.CHANGED](ch.a);
-  ok(dump.p.length === 143 && ch && ch.pending === C.DUMP && cv.scope === 0 && cv.id === 9 && cv.value === kn.value && !ev.unknown.length,
+  ok(dump.p.length === 146 && ch && ch.pending === C.DUMP && cv.scope === 0 && cv.id === 9 && cv.value === kn.value && !ev.unknown.length,
     "live: CHANGED while DUMP waits -> push handler, reply still matched");
   const rl = m.sim.reload();
   m.sim.step(3);

@@ -261,8 +261,8 @@ static int presets(void)
     for (i = 0; i < 16u; i++) { a[k++] = r.note[i]; a[k++] = r.flags[i]; }
     n = k;
     memset(&r, 0, sizeof r);
-    bad += check("UP_PUT keeps a pattern field's ratchet (the editor's format)", !up_parse(a, n, &r, &slot) &&
-                 r.flags[2] == 2u << SF_RATCH_SH && r.flags[5] == (SF_ACCENT | 3u << SF_RATCH_SH));
+    bad += check("UP_PUT takes a pattern's ratchets (the editor's format; (2.1) the pattern passed over)",
+                 !up_parse(a, n, &r, &slot) && r.ver == UP_VER_SID && !up_pat(&r));
     up_store(4, "SOUND");
     bad += check("  (Skiff) SAVE > USER stores the sound only: no pattern, no grid", up_used(4) && !up_grid(up_rec(4)) &&
                  !up_rec(4)->note[2] && !up_rec(4)->flags[2]);

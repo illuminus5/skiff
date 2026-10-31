@@ -139,6 +139,8 @@ static void ui_power_on(void)
     uint32_t i;
     memset(trk, 0, sizeof trk);
     memset(&song, 0, sizeof song); sel_set(0);
+    memset(fol_src, 0, sizeof fol_src);           /* ((2.1) .pool at power-on: no chords, nothing followed) */
+    memset(fol_map, 0, sizeof fol_map);
     memset(&ui, 0, sizeof ui);
     memset(&nsel, 0, sizeof nsel);                /* ((Skiff 2.0) no selection, FEEL's tiles on CHANCE) */
     clip.n = 0;                                   /* (.. nothing copied) */
@@ -541,13 +543,13 @@ static int test_sound_loads(void)
     {   /* a user preset of SAMPLE PERC (UP_PUT from an older editor, or a bank read): DRUM, its kit */
         up_rec_t r;
         int16_t keep[P_COUNT];
-        uint32_t k;
+        uint32_t k, np = 135u;                      /* ((2.1) 1.4's records by count: E0..E7 the last eight) */
         memset(&r, 0, sizeof r);
-        r.used = UP_USED; r.ver = UP_VER; r.engine = ENGI_SAMPLE; r.np = P_COUNT;
+        r.used = UP_USED; r.ver = UP_VER; r.engine = ENGI_SAMPLE; r.np = (uint8_t)np;
         memcpy(r.name, "OLD PERC", 8);
         host_legacy_sample_perc(t);
-        for (k = 0; k < P_COUNT; k++)
-            up_set_value(&r, k, t->p[k]);
+        for (k = 0; k < np; k++)
+            up_set_value(&r, k, t->p[k < np - 8u ? k : P_E0 + k - (np - 8u)]);
         up_migrate(&r);
         *up_rec(7) = r;
         set_engine_of(t, 0);
@@ -4481,14 +4483,15 @@ static int test_fm4_retired(void)
     fm4_preset_values(p, 5);                           /* DIGITAL PAD */
     {
         up_rec_t r;
+        const uint32_t np = 135u;                      /* ((2.1) 1.4's records by count: E0..E7 the last eight) */
         memset(&r, 0, sizeof r);
         r.used = UP_USED;
         r.ver = UP_VER;
         r.engine = ENGI_DIGITAL;
-        r.np = P_COUNT;
+        r.np = (uint8_t)np;
         memcpy(r.name, "OLD PAD", 7);
-        for (i = 0; i < P_COUNT; i++)
-            up_set_value(&r, i, p[i]);
+        for (i = 0; i < np; i++)
+            up_set_value(&r, i, p[i < np - 8u ? i : P_E0 + i - (np - 8u)]);
         up_put(7, &r);
     }
     fm4_convert(p, v);
@@ -4505,14 +4508,15 @@ static int test_fm4_retired(void)
 #else
     {   /* (2.0) a user preset stored with engine 1 (an editor of before's UP_PUT, a bank of before): OLD FORMAT, kept */
         up_rec_t r;
+        const uint32_t np = 135u;                      /* ((2.1) 1.4's records by count: E0..E7 the last eight) */
         memset(&r, 0, sizeof r);
         r.used = UP_USED;
         r.ver = UP_VER;
         r.engine = ENGI_DIGITAL;
-        r.np = P_COUNT;
+        r.np = (uint8_t)np;
         memcpy(r.name, "OLD PAD", 7);
-        for (i = 0; i < P_COUNT; i++)
-            up_set_value(&r, i, param_desc_of(ENGI_DIGITAL, i)->def);
+        for (i = 0; i < np; i++)
+            up_set_value(&r, i, param_desc_of(ENGI_DIGITAL, i < np - 8u ? i : P_E0 + i - (np - 8u))->def);
         up_put(7, &r);
         bad += check("(2.0) a DIGITAL user preset: OLD FORMAT, not loaded or listed, its bytes kept",
                      !up_used(7) && up_old(7) && up_load(7) == 1 && !memcmp(up_rec(7), &r, sizeof r));
@@ -5508,10 +5512,13 @@ static int test_seq_quant(void)
     ok = cur_page()->id[2] == P_QUANT && t->p[P_QUANT] == 0;
     turn(EN_K3, 10);
     param_format(&TP[P_QUANT], t->p[P_QUANT], val, &unit);
-    ok &= t->p[P_QUANT] == 4 && str_eq(val, "SEQ+T");  /* ((1.3) SEQ+T appended) */
+    ok &= t->p[P_QUANT] == QN_SOLO && str_eq(val, "SOLO");   /* ((2.1, #74) SOLO appended) */
+    t->p[P_QUANT] = 4;
+    param_format(&TP[P_QUANT], t->p[P_QUANT], val, &unit);
+    ok &= str_eq(val, "SEQ+T");                         /* ((1.3) SEQ+T appended) */
     t->p[P_QUANT] = 3;
     param_format(&TP[P_QUANT], t->p[P_QUANT], val, &unit);
-    bad += check("SCL KNOB 3 QNT: OFF SNAP WHITE SEQ SEQ+T, SEQ+T last (default OFF)", ok && str_eq(val, "SEQ"));
+    bad += check("SCL KNOB 3 QNT: OFF SNAP WHITE SEQ SEQ+T SOLO, SOLO last (default OFF)", ok && str_eq(val, "SEQ"));
     t->p[P_SCALE] = 1;
     t->p[P_ROOT] = 0;
     ok = kb_map(t, 8) == 60u && kb_map(t, 7) == 60u;   /* C#4 key -> C4, as SNAP */
@@ -5524,8 +5531,14 @@ static int test_seq_quant(void)
     transport_req = 2;
     events_block(CTL);
     bad += check("QNT SEQ: the keys snap as SNAP; C#4 F#4 of a step play C4 F4 in C major, the step keeps C#4 F#4", ok);
+    t->p[P_QUANT] = QN_SOLO;
     project_save(1);
     t->p[P_QUANT] = 0;
+    project_load(1);
+    bad += check("(2.1, #74) QNT SOLO saved and loaded with the project", trk[0].p[P_QUANT] == QN_SOLO);
+    trk[0].p[P_QUANT] = 3;
+    project_save(1);
+    trk[0].p[P_QUANT] = 0;
     project_load(1);
     bad += check("QNT SEQ saved and loaded with the project", trk[0].p[P_QUANT] == 3);
     return bad;
@@ -6690,6 +6703,116 @@ static int test_kbd_hold(void)
     TSEL->p[P_AHOLD] = 0;
     sel_set(0);
     t->p[P_AHOLD] = 0;
+    return bad;
+}
+
+/* (2.1, #74) QNT SOLO: chords on the white keys, a tune on the black. KBD HOLD holds the white keys' chord, not a black
+ * key, and a black key pressed (or down) doesn't start a new chord; with the ARP on the black keys sound directly (and
+ * are recorded so) while the white keys' chords go into it, a note both play kept apart; SCALE LEDS light the black keys,
+ * their roots too; step entry writes a black key's note alone */
+static int solo_on(const track_t *t, uint32_t note)   /* a voice of t holds note */
+{
+    uint32_t i;
+    for (i = 0; i < NVOICE; i++)
+        if (t->v[i].gate && t->v[i].note == note)
+            return 1;
+    return 0;
+}
+static int test_solo(void)
+{
+    enum { C4 = 7, D_4 = 10, F4 = 12, F_4 = 13 };     /* keys: D#4 plays D4, F#4 E4 (C major) */
+    const uint32_t D = 62u + 12u * SOLO_OCT, E = 64u + 12u * SOLO_OCT, CW = C4 + 12u * SOLO_OCT;
+    int bad = 0, ok;
+    uint32_t root, sc, i, was, passed;
+    track_t *t;
+    ui_power_on();
+    t = TSEL;
+    t->p[P_VOICE] = V_POLY;                                       /* (T1's first sound: LEGATO) */
+    t->p[P_SCALE] = 1;                                            /* C major */
+    t->p[P_ROOT] = 0;
+    t->p[P_QUANT] = QN_SOLO;
+    t->p[P_CHRD] = CH_DIA3;
+    t->p[P_AMODE] = 0;
+    t->p[P_AHOLD] = 1;                                            /* KBD HOLD */
+    key_down(C4); key_up(C4);
+    key_down(D_4);
+    ok = gates() == 4u && solo_on(t, 60) && solo_on(t, 64) && solo_on(t, 67) && solo_on(t, D);
+    key_up(D_4);
+    events_block(CTL);                                            /* (kb_sol_up: a block on) */
+    ok &= gates() == 3u && !solo_on(t, D) && !kb_ped[D_4] && kb_ped[C4];
+    bad += check("#74 SOLO, KBD HOLD: a black key plays over the chord held, which goes on; let go, it ends (not held)", ok);
+    key_down(D_4);
+    key_down(F4);                                                 /* a black key down: still a new chord */
+    ok = gates() == 4u && !solo_on(t, 60) && !solo_on(t, 64) && solo_on(t, 65) && solo_on(t, 69) && solo_on(t, 72) &&
+         solo_on(t, D);
+    key_up(F4); key_up(D_4);
+    events_block(CTL);
+    ok &= gates() == 3u && solo_on(t, 65) && !solo_on(t, D);
+    bad += check("  a white key pressed while a black key is down starts a new chord (the black key's isn't one)", ok);
+    t->p[P_AHOLD] = 0;
+    events_block(CTL);
+
+    t->p[P_AMODE] = AM_UP;                                        /* the ARP on */
+    key_down(CW);                                                 /* (its chord has the black key's E) */
+    key_down(F_4);
+    ok = t->nheld == 3u && t->arp_phys == 3u && gates() == 1u && solo_on(t, E);
+    key_up(F_4);
+    ok &= t->nheld == 3u && t->arp_phys == 3u && !gates();
+    key_down(F_4);
+    for (i = 0, was = passed = 0; i < 3000u && !passed; i++) {   /* the ARP plays E and goes on: the key's E with it */
+        events_block(CTL);
+        ok &= solo_on(t, E);
+        was |= t->arp_note == E;
+        passed = was && t->arp_note && t->arp_note != E;
+    }
+    ok &= passed;
+    key_up(CW);                                                   /* the white key first: nothing left in the ARP */
+    ok &= !t->nheld && !t->arp_phys && solo_on(t, E);
+    key_up(F_4);
+    events_block(CTL);
+    ok &= !gates() && !t->nheld;
+    bad += check("  the ARP on: a black key sounds at once, not into it; the white key's chord goes into it; the ARP "
+                 "playing the black key's note leaves it sounding; either let go first, nothing left", ok);
+    track_defaults_steps(t);
+    t->p[P_SLEN] = 16;
+    song.rec = 1u << song.sel;                                    /* recording, the ARP on */
+    song.playing = 1;
+    t->seq_idx = 0;
+    t->seq_pos = 0;
+    key_down(D_4);
+    key_up(D_4);
+    song.playing = 0;
+    song.rec = 0;
+    t->p[P_AMODE] = 0;
+    events_block(CTL);
+    bad += check("  recording with the ARP on: a black key's note goes into the step as played",
+                 t->step[0].n == 1u && t->step[0].note[0] == D);
+
+    menu_put(MI_SCLLED, 1);
+    sc = scale_leds(&root);
+    ok = sc == 0x7FFFFFFu && root == (1u << C4 | 1u << 19 | 1u << 8 | 1u << 25);   /* C4 C5; C#4 F#5 */
+    t->p[P_SCALE] = 5;                                            /* PEN: a root every 5 keys of a colour */
+    sc = scale_leds(&root);
+    ok &= sc == 0x7FFFFFFu && root == (1u << C4 | 1u << 16 | 1u << 24 | 1u << 8 | 1u << 20);
+    t->p[P_SCALE] = 1;
+    menu_put(MI_SCLLED, 0);
+    ui_rec_prefs = 0;
+    bad += check("  SCALE LEDS: every key (the black ones walk the scale too), the black keys' roots too", ok);
+
+    track_defaults_steps(t);
+    go_page(GR_ROLL); frame();
+    cursor_set(0);
+    song.rec = 1u << song.sel;                                    /* (#133: armed, stopped: step entry) */
+    key_down(D_4); frame();
+    key_up(D_4); frame();
+    key_down(C4); frame();
+    key_up(C4); frame();
+    song.rec = 0;
+    bad += check("  step entry, CHRD on: a black key writes its note alone, a white key its chord",
+                 t->step[0].n == 1u && t->step[0].note[0] == D && t->step[1].n == 3u && t->step[1].note[0] == 60u &&
+                 t->step[1].note[1] == 64u && t->step[1].note[2] == 67u && ui.cursor == 2u);
+    t->p[P_QUANT] = QN_OFF;
+    t->p[P_CHRD] = CH_OFF;
     return bad;
 }
 
@@ -9639,6 +9762,7 @@ int main(void)
     bad += test_div_order();
     bad += test_head_oct();
     bad += test_kbd_hold();
+    bad += test_solo();
     bad += test_knob_accel();
     bad += test_usb_level();
     bad += test_click_menu();

@@ -413,6 +413,10 @@ static __attribute__((noinline)) void lfo_restart(track_t *t)
     t->lfo_fade = 0;
     t->lfo_t = 0;
 }
+/* (2.1) chord follow (follow.c, in seq.c): the note a note played sounds, the note its end ends, a track letting go */
+static uint32_t fol_on(track_t *t, uint32_t note);
+static uint32_t fol_off(track_t *t, uint32_t note);
+static void fol_drop(const track_t *t);
 static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
 {
     uint32_t any = 0, i, mode = trk_vmode(t);
@@ -428,6 +432,7 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
         t->xp_vel[i] = (uint8_t)vel;
         return;
     }
+    note = fol_on(t, note);                             /* ((2.1) a follower's: into the chord it follows) */
     duck_note(t, note);                                 /* (Skiff) a hit another track may duck under */
     t->hits++;                                          /* ((Skiff Q6) QUARK's event display) */
     vel = mod_note(t, note, vel);                       /* the matrix's VEL / KEY / RAND ((1.3) VEL as a destination) */
@@ -468,6 +473,7 @@ static void trk_note_off(track_t *t, uint32_t note)
             t->xp_vel[k++] = t->xp_vel[i];
         }
     t->xp_n = (uint8_t)k;
+    note = fol_off(t, note);                           /* ((2.1) the note it sounded; 255: another still sounds it) */
     mono_remove(t, note);                              /* a mode change must not retain a released key */
     if (mode != V_POLY) {
         uint32_t nv = mode == V_UNISON ? trk_nvoice(t) : 1u;
@@ -502,6 +508,7 @@ static void trk_all_off(track_t *t)
     t->nmono = 0;
     t->mono_note = 0;
     t->xp_n = 0;
+    fol_drop(t);                                        /* ((2.1) nothing kept, no chord to lead with) */
 }
 
 /* engine switch, at each block start (events_block), before any note of the block. The UI writes

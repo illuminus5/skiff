@@ -61,12 +61,13 @@ static int midi_note_held(const track_t *t, uint32_t note)
     return mchord_held(id, note);
 }
 
-/* a key held on track t sounds note (the key's own note, or a tone of its chord) */
+/* a key held on track t sounds note (the key's own note, or a tone of its chord). (2.1, #74) With the ARP on, the SOLO
+ * black keys' notes (seq.c kb_sol, sounding) and the others' (the ARP's) are apart: the keys of in_solo's kind */
 static int midi_local_held(const track_t *t, uint32_t note)
 {
     uint32_t k, i;
     for (k = 0; k < KB_N; k++)
-        if (kb_chn[k] && kb_trk[k] == trk_index(t))
+        if (kb_chn[k] && kb_trk[k] == trk_index(t) && (!t->p[P_AMODE] || kb_sol[k] == in_solo))
             for (i = 0; i < kb_chn[k]; i++)
                 if (kb_chord[k][i] == note)
                     return 1;

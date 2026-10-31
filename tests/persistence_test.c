@@ -147,13 +147,13 @@ static fm6_bank_t mig_bank;
 static void mig_rec(up_bank_t *b, uint32_t i, uint32_t engine, int16_t slot, char tag)
 {
     up_rec_t *r = &b->r[i];
-    uint32_t k;
+    uint32_t k, np = 91u;                               /* ((2.1) 1.0.2's records by count: E0..E7 the last eight) */
     memset(r, 0, sizeof *r);
-    r->used = UP_USED; r->ver = UP_VER; r->engine = (uint8_t)engine; r->np = P_COUNT;
+    r->used = UP_USED; r->ver = UP_VER; r->engine = (uint8_t)engine; r->np = (uint8_t)np;
     r->name[0] = tag;
-    for (k = 0; k < P_COUNT; k++) up_set_value(r, k, param_desc_of(engine, k)->def);
-    up_set_value(r, P_E7, slot);
-    up_set_value(r, P_E0, (int16_t)(tag & 7));          /* (each record another sound) */
+    for (k = 0; k < np; k++) up_set_value(r, k, param_desc_of(engine, k < np - 8u ? k : P_E0 + k - (np - 8u))->def);
+    up_set_value(r, np - 1u, slot);                      /* (E7) */
+    up_set_value(r, np - 8u, (int16_t)(tag & 7));       /* (E0: each record another sound) */
 }
 
 /* a 1.0.2 flash: user presets on B3 (slot 1), F2 (2), B5 empty (3), DRUM (4), B1 (18); the bank written twice */
@@ -982,8 +982,8 @@ int main(void)
     transport_req = 0;
     memset(&r, 0, sizeof r);
     r.used = UP_USED;
-    r.ver = UP_VER;
-    r.np = P_COUNT;
+    r.ver = UP_VER_SID;                       /* ((2.1) version 6, as SAVE and UP_PUT write: P_COUNT is past what a */
+    r.np = (uint8_t)SID_COUNT;                /* record by count holds) */
     memcpy(r.name, "First", 6);
     erase_error = 1;
     bank = up_bank[1];

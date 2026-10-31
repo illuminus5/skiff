@@ -137,6 +137,7 @@ static persist_t per_from(uint32_t magic_, uint32_t palette)   /* Felucca's sett
     p.magic = magic_; p.palette = palette_to_stored(palette); p.lowcut = 1; p.panel = PANEL_DEFAULT;
     return p;
 }
+#define NP_14 135u                                   /* ((2.1) 1.4's records by count: today's P_COUNT is past them */
 static up_rec_t rec_of(uint32_t ver, uint32_t engine, const char *name, uint32_t np, int32_t base)
 {
     up_rec_t r;
@@ -258,7 +259,7 @@ int main(int argc, char **argv)
         static up_bank_t b;
         memset(&b, 0, sizeof b);
         b.magic = UP_BANK_MAGIC; b.rsize = sizeof(up_rec_t); b.nslot = UP_PER_BANK;
-        b.r[0] = rec_of(UP_VER_GRID, ENGI_DRUM, "DRUM 01", P_COUNT, 0);
+        b.r[0] = rec_of(UP_VER_GRID, ENGI_DRUM, "DRUM 01", NP_14, 0);
         memcpy(in[6].b, &b, sizeof b); in[6].len = sizeof b;
     }
     for (id = 0; id < 32u; id++)
@@ -326,8 +327,8 @@ int main(int argc, char **argv)
         b.r[0] = rec_of(2, 0, "OLD ANALOG", 69, -20);
         b.r[1] = rec_of(3, ENGI_DRUM, "OLD GRID", 69, 0);
         b.r[1].note[0] = 9; b.r[1].flags[0] = 1;   /* (a grid's hits and accents: gone with the pattern) */
-        b.r[2] = rec_of(UP_VER, ENGI_DIGITAL, "OLD DIGITAL", P_COUNT, 0);
-        b.r[3] = rec_of(UP_VER_GRID, ENGI_DRUM, "KEPT V5", P_COUNT, 3);
+        b.r[2] = rec_of(UP_VER, ENGI_DIGITAL, "OLD DIGITAL", NP_14, 0);
+        b.r[3] = rec_of(UP_VER_GRID, ENGI_DRUM, "KEPT V5", NP_14, 3);
         b.r[4] = rec_of(2, ENGI_FM6, "OLD FM6", 69, 0);
         up_bank[0] = b;                            /* (its patch, tied to the record as it is: upf_tag) */
         upf_empty();

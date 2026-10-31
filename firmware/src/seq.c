@@ -48,10 +48,13 @@ static uint32_t kb_semi(uint32_t k) { return k < 27u ? k : k < 32u ? k - 32u : k
 #define KB_IN(k) ((k) < 27u ? (k) + 1u : 0u)
 #else
 #define KB_N 27u
+static uint32_t kb_semi(uint32_t k) { return k; }
 #define KB_VEL(k) 100u
 #define KB_IN(k) ((k) + 1u)
 #endif
 static uint8_t kb_note[KB_N], kb_trk[KB_N];   /* per key: the note it started and on which track */
+static uint8_t kb_sol[KB_N], in_solo;    /* (2.1, #74) per key: a black key of QNT SOLO (key_on); in_solo: the notes going
+                                          * into input_on / input_off now are one's (they never go into the ARP) */
 static uint8_t in_key;                   /* the key (+ 1) whose notes go into input_on now (key_on), 0: none (MIDI IN) */
 /* (Skiff 1.3, from Felucca 1.5 #191) where each track's held[i] came from, so the arp maps it again as it plays
  * (arp_list: TRN, ROOT, SCALE, QNT as they are now). held_key: the key + 1 (bits 0..4) and the octave buttons then + 3
@@ -109,8 +112,12 @@ static int32_t scale_snap(const track_t *t, int32_t n)
     return n;
 }
 
-enum { QN_OFF, QN_SNAP, QN_WHITE, QN_SEQ, QN_SEQT };   /* P_QUANT ((1.3, from Felucca 1.5.6) SEQ+T: appended; older
-                                                         * firmware loads SEQ) */
+enum { QN_OFF, QN_SNAP, QN_WHITE, QN_SEQ, QN_SEQT, QN_SOLO };   /* P_QUANT ((1.3, from Felucca 1.5.6) SEQ+T: appended;
+                                                         * older firmware loads SEQ. (2.1, #74) SOLO appended: firmware
+                                                         * before loads it as SEQ+T, the keys snapped) */
+#ifndef SOLO_OCT
+#define SOLO_OCT 0                               /* (2.1, #74) QNT SOLO: the black keys this many octaves above the white */
+#endif
 
 /* the engine's own key map (DRUM's GM map, slices) for key k, -1 none */
 static int32_t kb_engine(const track_t *t, uint32_t k)
@@ -119,37 +126,47 @@ static int32_t kb_engine(const track_t *t, uint32_t k)
     return e->keys ? e->keys(t, k) : -1;
 }
 
+/* the note of the scale's degree d (ROOT, SCALE; 0 the root at C4, below it negative), before TRN and the octave: QNT
+ * WHITE's and SOLO's keys. Scales with 5, 6, 8 or 12 notes still have no duplicated degrees. Not inlined: its loops and
+ * divide stay out of the audio ISR's own cost (tests/target_budget.txt) */
+static __attribute__((noinline)) int32_t kb_degree(const track_t *t, int32_t degree)
+{
+    uint32_t mask = scale_mask(t), i;
+    int32_t count = 0, wo;
+    for (i = 0; i < 12u; i++)
+        count += (mask >> i) & 1u;
+    wo = degree / count;
+    degree %= count;
+    if (degree < 0) {
+        degree += count;
+        wo--;
+    }
+    for (i = 0; i < 12u; i++)
+        if ((mask >> i) & 1u) {
+            if (!degree)
+                break;
+            degree--;
+        }
+    return 60 + t->p[P_ROOT] + 12 * wo + (int32_t)i;
+}
+
 /* key k's note with the octave buttons at oct: QNT, ROOT, SCALE, TRN (KB_SILENT: a black key under WHITE). The keys
  * (kb_map) and the arp's latched keys (arp_list: as the keys play now, the octave they were pressed in) */
 static uint32_t kb_pitch(const track_t *t, uint32_t k, int32_t oct)
 {
-    static const int8_t DEGREE[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};
-    int32_t n = 53 + (int32_t)k;
-    if (t->p[P_QUANT] == QN_SNAP || t->p[P_QUANT] >= QN_SEQ)   /* SNAP (and SEQ, SEQ+T): every key, rounded down */
+    static const int8_t PLACE[12] = {0, 0, 1, 1, 2, 3, 2, 4, 3, 5, 4, 6};   /* among the keys of its colour from C */
+    int32_t n = 53 + (int32_t)k, q = t->p[P_QUANT];
+    if (q == QN_SNAP || q == QN_SEQ || q == QN_SEQT)    /* SNAP (and SEQ, SEQ+T): every key, rounded down */
         return (uint32_t)clamp(scale_snap(t, n + 12 * oct + t->p[P_TRANS]), 0, 127);
-    if (t->p[P_QUANT] == QN_WHITE) {                    /* WHITE: white keys walk the scale, black keys are silent */
-        uint32_t mask = scale_mask(t), i;
-        int32_t count = 0, degree = DEGREE[n % 12], wo;
-        if (degree < 0)
+    if (q == QN_WHITE || q == QN_SOLO) {
+        /* WHITE: C4 is the root, the white keys walk the scale (below C4 too), the black keys are silent. (2.1, #74)
+         * SOLO: the white keys as WHITE; the black keys walk it too, five an octave, C#4 the root (SOLO_OCT up) */
+        if (!key_black(k))
+            n = kb_degree(t, PLACE[n % 12] + (n / 12 - 5) * 7);
+        else if (q == QN_SOLO)
+            n = kb_degree(t, PLACE[n % 12] + (n / 12 - 5) * 5) + 12 * SOLO_OCT;
+        else
             return KB_SILENT;
-        /* C4 is the root. Walk scale degrees on successive white keys, including
-         * below C4; scales with 5, 6, 8 or 12 notes still have no duplicated degrees. */
-        degree += (n / 12 - 5) * 7;
-        for (i = 0; i < 12u; i++)
-            count += (mask >> i) & 1u;
-        wo = degree / count;
-        degree %= count;
-        if (degree < 0) {
-            degree += count;
-            wo--;
-        }
-        for (i = 0; i < 12u; i++)
-            if ((mask >> i) & 1u) {
-                if (!degree)
-                    break;
-                degree--;
-            }
-        n = 60 + t->p[P_ROOT] + 12 * wo + (int32_t)i;
     }
     return (uint32_t)clamp(n + 12 * oct + t->p[P_TRANS], 0, 127);
 }
@@ -160,7 +177,15 @@ static uint32_t kb_map(const track_t *t, uint32_t k)
     return n >= 0 ? (uint32_t)n : kb_pitch(t, k, song.octave);
 }
 
+/* (2.1, #74) key k (as kb_map takes it) of track t is a black key of QNT SOLO: its note alone (no chord), never into the
+ * ARP, held by the SMK's pedal only (not KBD HOLD). Not where the engine maps the keys itself */
+static int kb_solo(const track_t *t, uint32_t k)
+{
+    return t->p[P_QUANT] == QN_SOLO && key_black(k) && kb_engine(t, k) < 0;
+}
+
 #include "chord.c"
+#include "follow.c"                              /* (2.1) chord follow */
 
 /* ------------------------------------------------------------- arp --- */
 static void arp_add(track_t *t, uint32_t note)
@@ -314,6 +339,22 @@ static void arp_forget(track_t *t)               /* (its notes ended otherwise: 
     t->arp_note = t->arp_ch[0] = t->arp_ch[1] = t->arp_ch[2] = 0;
 }
 
+/* (2.1, #74) a SOLO black key of track t sounds note (with the ARP on, beside it): the ARP's note-offs and the other
+ * keys' leave it to the key's release. Not inlined: its loop stays out of the audio ISR's own cost */
+static __attribute__((noinline)) int kb_sol_held(const track_t *t, uint32_t note)
+{
+    uint32_t k;
+    for (k = 0; k < KB_N; k++)
+        if (kb_sol[k] && kb_chn[k] && kb_trk[k] == trk_index(t) && kb_chord[k][0] == note)
+            return 1;
+    return 0;
+}
+static void arp_note_off(track_t *t, uint32_t note)
+{
+    if (!kb_sol_held(t, note))
+        trk_note_off(t, note);
+}
+
 /* CHORD's notes. Not inlined: they run once an arp step, and kept out of the audio ISR's loop over the tracks
  * (tests/target_budget.py) */
 static __attribute__((noinline)) void arp_chord_off(track_t *t, int rec)   /* the other notes end */
@@ -325,7 +366,7 @@ static __attribute__((noinline)) void arp_chord_off(track_t *t, int rec)   /* th
                 rec_release(t, t->arp_ch[i]);
             else
                 take_note(t, t->arp_ch[i], 0);       /* (Skiff: TAKES) */
-            trk_note_off(t, t->arp_ch[i]);
+            arp_note_off(t, t->arp_ch[i]);
             t->arp_ch[i] = 0;
         }
 }
@@ -355,7 +396,7 @@ static void arp_silence(track_t *t)              /* the sounding arp note(s) end
 {
     if (t->arp_ch[0] | t->arp_ch[1] | t->arp_ch[2])
         arp_chord_off(t, 0);
-    trk_note_off(t, t->arp_note);
+    arp_note_off(t, t->arp_note);
     t->arp_note = 0;
 }
 
@@ -363,7 +404,7 @@ static void arp_off(track_t *t)                  /* the sounding arp note(s) end
 {
     if (t->arp_ch[0] | t->arp_ch[1] | t->arp_ch[2])
         arp_chord_off(t, rec_on(t));
-    trk_note_off(t, t->arp_note);
+    arp_note_off(t, t->arp_note);
     if (rec_on(t))
         rec_release(t, t->arp_note);
     else
@@ -787,7 +828,7 @@ static void rec_release(track_t *t, uint32_t note)
 static __attribute__((noinline)) void cin_keep(track_t *t, uint32_t note, uint32_t vel)
 {
     uint32_t i = trk_index(t), k;
-    if (cin_left != 1u || cin_pos < click_beat_len() / 2u || !((song.rec >> i) & 1u) || t->p[P_AMODE])
+    if (cin_left != 1u || cin_pos < click_beat_len() / 2u || !((song.rec >> i) & 1u) || (t->p[P_AMODE] && !in_solo))
         return;
     for (k = 0; k < cin_n[i] && cin_note[i][k] != note; k++)
         ;
@@ -803,15 +844,18 @@ static __attribute__((noinline)) void cin_keep(track_t *t, uint32_t note, uint32
 
 static void input_on(track_t *t, uint32_t note, uint32_t vel)
 {
+    uint32_t arp = t->p[P_AMODE] && !in_solo;      /* ((2.1, #74) a SOLO black key's: as with the ARP off) */
+    if (!in_solo)
+        fol_key(t, note, 1);                        /* ((2.1) the chord it holds, for the tracks following it) */
     last_note = (uint8_t)note;
     last_hits++;
     if (cin_left)
         cin_keep(t, note, vel);
-    if (rec_on(t) && !t->p[P_AMODE])               /* (ARP on: arp_tick records its notes) */
+    if (rec_on(t) && !arp)                          /* (ARP on: arp_tick records its notes) */
         rec_note(t, note, vel);
-    else if (!t->p[P_AMODE])
+    else if (!arp)
         take_note(t, note, vel);                    /* (Skiff) not recorded: TAKES' log (take.c) */
-    if (t->p[P_AMODE])
+    if (arp)
         arp_add(t, note);
     else
         trk_note_on(t, note, vel);
@@ -821,6 +865,8 @@ static int midi_note_held(const track_t *t, uint32_t note);
 static int midi_local_held(const track_t *t, uint32_t note);
 static void input_off(track_t *t, uint32_t note)
 {
+    if (!in_solo)
+        fol_key(t, note, 0);                        /* ((2.1) one fewer holding its chord) */
     if (midi_note_held(t, note))
         return;
     if (cin_left) {                                 /* a kept note let go before step 1: recorded, then let go */
@@ -830,10 +876,12 @@ static void input_off(track_t *t, uint32_t note)
                 cin_up[i] |= (uint8_t)(1u << k);
     }
     rec_release(t, note);
-    if (!t->p[P_AMODE])
+    if (!t->p[P_AMODE] || in_solo)
         take_note(t, note, 0);                      /* (Skiff: its end, for TAKES' holds) */
-    arp_remove(t, note);                            /* both: the note may have started in the */
-    trk_note_off(t, note);                          /* other mode (ARP switched while held) */
+    if (!in_solo)                                   /* ((2.1, #74) a SOLO black key's never was the ARP's) */
+        arp_remove(t, note);                        /* both: the note may have started in the */
+    if (!t->p[P_AMODE] || !kb_sol_held(t, note))    /* other mode (ARP switched while held); ((2.1, #74) */
+        trk_note_off(t, note);                      /* the ARP on: not one a SOLO black key sounds) */
 }
 
 /* the effect of key k in the FX layer (PF_N none): the first PF_M1 white keys (F3 .. E5) in order, black keys
@@ -844,11 +892,20 @@ static uint32_t perf_key(uint32_t k)
     return !key_black(k) ? (p < PF_M1 ? p : PF_N) : p < NTRK ? PF_M1 + p : PF_N;
 }
 
-/* key k plays kb_note[k] on track t: its chord (chord.c; the note alone with CHRD OFF). A note another key
- * holds already sounds: it is not started again (nor sent to MIDI OUT); the key keeps its notes */
+/* (2.1, #74) the notes key k plays on track t into kb_chord[k], their number: its chord (chord_build), a SOLO black key's
+ * note alone (in_solo set for them). Not inlined: out of the audio ISR's own cost (tests/target_budget.txt) */
+static __attribute__((noinline)) uint32_t kb_chord_of(uint32_t k, track_t *t)
+{
+    kb_sol[k] = in_solo = (uint8_t)kb_solo(t, kb_semi(k));
+    kb_chord[k][0] = kb_note[k];
+    return in_solo ? 1u : chord_build(t, kb_note[k], kb_chord[k]);
+}
+
+/* key k plays kb_note[k] on track t: its chord (chord.c; the note alone with CHRD OFF, (2.1, #74) a SOLO black key). A
+ * note another key holds already sounds: it is not started again (nor sent to MIDI OUT); the key keeps its notes */
 static void key_on(uint32_t k, track_t *t)
 {
-    uint32_t n = chord_build(t, kb_note[k], kb_chord[k]), i, mc = trk_midi_ch(trk_index(t));
+    uint32_t n = kb_chord_of(k, t), i, mc = trk_midi_ch(trk_index(t));
     kb_chn[k] = 0;
     in_key = (uint8_t)KB_IN(k);                     /* (the arp keeps the key: arp_add) */
     for (i = 0; i < n; i++) {
@@ -858,7 +915,7 @@ static void key_on(uint32_t k, track_t *t)
         input_on(t, x, KB_VEL(k));
         midi_out_event(0x09u | (0x90u | mc) << 8 | x << 16 | KB_VEL(k) << 24);
     }
-    in_key = 0;
+    in_key = in_solo = 0;
     kb_chn[k] = (uint8_t)n;
     last_note = kb_note[k];                         /* (step entry, the SAMPLE zone: the key's note) */
 }
@@ -868,6 +925,7 @@ static void key_off(uint32_t k, track_t *t)
 {
     uint32_t n = kb_chn[k], i, mc = trk_midi_ch(trk_index(t));
     kb_chn[k] = 0;
+    in_solo = kb_sol[k];
     for (i = 0; i < n; i++) {
         uint32_t x = kb_chord[k][i];
         if (midi_local_held(t, x))
@@ -875,6 +933,7 @@ static void key_off(uint32_t k, track_t *t)
         input_off(t, x);
         midi_out_event(0x08u | (0x80u | mc) << 8 | x << 16);
     }
+    in_solo = 0;
 }
 
 #ifdef FM1_INPUT_LAT
@@ -900,7 +959,8 @@ static __attribute__((noinline)) void kb_lat(uint32_t k)
  * selected track let go keeps its notes (kb_ped) until the hold ends (the pedal up; HOLD off, or the ARP on), another
  * track is selected, the track lets go of what it plays (panic_req: a preset, engine or project load) or the key is
  * pressed again (its notes end first); with KBD HOLD a key pressed with no key down starts a new chord (kb_fresh). A
- * DRUM track's keys end as they are let go */
+ * DRUM track's keys end as they are let go. (2.1, #74) QNT SOLO's black keys (kb_sol): the pedal holds them, KBD HOLD
+ * doesn't, and they are no chord's (one pressed leaves the chord held, one down doesn't make a key pressed join) */
 static uint8_t kb_ped[KB_N], kb_ped_trk;            /* the keys held; their track + 1 (0: none) */
 static int kb_pedal(void)
 {
@@ -911,12 +971,14 @@ static int kb_pedal(void)
 #endif
 }
 static int kb_hold_on(const track_t *t) { return kb_pedal() || (t->p[P_AHOLD] && !t->p[P_AMODE]); }
+static uint8_t kb_ped_sol;                          /* (2.1, #74) a SOLO black key among the keys held (kb_sol_up) */
 static void kb_up(uint32_t k)                       /* key k let go */
 {
     track_t *t = &trk[kb_trk[k] % NTRK];
     if (kb_trk[k] == song.sel && !drum_track(t) && kb_hold_on(t)) {
         kb_ped[k] = 1;
         kb_ped_trk = (uint8_t)(song.sel + 1u);
+        kb_ped_sol |= kb_sol[k];
     } else
         key_off(k, t);
 }
@@ -942,10 +1004,24 @@ static __attribute__((noinline)) void kb_ped_end(void)
             }
         }
 }
+/* (2.1, #74) the SOLO black keys held end, unless the SMK's pedal is down: KBD HOLD holds none (kb_up holds them as the
+ * others; they end here, a block on). Not inlined, as kb_ped_end */
+static __attribute__((noinline)) void kb_sol_up(void)
+{
+    uint32_t k;
+    kb_ped_sol = 0;
+    for (k = 0; k < KB_N; k++)
+        if (kb_ped[k] && kb_sol[k]) {
+            kb_ped[k] = 0;
+            key_off(k, &trk[kb_trk[k] % NTRK]);
+        }
+}
 /* events_block, before the keys: the hold ended, another track selected or pr (panic_req's bits) for its track */
 static void kb_ped_block(uint32_t pr)
 {
     uint32_t i = kb_ped_trk - 1u;
+    if (kb_ped_sol && !kb_pedal())
+        kb_sol_up();
     if (!kb_ped_trk || (i == song.sel && kb_hold_on(&trk[song.sel]) && !((pr >> i) & 1u)))
         return;
     kb_ped_end();
@@ -955,10 +1031,10 @@ static void kb_ped_block(uint32_t pr)
 static __attribute__((noinline)) void kb_fresh(uint32_t k)
 {
     uint32_t j;
-    if (!kb_ped_trk || kb_pedal())
+    if (!kb_ped_trk || kb_pedal() || kb_solo(&trk[kb_trk[k]], kb_semi(k)))
         return;
     for (j = 0; j < KB_N; j++)
-        if (j != k && kb_chn[j] && !kb_ped[j])
+        if (j != k && kb_chn[j] && !kb_ped[j] && !kb_sol[j])
             return;
     kb_ped_end();
 }
@@ -1198,6 +1274,7 @@ static void seq_stop(void)
         trk[i].rat_left = 0;
         trk[i].nud = 0;                            /* (Skiff) no NUDGE pending */
     }
+    memset(fol_src, 0, sizeof fol_src);            /* ((2.1) no chords: the followers as written until theirs play) */
     motion_end();
 }
 
@@ -1242,7 +1319,7 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
      * or another engine that maps the keys itself. (1.3, from Felucca 1.5.6) SEQ+T: moved by TRN first, as the keys
      * are. seq_notes keeps the notes that sound: their note-offs match */
     const engine_t *e = ENGINES[eng_idx(t->eng_req)];
-    uint32_t qseq = t->p[P_QUANT] >= QN_SEQ && !(e->keys && e->keys(t, 0) >= 0);
+    uint32_t qseq = (t->p[P_QUANT] == QN_SEQ || t->p[P_QUANT] == QN_SEQT) && !(e->keys && e->keys(t, 0) >= 0);
     int32_t qtrn = qseq && t->p[P_QUANT] == QN_SEQT ? t->p[P_TRANS] : 0;
     if (!(skip & SEQ_REP)) {
         t->rat_left = 0;
@@ -1301,6 +1378,8 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
         tn |= ((ties >> i) & 1u) << m;
         m++;
     }
+    if (m && !miss && !(skip & SEQ_REP))
+        fol_step(t, nn, m);                         /* ((2.1) its chord now, for the tracks following it) */
     for (i = 0; i < NLANE; i++)
         if ((s->hit >> i) & 1u) {
             nn[m] = DRUM_LANE_NOTE[i];
@@ -1656,7 +1735,7 @@ static int32_t click_beat_now(void)
 /* everything that happens between two rendered blocks */
 static void events_block(uint32_t n)
 {
-    uint32_t i, pr, seq_n = n;
+    uint32_t i, pr, ord, seq_n = n;
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     if (midi_clock.mode != clock_mode) {
         seq_stop();
@@ -1763,8 +1842,8 @@ static void events_block(uint32_t n)
         launch_clock(seq_n);                          /* (Skiff) the steps a BAR / BEAT launch waits for */
     if (aud_req)
         seq_audition();                               /* ((1.3) STEP PREVIEW: a step sounds, stopped) */
-    for (i = 0; i < NTRK; i++)
-        seq_tick(&trk[i], seq_n);
+    for (i = 0, ord = fol_order(); i < NTRK; i++, ord >>= 4)   /* ((2.1) the tracks followed first: follow.c) */
+        seq_tick(&trk[ord & 15u], seq_n);
     if (cin_flush)
         cin_record();
     if (song.playing)

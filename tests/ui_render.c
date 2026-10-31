@@ -808,6 +808,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_LANE_MIX, S_LANE_MIX_DX, S_SONG_SOUND, S_SONG_SOUNDS,                               /* (2.0, #36, #30) */
        S_SONG_CHAINS, S_SONG_CHAIN_COPY,                                                      /* (2.0, #44's box) */
        S_DRUM_KIT_USR, S_LANES_USR,                                                           /* (2.0, #35) */
+       S_FOLLOW, S_FOLLOW_SCALE, S_FOLLOW_FIT, S_FOLLOW_OFF, S_FOLLOW_WAIT,                   /* (2.1) */
        S_MOCK_HOME, S_MOCK_PRESETS, S_MOCK_SEQ, S_MOCK_DRUM, S_MOCK_MIXER, S_MOCK_DIALOG, S_MOCK_MENU, S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "project", "lanes", "step", "pattern", "chance", "motion", "drum",
@@ -840,7 +841,8 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "chorus_flanger", "chorus_phaser", "presets_bass", "song_rest", "song_rest_pick",
     "notes_range", "notes_pick", "feel_range", "notes_overlap", "momentary", "pool_empty", "pool_unused", "confirm_empty",
     "song_once", "song_new", "song_copyplus", "song_chain", "song_chain3", "notes_chain", "lane_mix", "lane_mix_dx",
-    "song_sound", "song_sounds", "song_chains", "song_chain_copy", "drum_kit_usr", "lanes_usr", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
+    "song_sound", "song_sounds", "song_chains", "song_chain_copy", "drum_kit_usr", "lanes_usr",
+    "follow", "follow_scale", "follow_fit", "follow_off", "follow_wait", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
 
 /* the scenes of the UI design screens: the state the UI-redesign
  * prototype drew them from (its setup(): two pattern tracks, the drum pattern on track 4, a synthetic scope),
@@ -1351,6 +1353,24 @@ static void setup(int s)
         ui.hot_col = 2; ui.hot_t = 30;
         break;
     }
+    case S_FOLLOW:                                  /* ((2.1) SCL > FOLLOW on T1, following T2: its chord F/A (A C F); */
+    case S_FOLLOW_SCALE:                            /* KEY by ROOT (F: +5), SCALE by LOW (A: -2 steps), FIT (to A C F); */
+    case S_FOLLOW_FIT:                              /* OFF; T2 with no chord yet) */
+    case S_FOLLOW_OFF:
+    case S_FOLLOW_WAIT:
+        sel_set(0);
+        set_engine_of(&trk[0], 0);
+        set_engine_of(&trk[1], 0);
+        TSEL->p[P_FOLLOW] = s == S_FOLLOW_OFF ? 0 : 2;
+        TSEL->p[P_FMODE] = s == S_FOLLOW_SCALE ? FM_SCALE : s == S_FOLLOW_FIT ? FM_FIT : FM_KEY;
+        TSEL->p[P_FNOTE] = s == S_FOLLOW_SCALE ? FN_LOW : FN_ROOT;
+        TSEL->p[P_SCALE] = 1;
+        if (s != S_FOLLOW_WAIT) {
+            fol_step(&trk[1], (const uint8_t[]){57, 60, 65}, 3u);
+        }
+        go_title("FOLLOW");
+        ui.hot_col = s == S_FOLLOW_SCALE ? 1 : s == S_FOLLOW_FIT ? 1 : 0; ui.hot_t = 30;
+        break;
     case S_SONG_SOUND:                              /* ((2.0, #30, 2A) entries with a sound: T1 A, T2 A C D, T4 E, T6 C */
     case S_SONG_SOUNDS: {                           /* (corners cut); T2 on STRINGS: KNOB 2 at SOUND on C (OCT+: SET
                                                      * SOUND STRINGS); no pick: C's sound named */

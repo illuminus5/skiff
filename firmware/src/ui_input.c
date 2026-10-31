@@ -299,8 +299,9 @@ static int keys_own(void)
 
 /* Discussion #127 (1.2): MENU > SCALE LEDS ON, the keys of the selected track's scale (ROOT, SCALE), bit k = key k, as
  * the keys play now: the note a key gives with TRN (QNT SNAP / SEQ: the key's own note; the others round down onto
- * the scale); QNT WHITE every white key (they walk the scale; the black ones are silent). *root: the keys of the
- * scale's root. None where the engine maps the keys itself (DRUM's GM map, the slices): 0 there, and OFF */
+ * the scale); QNT WHITE every white key (they walk the scale; the black ones are silent), (2.1, #74) SOLO every key
+ * (the black ones walk it too). *root: the keys of the scale's root. None where the engine maps the keys itself (DRUM's
+ * GM map, the slices): 0 there, and OFF */
 static uint32_t scale_leds(uint32_t *root)
 {
     const track_t *t = TSEL;
@@ -313,7 +314,7 @@ static uint32_t scale_leds(uint32_t *root)
     for (k = 0; k < 27u; k++) {
         if (e->keys && e->keys(t, k) >= 0)
             continue;
-        if (t->p[P_QUANT] == QN_WHITE) {
+        if (t->p[P_QUANT] == QN_WHITE || t->p[P_QUANT] == QN_SOLO) {
             if ((note = kb_map(t, k)) > 127u)
                 continue;                               /* (a black key: silent) */
             pc = (int32_t)note - t->p[P_TRANS];         /* (WHITE walks the scale before TRN) */
@@ -1593,8 +1594,8 @@ static void edit_param(uint32_t slot, int32_t steps)
     if (!d || !vp || d->max == d->min)
         return;
     v = param_turn(d, *vp, accel(EN_K1 + slot, steps, d->fmt == F_ENUM ? 0 : d->max - d->min));
-    if (vp == &TSEL->p[P_DKSRC] && v == (int32_t)(song.sel % NTRK) + 1)   /* (Skiff) DUCK BY: never the track itself */
-        v = v == d->max ? *vp : v + (steps > 0 ? 1 : -1);
+    if ((vp == &TSEL->p[P_DKSRC] || vp == &TSEL->p[P_FOLLOW]) && v == (int32_t)(song.sel % NTRK) + 1)
+        v = v == d->max ? *vp : v + (steps > 0 ? 1 : -1);   /* (Skiff) DUCK BY, (2.1) FOLLOW: never the track itself */
     *vp = (int16_t)v;
     if (pg->scope != SC_GLOBAL) {
         motion_capture(TSEL, (uint32_t)(vp - TSEL->p), *vp);
@@ -1760,7 +1761,8 @@ static void entry_open(track_t *t, uint32_t i)
 /* SEQ step entry = step recording (1.2, Discussion #133: only with the track armed and the transport stopped), acid
  * style: the keys pressed together (POLY: up to 4 notes, MONO: the last one) become the cursor step; releasing all
  * keys moves on past it ((2.0, #31) PRESETS meanwhile its LENGTH, its ties: past them; wrapping inside LEN). With CHRD
- * on a key writes what it sounds, as live recording does: POLY its chord, MONO the chord's root */
+ * on a key writes what it sounds, as live recording does: POLY its chord, MONO the chord's root; (2.1, #74) a black key
+ * of QNT SOLO its note alone */
 static void seq_entry(uint32_t pressed)
 {
     track_t *t = TSEL;
@@ -1787,7 +1789,9 @@ static void seq_entry(uint32_t pressed)
                 st->time = ST_NOTE;
             }
         }
-        n = chord_make(t, note, ch, &r, &mask);        /* (CHRD OFF, a kit: the note alone; MONO: the root) */
+        ch[0] = (uint8_t)note;                          /* (CHRD OFF, a kit, (2.1) a SOLO black key: the note */
+        r = (int32_t)note;                              /* alone; MONO: the root) */
+        n = kb_solo(t, k) ? 1u : chord_make(t, note, ch, &r, &mask);
         if (t->p[P_VOICE] && !ENGINES[t->engine]->oneshot) {   /* (drums: hits stack as a chord) */
             st->note[0] = (uint8_t)clamp(r, 0, 127);      /* (the chord's root: (2.0.3) with the ARP on, ch is the chord) */
             st->n = 1;

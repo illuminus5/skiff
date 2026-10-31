@@ -248,6 +248,10 @@ static uint32_t param_icon(const param_desc_t *d, int32_t v)
         return ICON_DIVISION;                 /* arp / SLICER RATE is a note division, not Hz */
     if (d->names == N_TRIO_MODE)
         return ICON_CUTOFF;                   /* TRIO's MODE is the filter type, not the arp mode */
+    if (d->names == N_FMODE)
+        return ICON_TRANSPOSE;                /* ((2.1) FOLLOW's MODE: how the notes move, not the arp mode) */
+    if (d == &TP[P_FOLLOW])
+        return ICON_SCALE;                    /* ((2.1) the track whose chords it follows, as CHORD's) */
     if (d->names == N_NOISE_MODE)
         return ICON_NOISE;                    /* NOISE's MODE is the source; its CLK the register clock */
     if (d == &NOISE_CLK)
