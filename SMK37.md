@@ -14,7 +14,7 @@ keyboard; the Starrykey 37 Play is not supported yet.
    its Bluetooth pairings, which no download can replace. Skiff never writes them, but a backup is the way back if
    anything else goes wrong.
 3. **Install:** the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) (Chrome or Edge) finds the
-   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.1-smk37.fwsc` (`-elite`, `-mke` for those
+   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.1.1-smk37.fwsc` (`-elite`, `-mke` for those
    models, not tried on a keyboard yet). About two minutes.
 
 Keep it plugged in and switched on while it writes. If the cable or the power is cut anyway, the keyboard stays in
@@ -29,7 +29,7 @@ This needs a computer with Windows or Linux, Python 3, this repository's `tools/
 reads the whole 1 MiB through the chip's built-in boot mode:
 
 1. With the keyboard on M-VAVE's V016 (or on Skiff) and connected:
-   `python tools/fm1_install.py --uboot skiff-2.1-smk37.fwsc`. The keyboard starts Skiff's update loader without
+   `python tools/fm1_install.py --uboot skiff-2.1.1-smk37.fwsc`. The keyboard starts Skiff's update loader without
    writing the firmware, then switches to the chip's boot mode: the computer sees a USB disk named `WL82 UBOOT1.00`.
    **If Windows offers to format it, cancel.**
 2. In an **administrator** terminal (on Linux: with `sudo`, and `/dev/sgN` as the device), from jl-uboot-tool's folder,

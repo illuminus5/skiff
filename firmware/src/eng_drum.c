@@ -71,6 +71,7 @@ typedef struct {
     uint8_t role;                /* the drum struck (DVT_*) */
     int8_t st;                   /* its semitones from the designed pitch (the GM map) */
     uint8_t pad;
+    int16_t dk[2];               /* (2.1.1) the declick (drum_declick): its last sample and the step falling away, halved */
 } drum_lane_t;
 
 
@@ -387,6 +388,22 @@ static __attribute__((noinline)) void drum_smp(track_t *t, voice_t *v, int32_t *
     v->s[4] = off;
 }
 
+/* (2.1.1, found making the 2.1 video) a synthesized lane struck again while it still rings (dv_run starts the hit from
+ * rest) starts from where it was: the step from its last sample to the new hit's first falls away (a time constant of 32
+ * samples, -40 dB in 3 ms), as a user kit's (drum_smp) and SAMPLE's re-strikes, not a click. Not inlined: drum_render's
+ * own cost stays its synth's (tests/target_budget.txt) */
+static __attribute__((noinline)) void drum_declick(drum_lane_t *L, int32_t *y, uint32_t n, int again)
+{
+    int32_t dc = again ? L->dk[0] * 2 - y[0] : L->dk[1] * 2;
+    uint32_t i;
+    for (i = 0; dc && i < n; i++) {
+        y[i] += dc;
+        dc -= (dc >> 5) + (dc > 0);
+    }
+    L->dk[0] = (int16_t)clamp(y[n - 1] >> 1, -32768, 32767);
+    L->dk[1] = (int16_t)clamp(dc >> 1, -32768, 32767);
+}
+
 static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     const int16_t *p = t->p;
@@ -394,6 +411,7 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     dv_param_t k;
     int32_t y[CTL], mb[CTL], acc = clamp(p[P_E5] * v->vel * 4, 0, 65536), drv = p[P_E7], g = 0, mk = 0;   /* acc Q16 */
     uint32_t ln = (uint32_t)v->s[0] & (DV_NLANE - 1u), i, r;
+    int again;
     vmod_t ml;
     if (!L)
         return;
@@ -420,7 +438,9 @@ static void drum_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
     }
     if (dv_uses_metal(L->c.type) && (L->v.live || L->v.trig))
         dv_metal_run(&L->mb, mb, n);
+    again = L->v.trig && L->v.live;                      /* (2.1.1) struck again while it rings */
     dv_run(&L->c, &L->v, mb, y, n);
+    drum_declick(L, y, n, again);
     if ((drum_mute[(uint32_t)(t - trk) % NTRK] >> ln) & 1u)
         return;                                          /* ((1.3) a muted lane rings on unheard) */
     if (drv > 0) {                                       /* DRV: x1..x4 into the soft clip, the level kept (Q12) */

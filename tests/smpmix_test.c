@@ -458,6 +458,37 @@ static int sample_retrig_test(void)
           "position %u after the second note's block, step %d at it vs the level %d before", pos, step2, lvl);
     return 0;
 }
+/* (2.1.1, found making the 2.1 video) a synthesized lane struck again while it still rings (WAR DRUMS' long DECAY, a tom
+ * roll): the new hit starts from where the lane was, the step falling away, not the jump from the ringing tom to the new
+ * hit's start. Struck again twice, 21 blocks apart, so the old jump can't hide at a zero crossing */
+static int drumsynth_retrig_test(void)
+{
+    track_t *t = kit_track(DK_STD);
+    int32_t prev = 0, step0 = 0, step1 = 0, step2 = 0;
+    uint32_t i, k;
+    t->p[P_E3] = 108;                                    /* DECAY: WAR DRUMS' */
+    trk_note_on(t, 45, 100);                             /* the TOM lane */
+    for (k = 0; k < 120u; k++) {
+        int32_t o[2 * CTL];
+        if (k == 40u || k == 61u)
+            trk_note_on(t, 45, 100);
+        mix_block(o, CTL);
+        for (i = 0; i < CTL; i++) {
+            int32_t d = abs(mix_l[i] - prev);
+            prev = mix_l[i];
+            if (k < 3u)
+                step0 = d > step0 ? d : step0;          /* the first hit's start */
+            else if (k < 40u)
+                step1 = d > step1 ? d : step1;          /* its ring */
+            else if (k < 43u || (k >= 61u && k < 64u))
+                step2 = d > step2 ? d : step2;          /* the hits struck again */
+        }
+    }
+    trk_note_off(t, 45);
+    check("(2.1.1) a synthesized lane struck again while it rings (a tom roll): no click", step2 <= step0 + step1,
+          "step %d at the hits struck again vs %d + %d", step2, step0, step1);
+    return 0;
+}
 
 int main(void)
 {
@@ -633,6 +664,7 @@ int main(void)
     drumkit_test();
     drumkit_retrig_test();
     sample_retrig_test();
+    drumsynth_retrig_test();
     printf("%s\n", fails ? "SMPMIX TEST FAILED" : "smpmix test passed");
     return fails != 0;
 }
