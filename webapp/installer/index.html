@@ -1090,7 +1090,7 @@ applyLang();
 const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textContent = t(k) + arg; };
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
-const meta = {"version": "2.0.3", "product": "FM-1_720", "pkg": "../../firmware/skiff-2.0.3.fwsc", "packages": [{"product": "FM-1_720", "pkg": "../../firmware/skiff-2.0.3.fwsc"}, {"product": "SMK-37 Pro_720", "pkg": "../../firmware/skiff-2.0.3-smk37.fwsc"}, {"product": "SMK-37 Elite_720", "pkg": "../../firmware/skiff-2.0.3-smk37-elite.fwsc"}, {"product": "MKE-P37_720", "pkg": "../../firmware/skiff-2.0.3-smk37-mke.fwsc"}]};
+const meta = {"version": "2.1", "product": "FM-1_721", "pkg": "../../firmware/skiff-2.1.fwsc", "packages": [{"product": "FM-1_721", "pkg": "../../firmware/skiff-2.1.fwsc"}, {"product": "SMK-37 Pro_721", "pkg": "../../firmware/skiff-2.1-smk37.fwsc"}, {"product": "SMK-37 Elite_721", "pkg": "../../firmware/skiff-2.1-smk37-elite.fwsc"}, {"product": "MKE-P37_721", "pkg": "../../firmware/skiff-2.1-smk37-mke.fwsc"}]};
 // one package per model ({ product, pkg }); a site made before the SMK builds carries only product + pkg
 const packages = meta.packages || [{ product: meta.product, pkg: meta.pkg }];
 const images = new Map();             // product -> logical image, loaded on first use
