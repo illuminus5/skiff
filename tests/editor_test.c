@@ -209,7 +209,7 @@ static int preferences(void)
         host_wire[n - 9 - 23] == 0 &&                        /* (no bank since 1.0.3) */
         host_wire[n - 9 - 22] == 0x53 && host_wire[n - 9 - 21] == 1 && host_wire[n - 9 - 20] == 3 &&
         host_wire[n - 9 - 19] == 0x50 && host_wire[n - 9 - 18] == 1 && host_wire[n - 9 - 17] == 3 &&   /* FM6 v2: no bank, preset patches */
-        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == MENU_NI &&   /* MENU settings: 18 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD; (2.0) RETURN) */
+        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == MENU_NI + (FELUCCA_USB_ROUTING ? (FELUCCA_USB_6CH?UAC_CHANNELS:2u):0u) &&   /* MENU settings: 18 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD; (2.0) RETURN) */
         host_wire[n - 9 - 13] == 0x52 && host_wire[n - 9 - 12] == 1 && host_wire[n - 9 - 11] == 4 &&   /* RATCH */
         host_wire[n - 9 - 10] == 0x4C && host_wire[n - 9 - 9] == 1 && host_wire[n - 9 - 8] == 1 &&   /* 1.1 parameter locks */
         host_wire[n - 9 - 7] == 0x54 && host_wire[n - 9 - 6] == 1 && host_wire[n - 9 - 5] == 0x30 &&  /* (Skiff phase 6) T5, T6 */
@@ -983,8 +983,8 @@ static int menu_protocol(void)
         menu_desc(i, &it);
         ok &= strcmp(it.name, "CALIBRATION") && strcmp(it.name, "ABOUT");
     }
-    n = menu_desc(MENU_NI, &it);
-    ok &= n == 2u && it.index == MENU_NI && it.id == 127;
+    n = menu_desc(ED_MENU_N, &it);
+    ok &= n == 2u && it.index == ED_MENU_N && it.id == 127;
     n = menu_desc(127, &it);
     bad += check("MENU_DESC: no CALIBRATION / ABOUT; an index past the list answers index, 127 (no item)",
                  ok && n == 2u && it.index == 127 && it.id == 127);
