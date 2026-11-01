@@ -38,12 +38,51 @@ typedef struct {
     int16_t mix[3][16];                              /* usr_mix[k] */
     uint32_t chk;                                    /* smx_chk */
 } smx_rec_t;
+#if FELUCCA_VOCAL_TRIM
+#define VTR_REC_MAGIC 0x31525456u /* VTR1 */
+typedef struct {uint32_t magic,header_crc,edge[16][4],crc;} vtrim_rec_t;
+_Static_assert(sizeof(vtrim_rec_t)==268u,"VOCAL trim record layout");
+static void vtrim_rec_make(uint32_t k,vtrim_rec_t*r){
+ memset(r,0,sizeof *r);r->magic=VTR_REC_MAGIC;r->header_crc=st_crc32(smp_user_xip(k),sizeof(smp_user_hdr_t));
+ for(unsigned z=0;z<usr_nz[k];z++){vtrim_data d=vtrim_get(k,z);memcpy(r->edge[z],d.region.edge,sizeof r->edge[z]);}
+ r->crc=st_crc32(r,offsetof(vtrim_rec_t,crc));
+}
+#endif
 typedef struct {
     slc_rec_t s;
     smx_rec_t m;
+#if FELUCCA_VOCAL_TRIM
+    vtrim_rec_t t;
+#if FELUCCA_VOCAL_STRETCH
+    struct {uint32_t magic,header_crc,flags,crc;} timing;
+#if FELUCCA_VOCAL_AUTO
+ struct {uint32_t flags,crc;} voicing;
+#if FELUCCA_VOCAL_EQ
+ struct {uint32_t magic,word[16],crc;} eq;
+#endif
+#endif
+#endif
+#endif
 } slc_tail_t;
 #define SMX_REC_OFF (SLC_REC_OFF + 152u)
-_Static_assert(sizeof(slc_tail_t) == 252u && SMX_REC_OFF - SLC_REC_OFF == sizeof(slc_rec_t), "the slot's last sector");
+_Static_assert(SMX_REC_OFF-SLC_REC_OFF==sizeof(slc_rec_t),"existing mix offset unchanged");
+#if FELUCCA_VOCAL_TRIM
+_Static_assert(offsetof(slc_tail_t,t)==252u&&sizeof(slc_tail_t)==
+#if FELUCCA_VOCAL_STRETCH
+536u
+#if FELUCCA_VOCAL_AUTO
++8u
+#if FELUCCA_VOCAL_EQ
++72u
+#endif
+#endif
+#else
+520u
+#endif
+,"appended trim record preserves old layouts");
+#else
+_Static_assert(sizeof(slc_tail_t)==252u,"original sample metadata layout");
+#endif
 
 /* slot k's sample leaves its last sector free (the record can go there) */
 static int slc_rec_room(uint32_t k)
@@ -52,6 +91,29 @@ static int slc_rec_room(uint32_t k)
     return usr_nz[k] && h->data_len <= SLC_REC_OFF - SMP_USER_DATA;
 }
 
+#if FELUCCA_VOCAL_TRIM
+static void vtrim_store_load(uint32_t k){
+ if(!slc_rec_room(k))return;vtrim_rec_t r;memcpy(&r,smp_user_xip(k)+SLC_REC_OFF+252u,sizeof r);
+ if(r.magic!=VTR_REC_MAGIC||r.header_crc!=st_crc32(smp_user_xip(k),sizeof(smp_user_hdr_t))||r.crc!=st_crc32(&r,offsetof(vtrim_rec_t,crc)))return;
+ for(unsigned z=0;z<usr_nz[k];z++){vocal_trim_region v=vocal_trim_full(usr_zone[k][z].n);memcpy(v.edge,r.edge[z],sizeof v.edge);if(!vtrim_valid(&v,v.length))return;}
+ for(unsigned z=0;z<usr_nz[k];z++){vocal_trim_region v=vocal_trim_full(usr_zone[k][z].n);memcpy(v.edge,r.edge[z],sizeof v.edge);(void)vtrim_put(k,z,&v,0);}
+#if FELUCCA_VOCAL_STRETCH
+ uint32_t extra[4];memcpy(extra,smp_user_xip(k)+SLC_REC_OFF+520u,sizeof extra);
+ if(extra[0]==0x314D5456u&&extra[1]==r.header_crc&&extra[3]==st_crc32(extra,12)&&!(extra[2]&0xffff0000u))for(unsigned z=0;z<usr_nz[k];z++)vtrim_timing_put(k,z,(extra[2]>>z)&1u,0);
+#if FELUCCA_VOCAL_AUTO
+ memcpy(extra,smp_user_xip(k)+SLC_REC_OFF+536u,8);
+ if((extra[0]>>16)==0x4156u&&extra[1]==st_crc32(extra,4))for(unsigned z=0;z<usr_nz[k];z++)vtrim_option_put(k,z,1,(extra[0]>>z)&1u,0);
+#if FELUCCA_VOCAL_EQ
+ uint32_t eq[18];memcpy(eq,smp_user_xip(k)+SLC_REC_OFF+544u,sizeof eq);
+ if(eq[0]==0x31514556u&&eq[17]==st_crc32(eq,68)){
+  int valid=1;for(unsigned z=0;z<usr_nz[k];z++)valid&=veq_valid(eq[z+1]);
+  if(valid)for(unsigned z=0;z<usr_nz[k];z++)vtrim_mask_put(k,z,VEQ_MASK,eq[z+1],0);
+ }
+#endif
+#endif
+#endif
+}
+#endif
 /* what slot k's record should hold now (its MAN slices in use, or none: n = 0) */
 static void slc_rec_make(uint32_t k, slc_rec_t *r)
 {
@@ -120,6 +182,24 @@ static int slc_store_write(uint32_t k)
         return 1;
     slc_rec_make(k, &r.s);
     smx_rec_make(k, &r.m);
+#if FELUCCA_VOCAL_TRIM
+    vtrim_rec_make(k,&r.t);
+#if FELUCCA_VOCAL_STRETCH
+    memset(&r.timing,0,sizeof r.timing);r.timing.magic=0x314D5456u;r.timing.header_crc=r.t.header_crc;
+    for(unsigned z=0;z<usr_nz[k];z++)r.timing.flags|=((vtrim_flags(k,z)&1u)!=0)<<z;
+    r.timing.crc=st_crc32(&r.timing,12);
+#if FELUCCA_VOCAL_AUTO
+    r.voicing.flags=0x41560000u;
+    for(unsigned z=0;z<usr_nz[k];z++)r.voicing.flags|=((vtrim_flags(k,z)&2u)!=0)<<z;
+    r.voicing.crc=st_crc32(&r.voicing,4);
+#if FELUCCA_VOCAL_EQ
+    memset(&r.eq,0,sizeof r.eq);r.eq.magic=0x31514556u;
+    for(unsigned z=0;z<usr_nz[k];z++)r.eq.word[z]=vtrim_flags(k,z)&VEQ_MASK;
+    r.eq.crc=st_crc32(&r.eq,68);
+#endif
+#endif
+#endif
+#endif
     if (!memcmp(&r, smp_user_xip(k) + SLC_REC_OFF, sizeof r))
         return 0;                                    /* unchanged: no erase cycle */
     if (st_erase(off) || st_prog(off, &r, sizeof r))
@@ -132,23 +212,44 @@ static void slc_store_poll(void)
 {
     uint32_t k, m = slc_man_save | smx_save;
     int rc = 0, w = 0;
+#if FELUCCA_VOCAL_TRIM
+    uint32_t tm=vtrim_save;m|=tm;
+    if(vtrim_page_on()
+#if FELUCCA_VOCAL_EQ
+       ||veq_page_on()
+#endif
+       ||(tm&&voices_busy()))return;
+#endif
     if (!m || transport_busy() || slice_page_on() || smx_page_on())   /* (written once the page is left) */
         return;
     for (k = 0; k < SMP_USER_SLOTS; k++)
         if ((m >> k) & 1u) {
             int r = flash_ok ? slc_store_write(k) : 0;
+#if FELUCCA_VOCAL_TRIM
+            if(!flash_ok&&tm)r=2;
+#endif
             w |= r == 3;
             rc = r != 3 && r > rc ? r : rc;
         }
     if (rc)
         ui_message(rc == 1 ? "TOO LONG TO SAVE" : "SAVE ERROR");
     else if (w)
-        ui_message(slc_man_save ? "SLICES SAVED" : "MIX SAVED");
+        ui_message(
+#if FELUCCA_VOCAL_TRIM
+            tm ? "TRIM SAVED" :
+#endif
+            slc_man_save ? "SLICES SAVED" : "MIX SAVED");
     slc_man_save = smx_save = 0;
+#if FELUCCA_VOCAL_TRIM
+    vtrim_save=0;
+#endif
 }
 
 static void slc_store_boot(void)                     /* persist_boot: before the slot scans */
 {
     slc_man_load = slc_store_load;
     smx_load = smx_store_load;
+#if FELUCCA_VOCAL_TRIM
+    vtrim_load=vtrim_store_load;
+#endif
 }

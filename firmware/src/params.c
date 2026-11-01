@@ -88,6 +88,9 @@ static const char *const N_ENGNAME[] = {"ANALOG", FELUCCA_FM4 ? "DIGITAL" : "-",
                                              "-",
 #endif
                                              "DRUM-X",
+#if FELUCCA_HARMONY
+                                             "-","HARMONY",
+#endif
 };
 
 #define PD(l, f, mn, mx, df) {l, 0, mn, mx, df, f, 0}
@@ -247,8 +250,18 @@ static const param_desc_t *ins_desc(int32_t type, uint32_t k)
     return &INS_DESC[type < 5 ? 0 : type == 5 ? 1 : 2][k];   /* (IT_SOFT .. IT_FUZZ, IT_CRUSH, the swept ones) */
 }
 
-static const param_desc_t *track_desc(const track_t *t, uint32_t id)
+static int vocal_control_dead(const track_t*t,uint32_t id){
+#if FELUCCA_HARMONY
+ if(harmony_req(t)&&(id==P_ALLOC||id==P_DETUNE))return 1;
+#endif
+ return 0;
+}
+
+static __attribute__((noinline,minsize)) const param_desc_t *track_desc(const track_t *t, uint32_t id)
 {
+#if FELUCCA_HARMONY
+ if(harmony_req(t)){const param_desc_t*d=harmony_param(id);if(d)return d;}
+#endif
     if (id >= P_IA && id <= P_IC)                     /* ((1.3) the INSERT's values as its TYPE names them) */
         return ins_desc(t->p[P_ITYPE], id - P_IA);
     if (t->p[P_ESYNC] && (id == P_ATK || id == P_DEC || id == P_REL))   /* ((1.3) ENV SYNC: note values) */
@@ -265,6 +278,9 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
  * only; range and default are the same): what the editor protocol, user presets and projects use */
 static const param_desc_t *param_desc_of(uint32_t e, uint32_t id)
 {
+#if FELUCCA_HARMONY
+ if(e==ENGI_HARMONY){const param_desc_t*d=harmony_param(id);if(d)return d;}
+#endif
     return id >= P_E0 ? &ENGINES[e]->edit[id - P_E0] : &TP[id];
 }
 
@@ -273,11 +289,14 @@ static const param_desc_t *param_desc_of(uint32_t e, uint32_t id)
  * (tools/gen_samples.py SMP_SET_ORIG); DRUM KIT 1..3, once HAND CYM H+CYM, play 66 10 77 (eng_drum.c DK_PLAYS).
  * It shows the original's name; knobs step over it and the editor's SET lands on the original. -> the value v
  * stands for */
-static int32_t enum_orig(const param_desc_t *d, int32_t v)
+static __attribute__((noinline,minsize)) int32_t enum_orig(const param_desc_t *d, int32_t v)
 {
 #if BOARD_SMK37 && FELUCCA_SLICE
     if (d->names == N_SLC_SRC && (v == 2 || v == 3))  /* (SMK-37: USR2, USR3 have no flash; the knob steps over them) */
         return 1;
+#endif
+#if FELUCCA_HARMONY
+    if(d==&ENG_HARMONY.edit[0]&&!harmony_source((unsigned)v)){for(unsigned i=SMP_NSETS;i<=SMP_PICK_MAX;i++)if(harmony_source(i))return (int)i;return d->min;}
 #endif
     if (d->names == N_DRUM_KIT)
         return v >= 0 && v < DK_COUNT ? (int32_t)DK_PLAYS[v] : v;
@@ -497,7 +516,11 @@ enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_
        GR_INS,                     /* (Skiff 1.3) FX > INSERT: its TYPE's transfer or sweep (ui_pgraph.c graph_insert) */
        GR_SMIX,                    /* (Skiff, #21) EDIT > SAMPLES: a user sample's LEVEL, REVERB, DELAY (ui.c smx_zone) */
        GR_LMIX,                    /* (2.0, #36, the user's pick 1A) EDIT > LANE MIX: a kit's lane levels and pans */
-       GR_FOLLOW };                /* (2.1) SCL > FOLLOW: the chord it follows, as CHORD's (ui_graph.c graph_follow) */
+       GR_FOLLOW, GR_VTRIM
+#if FELUCCA_HARMONY
+       ,GR_VEQ,GR_HARMONY
+#endif
+};                /* (2.1) SCL > FOLLOW: the chord it follows, as CHORD's (ui_graph.c graph_follow) */
 
 typedef struct {
     const char *title;
@@ -505,6 +528,9 @@ typedef struct {
     uint8_t id[4];               /* param ids; 0xFF = empty slot */
 } page_t;
 
+#if FELUCCA_HARMONY
+static int vocal_flt_page(const page_t*pg){return pg->scope==SC_TRACK&&pg->id[0]==P_E4;}
+#endif
 /* (Skiff U3, the UX review's structure) the order a family's button and SELECT step its pages in. FX holds the track's
  * effects; the buses everyone shares are GLO's, after MIXER (N4); SEQ goes by task, SONG last (N2); SYSTEM (R2: ROUT and
  * CPU in the MENU, CLK and TUNE too, R8: the unit's settings), SAVE > TOOLS (R3), AUTOMATION's own page (R5: the list's
@@ -545,6 +571,13 @@ static const page_t PAGES[] = {
     {"OP3 ENV", FAM_EDIT, SC_TRACK, GR_ADSR, {P_FM3_ATK, P_FM3_DEC, P_FM3_SUS, P_FM3_REL}},
     {"OP4 ENV", FAM_EDIT, SC_TRACK, GR_ADSR, {P_FM4_ATK, P_FM4_DEC, P_FM4_SUS, P_FM4_REL}},
     {"OP LEVEL", FAM_EDIT, SC_TRACK, GR_NONE, {P_FM1_LEVEL, P_FM2_LEVEL, P_FM3_LEVEL, P_FM4_LEVEL}},
+#if FELUCCA_HARMONY
+    {"FLT",FAM_EDIT,SC_TRACK,GR_NONE,{P_E4,P_ED_FLT,P_LD_FLT,0xFF}},
+    {"EQ",FAM_EDIT,SC_TRACK,GR_VEQ,{0xFF,0xFF,0xFF,0xFF}},
+    {"SECTION",FAM_EDIT,SC_TRACK,GR_HARMONY,{P_E7,P_LDECAY0,P_LN0,P_LPAN0}},
+    {"HARMONIZE",FAM_EDIT,SC_TRACK,GR_NONE,{H_VOICING,H_CHORD,H_TUNE,0xFF}},
+    {"TRIM",FAM_EDIT,SC_TRACK,GR_VTRIM,{0xFF,0xFF,0xFF,0xFF}},
+#endif
     {"VOICE", FAM_EDIT, SC_TRACK, GR_VOICE, {P_VOICE, P_GLIDE, P_GLMODE, P_PRIO}},
     {"VOICE 2", FAM_EDIT, SC_TRACK, GR_VOICE2, {P_ALLOC, P_DETUNE, P_SPRD, 0xFF}},   /* ((U3, R4) PAN MUTE: MIXER's;
                                                                                      * (1.3) SPREAD) */
@@ -594,6 +627,12 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
                                                        * changed) */
         return *valp ? &SMX_D[slot] : 0;
     }
+#if FELUCCA_HARMONY
+    if(harmony_req(TSEL)&&pg->scope==SC_ENGINE){if(id==P_E7)id=P_SPRD;else if(id==P_E6)id=P_VOICE;}
+    if(pg->graph==GR_HARMONY){unsigned g=(unsigned)clamp(TSEL->p[P_E7],0,4);static param_desc_t d[]={PD("COUNT",F_INT,0,7,1),PD("LEVEL",F_PCT,0,127,127),PD("PAN",F_BIPCT,-64,63,0)};
+     unsigned sum=0;for(unsigned j=0;j<5;j++)if(j!=g)sum+=harmony_count(TSEL,j);d[0].max=(int16_t)(sum<16?16-sum:0);if(d[0].max>(g?15:1))d[0].max=(int16_t)(g?15:1);
+     *valp=&TSEL->p[slot==0?P_E7:slot==1?P_LDECAY0+g:slot==2?P_LN0+g:P_LPAN0+g];return slot?&d[slot-1]:&ENG_HARMONY.edit[7];}
+#endif
     if (id == 0xFFu) {
         *valp = 0;
         return 0;
@@ -614,5 +653,8 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
         id = mod_ui_route < MOD_SLOT0 ? MOD_FIXED[mod_ui_route] : id + 3u * (mod_ui_route - MOD_SLOT0);
     }
     *valp = &TSEL->p[id];
+#if FELUCCA_VOCAL_FLT
+    if(vocal_flt_page(pg)){static const param_desc_t flt[]={PD("CUTOFF",F_PCT,0,127,127),PD("ENV AMT",F_BIPCT,-64,63,0),PD("LFO AMT",F_BIPCT,-64,63,0)};return &flt[slot];}
+#endif
     return track_desc(TSEL, id);
 }

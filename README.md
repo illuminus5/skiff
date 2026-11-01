@@ -816,3 +816,8 @@ by them, and Skiff is not made or endorsed by Hügelton Instruments.
 
 Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments (Felucca)<br>
 Copyright (C) 2026 illuminus5 (Skiff)
+
+
+### Optional HARMONY choir experiment
+
+An opt-in FM-1 sample choir supports five sections and up to sixteen virtual singers on one track, with sample trim/loop, filter/EQ and experimental pitch correction. It is disabled in the normal build. See [the HARMONY guide](docs/HARMONY.md) for building, controls and validation scope.

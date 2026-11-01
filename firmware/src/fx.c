@@ -766,8 +766,12 @@ static int32_t wet[CTL];                                 /* (the dry mix and the
  * DIST / SLICER while it sounds or its tail runs. ENGINES[] order. An estimate: it only steers the split, the sound does
  * not depend on it */
 static uint16_t part_cost[NPART];                       /* the last block's, per track */
-static const uint16_t ENG_VCOST[NENGINES] = {163, 0, 162, 67, 70, 174, 144, 143, 189, 309, 113, 134, 181, 129, 120};
-_Static_assert(NENGINES == 15, "ENG_VCOST: a cost per engine");
+static const uint16_t ENG_VCOST[NENGINES] = {163, 0, 162, 67, 70, 174, 144, 143, 189, 309, 113, 134, 181, 129, 120
+#if FELUCCA_HARMONY
+,0,3000 /* reserved ID, then shared-decoder choir workload estimate */
+#endif
+};
+_Static_assert(NENGINES == 15+2*FELUCCA_HARMONY, "ENG_VCOST: a cost per engine");
 #else
 static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_r[CTL];
 #endif
@@ -991,6 +995,9 @@ static __attribute__((noinline)) void lpan_mix(track_t *t, const int32_t *b, con
     }
     t->peak = pk;
 }
+#if FELUCCA_HARMONY
+#include "vocal_eq.c"
+#endif
 static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_t n SM_DECL)
 {
     int32_t *d = SPREAD_BUF(t), *e = t->lpan_on ? LPAN_BUF(t) : 0;
@@ -1006,6 +1013,9 @@ static __attribute__((noinline)) void mix_spread(track_t *t, int32_t *b, uint32_
     if (!e)
         for (i = 0; i < n; i++)
             d[i] = (d[i] << 1) - b[i];                  /* left - right */
+#if FELUCCA_HARMONY
+    if(vocal_family(t))vocal_eq_apply(b,d,e,n);
+#endif
     track_dist(t, b, n);
     if (t->p[P_ITYPE] | t->ins_run)
         track_insert(t, b, n);                          /* (the mono sum, as DRIVE) */
@@ -1097,20 +1107,29 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
 {
     int32_t *b = SM(b);
     uint32_t i;
-#if FELUCCA_CPU2
     uint32_t nr;
-#endif
     mod_begin(t);                                       /* the matrix's per-block values into t->p (mod.c) */
-    t->lpan_on = drum_engine(t->engine) && lanes_panned(t);   /* ((2.0, #36) a kit with a lane panned: mix_spread) */
+    t->lpan_on = (drum_engine(t->engine) && lanes_panned(t))
+#if FELUCCA_HARMONY
+        ||harmony_on(t)
+#endif
+        ;   /* ((2.0, #36) a kit with a lane panned: mix_spread) */
     t->spread_on = !t->lpan_on && t->p[P_SPRD] > 0 &&   /* ((1.3) mix_spread; (2.0) a panned kit's lanes, not SPREAD) */
                    (trk_vmode(t) == V_POLY || trk_vmode(t) == V_UNISON);
 #if FELUCCA_CPU2
     vs_sm[(uint32_t)(t - trk) % NPART] = sm;            /* ((#21) smx_render's sums) */
     nr = track_render(t, b, n);
+#if FELUCCA_HARMONY
+    if(t==&trk[0])vocal_eq_prepare(t,nr);
+#endif
     part_cost[(uint32_t)(t - trk) % NPART] = (uint16_t)(nr * ENG_VCOST[t->engine % NENGINES] + (nr || t->tail ? 60u : 0u));
     if (nr)
 #else
-    if (track_render(t, b, n))
+    nr=track_render(t,b,n);
+#if FELUCCA_HARMONY
+    if(t==&trk[0])vocal_eq_prepare(t,nr);
+#endif
+    if(nr)
 #endif
         t->tail = t->p[P_ITYPE] ? 64 : 16;              /* blocks of DIST / INSERT state to run out after the last
                                                          * voice ((1.3) the INSERT's: 46 ms, a flanger's feedback) */
@@ -1135,6 +1154,9 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
         int32_t xmax = c > d ? c : d;
         xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
+#if FELUCCA_HARMONY
+        if(vocal_family(t))vocal_eq_apply(b,0,0,n);
+#endif
         track_dist(t, b, n);
         if (t->p[P_ITYPE] | t->ins_run)
             track_insert(t, b, n);                      /* ((1.3) the INSERT: off, nothing) */
@@ -1210,6 +1232,11 @@ static __attribute__((noinline)) uint32_t mix_split(void)
             best = m;
         }
     }
+#if FELUCCA_HARMONY
+    /* Keep a lone shared-decoder choir off the timer/master core. */
+    if(harmony_on(&trk[0])&&part_cost[0]>60u&&!(best&1u))
+        best=best?best^((1u<<NPART)-1u):1u;
+#endif
     return best;
 }
 #endif

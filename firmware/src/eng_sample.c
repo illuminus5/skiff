@@ -95,6 +95,10 @@ static void slc_user_scan(uint32_t k, int valid);   /* eng_slice.c: SLICE's slic
 #else
 #define slc_user_scan(k, valid) ((void)0)
 #endif
+#if FELUCCA_VOCAL_TRIM
+static void vtrim_user_scan(uint32_t k);
+static void vtrim_invalidate(uint32_t k);
+#endif
 static uint32_t smp_user_gen;                       /* + 1 per slot scan (GRAIN: its seek index follows uploads) */
 
 /* (re)read slot k from flash: valid header -> zones usable; call after boot and after an upload
@@ -106,6 +110,9 @@ static void smp_user_scan(uint32_t k)
     smp_zone_t zt[16];
     uint32_t i, base, nz = 0;
     smp_user_gen++;
+#if FELUCCA_VOCAL_TRIM
+    vtrim_invalidate(k);
+#endif
     usr_nz[k] = 0;
     slc_user_scan(k, 0);
     if (SMP_USER_HAS(k) && h->magic == SMP_USER_MAGIC && h->version == 1 && h->nz && h->nz <= 16u &&
@@ -127,12 +134,19 @@ static void smp_user_scan(uint32_t k)
         usr_mix[k][SMX_LVL][i] = 127;               /* ((#21) every sound as uploaded, then the stored: smx_load) */
         usr_mix[k][SMX_REV][i] = usr_mix[k][SMX_DLY][i] = 0;
     }
-    if (!nz)
+    if (!nz) {
+#if FELUCCA_VOCAL_TRIM
+        vtrim_user_scan(k);
+#endif
         return;
+    }
     usr_nz[k] = (uint8_t)nz;
     if (smx_load)
         smx_load(k);
     slc_user_scan(k, 1);
+#if FELUCCA_VOCAL_TRIM
+    vtrim_user_scan(k); /* checkpoint table is ready, main loop only */
+#endif
 }
 
 /* A missing sample (SAMPLE, GRAIN, SLICE: an empty or invalid user slot, a set this build has no data for) plays
@@ -176,7 +190,13 @@ static inline const smp_zone_t *smp_zone(uint32_t zi)
 
 /* zone z's IMA ADPCM code at *pos decoded: ps[0] the predictor (the sample), ps[1] the step index; *pos on by one.
  * ((2.0, #35) SAMPLE's and DRUM's user kits') */
-static inline void adpcm_next(const smp_zone_t *z, uint32_t *pos, int32_t *ps)
+/* Share one exact decoder body across SAMPLE, DRUM and the choir. */
+#if FELUCCA_HARMONY
+static __attribute__((noinline))
+#else
+static inline
+#endif
+void adpcm_next(const smp_zone_t *z, uint32_t *pos, int32_t *ps)
 {
     uint32_t b = SMP_DATA[z->off + (*pos >> 1)];
     uint32_t code = (*pos & 1u) ? (b >> 4) : (b & 15u);

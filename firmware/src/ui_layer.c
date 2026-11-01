@@ -72,7 +72,7 @@ static const page_t *ly_page(uint32_t l) { return l == LAYER_SCL ? &LY_SCL : l =
 #define LY_OPEN 2u                     /* ui.ly_t0: the map opened (no tap any more) */
 #define LY_COMBO 4u                    /* .. by a combo */
 #define LY_DEAD 8u                     /* .. pressed where there is no layer: does nothing */
-#define LY_INIT ((uint32_t)NENG_SHOWN) /* EDIT: the white key of INIT, the one after the engines (14: F5), its map cell */
+#define LY_INIT ((uint32_t)(NENG_SHOWN>15?15:NENG_SHOWN)) /* EDIT: the white key of INIT, the one after the engines (14: F5), its map cell */
 typedef char ly_init_fits[LY_INIT < 16u ? 1 : -1];   /* (a white key: F3 .. G5) */
 #define layer_seen (favorites.factory[15][31])   /* bit l: layer l opened once (a byte no engine uses) */
 static const khint_t FX_LATCH_FOOT[3] = {{KC_WHITE, "ON / OFF"}, {KC_BLACK, "MUTE"}, {KC_OCTDN, "ALL OFF"}};

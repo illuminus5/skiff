@@ -150,3 +150,10 @@ cd /tmp/felucca-site && python3 -m http.server 8000
 
 Installing firmware is at your own risk. If an install fails and the FM-1 no longer
 starts, recovery needs [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
+
+## Optional FM-1 HARMONY choir
+
+`python3 tools/build_harmony.py` builds the optional sample choir on Skiff 2.1.1.
+`python3 tests/harmony/run.py` runs its deterministic host tests after generation/build.
+The normal build keeps this feature disabled. See [docs/HARMONY.md](docs/HARMONY.md) for controls, compatibility and validation scope.

@@ -103,6 +103,7 @@ static int mom_turn(uint32_t k, int32_t s)
             return 0;
         d = page_desc(pg, k, &vp);
     }
+    if(vp&&vp>=TSEL->p&&vp<TSEL->p+P_COUNT&&vocal_control_dead(TSEL,(uint32_t)(vp-TSEL->p)))return 1;
     g = vp && vp >= song.g && vp < song.g + G_COUNT ? (uint32_t)(vp - song.g) : G_COUNT;
     if (!d || !vp || d->max == d->min ||
         !((vp >= TSEL->p && vp < TSEL->p + P_COUNT) || (g <= G_CDEPTH && g != G_CLOCK) || g == G_RTYPE ||
@@ -381,7 +382,7 @@ static void smk_leds_out(const uint8_t *nl, const uint8_t *nd, const uint8_t *nb
     smk_pads_out(nl, nd, nb, nm);
 }
 #endif
-static void ui_leds(void)
+static __attribute__((noinline)) void ui_leds(void)
 {
     uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, own[FM1_NCOL] = {0}, og[FM1_NCOL] = {0}, nb[FM1_NCOL] = {0};
     uint8_t nm[FM1_NCOL] = {0}, sg[FM1_NCOL] = {0}, sm[FM1_NCOL] = {0};
@@ -1590,7 +1591,11 @@ static void edit_param(uint32_t slot, int32_t steps)
         mod_ui_route = (uint8_t)clamp((int32_t)mod_ui_route + (steps > 0 ? 1 : -1), 0, MOD_ROUTES - 1u);   /* 2..4 its */
         return;                                                                                            /* SRC DST AMT */
     }
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+    if(pg->graph==GR_VTRIM){vtrim_ui_turn(slot,steps,0);return;}
+#endif
     d = page_desc(pg, slot, &vp);
+    if(vp&&vp>=TSEL->p&&vp<TSEL->p+P_COUNT&&vocal_control_dead(TSEL,(uint32_t)(vp-TSEL->p)))return;
     if (!d || !vp || d->max == d->min)
         return;
     v = param_turn(d, *vp, accel(EN_K1 + slot, steps, d->fmt == F_ENUM ? 0 : d->max - d->min));
@@ -2517,9 +2522,21 @@ static void ui_input(void)
         uint64_t held;
         if ((s = panel_enc(EN_K1 + k)) == 0)
             continue;
+#if FELUCCA_VOCAL_STRETCH
+        if(!ui.home&&k==3&&vtiming_ui_on()){
+            if(!lock_held()&&!mom_down()){ui.hot_col=3;ui.hot_t=40;vtiming_ui_turn(s);}continue;
+        }
+#endif
+#if FELUCCA_VOCAL_EQ
+        if(!ui.home&&pg->graph==GR_VEQ){if(!lock_held()&&!mom_down()){ui.hot_col=(uint8_t)k;ui.hot_t=40;veq_ui_turn(k,accel(EN_K1+k,s,k?24:127));}continue;}
+#endif
         if (mom_down())                                 /* ((1.3) LFO + a knob, MOMENTARY or not: LFO's release opens no
                                                          * page) */
             ui.pg_down &= (uint16_t)~(1u << panel.btn[B_LFO]);
+        if(!ui.home&&(pg->scope==SC_TRACK||pg->scope==SC_ENGINE)&&vocal_control_dead(TSEL,pg->id[k])){ui.hot_t=0;continue;}
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+        if(pg->graph==GR_VTRIM&&!ui.home&&(lock_held()||mom_down()))continue;
+#endif
         if ((held = lock_held()) != 0u) {               /* a step held on NOTES: KNOB k locks (parameter locks) */
             lock_turn(k, s, held);
             ui.hot_col = (uint8_t)k;
@@ -2533,11 +2550,16 @@ static void ui_input(void)
         }
         if (ui.home || pg->scope == SC_STEP || pg->scope == SC_TRK || page_desc(pg, k, &hv) ||
             ((pg->graph == GR_USER || pg->graph == GR_BANK || pg->graph == GR_MOD) && k == 0u)
-            || (pg->graph == GR_SLICES && k < 2u) || pg->graph == GR_SONG || sheet_of(pg->graph)) {   /* (not an empty
+            || (pg->graph == GR_SLICES && k < 2u) || pg->graph == GR_SONG || pg->graph == GR_VTRIM || sheet_of(pg->graph)) {   /* (not an empty
                                                          * column; (Skiff) SONG's four; a sheet's four) */
             ui.hot_col = (uint8_t)k;
             ui.hot_t = 40;
         }
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+        if(!ui.home&&pg->graph==GR_VTRIM&&shift_held()){
+            shift_mark();vtrim_ui_turn(k,s,1);continue;
+        }
+#endif
         if (ui.home) {
             int16_t *vp;
             const param_desc_t *d = home_param(k, &vp);
