@@ -32,6 +32,18 @@ static const uint8_t ED_MENU[][2] = {
 #endif
     {MI_PHEAD, 19},                                    /* (Skiff #27) PLAYHEAD, a row of DISPLAY */
     {MI_RETURN, 20},                                   /* (2.0, D 2A) RETURN, a row of CONTROL */
+#if FELUCCA_USB_ROUTING
+    {MI_USB_LEFT,40},{MI_USB_RIGHT,41},
+#if FELUCCA_USB_6CH
+    {MI_USB_3,42},{MI_USB_4,43},{MI_USB_5,44},{MI_USB_6,45},
+#if UAC_CHANNELS > 6
+    {MI_USB_7,46},{MI_USB_8,47},
+#endif
+#if UAC_CHANNELS > 8
+    {MI_USB_9,48},{MI_USB_10,49},
+#endif
+#endif
+#endif
 };
 #define ED_MENU_N NELEM(ED_MENU)
 

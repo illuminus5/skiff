@@ -213,12 +213,16 @@ static void menu_head(void)
  *                   CLOSE is in the header: the four would not fit in S (cv_key_row drops words, from the last)
  * Drawn in two bands (the canvas holds 124 rows) split in a gap between two rows; while the tabs slide only their
  * strip (24..58) is drawn again */
-static const uint16_t MTAB_ICON[MTAB_COUNT] = {ICON_X_EYE, ICON_X_KNOB, ICON_X_SPEAKER, ICON_X_COG, ICON_MIDI};
+static const uint16_t MTAB_ICON[MTAB_COUNT] = {ICON_X_EYE, ICON_X_KNOB, ICON_X_SPEAKER, ICON_X_COG, ICON_MIDI
+#if FELUCCA_TAPE
+,ICON_TAPE
+#endif
+};
 #define MT_Y 29                                        /* the tab bar */
 #define MT_H 24
-#define MT_IW 28                                       /* a cushion with its icon alone (the icon centred in it; (1.3) 28,
+#define MT_IW (FELUCCA_TAPE ? 20 : 28)                                       /* a cushion with its icon alone (the icon centred in it; (1.3) 28,
                                                         * was 32: five tabs) */
-#define MT_NX 26                                       /* the name's pen in the one shown; 10 px after it */
+#define MT_NX (FELUCCA_TAPE ? 20 : 26)                                       /* the name's pen in the one shown; 10 px after it */
 #define MT_X0 6
 #define MT_X1 234
 #define MT_GAP 5                                       /* between two tabs, always (the bar centred in MT_X0..MT_X1; (1.3) 5,
@@ -411,12 +415,18 @@ static uint32_t menu_split(uint32_t n)
         s = mr_y(--k) - 1;
     return (uint32_t)(s < 240 - 124 ? 240 - 124 : s);
 }
+#if FELUCCA_TAPE
+#include "ui_tape.c"
+#endif
 static void draw_menu(void)
 {
     static const khint_t KEYS[2][3] = {{{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTPM, "VALUE"}},
                                        {{KC_ALGO, "TAB"}, {KC_PRESETS, "ROW"}, {KC_OCTUP, "OPEN"}}};
     uint32_t pass, k, first, n, split, sig;
     int32_t pos0 = mt.pos;
+#if FELUCCA_TAPE
+    if(ui.menu==3){tape_ui_draw();return;}
+#endif
     if (ui.menu == 1)
         mt_follow();
     sig = ui.menu * 7u + ui.menu_sel * 131u + ui_prefs * 4099u + song.rec * 65537u + song.sel * 13u +
@@ -506,6 +516,9 @@ static void menu_close(void)
 {
     settings_save();                                   /* palette / panel table, if changed */
     ui.menu = 0;
+#if FELUCCA_TAPE
+    tape_page_on=0;if(!tape_seq_on)tape_command=0x80000000u;
+#endif
     ui.force = 1;
     if (ui.home)                                       /* ((Skiff U3, N3) back where it was opened: was HOME always) */
         go_home();
@@ -571,6 +584,10 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
                 ml_start();
         } else if (ui.menu_sel == MI_LCLEAR) {         /* ((1.3) every learned CC) */
             ui_message(ml_clear_all() ? "LEARN CLEARED" : "NOTHING LEARNED");
+#if FELUCCA_TAPE
+        } else if(ui.menu_sel==MI_TAPE){
+            ui.menu=3;tape_page_on=1;ui.force=1;
+#endif
         } else {                                       /* MI_ABOUT */
             ui.menu = 2;
             ui.menu_scroll = 0;

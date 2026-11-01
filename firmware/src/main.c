@@ -19,6 +19,9 @@ void fm1_timer5_irq(void)
 {
     static uint32_t sub, owed;
     uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u;
+#if FELUCCA_UAC
+    uint32_t audio_due = sub % UAC_SERVICE_DIV == 0u;
+#endif
     fm1_timer5_ack();
     felucca_dbg.timer_irqs++;
     fm1_input_tick();
@@ -35,7 +38,7 @@ void fm1_timer5_irq(void)
         }
     }
     if (usb_due)
-        owed |= 1u;                             /* 2 kHz: all USB SIE traffic lives here */
+        owed |= 1u;                             /* 2 kHz: USB control/MIDI traffic */
 #if FELUCCA_UART
     if (sub % 5u == 2u)
         owed |= 2u;                             /* 2 kHz: <= ~7 bytes per call at 31250 baud */
@@ -45,14 +48,18 @@ void fm1_timer5_irq(void)
     if (felucca_dbg.in_audio) {
         felucca_dbg.nested++;
 #if FELUCCA_UAC
-        if (usb_due)
+        if (audio_due)
             uac_service();
 #endif
         t5_nested_ticks += fm1_ticks() - t0;
         return;
     }
     if (owed & 1u)
-        usb_poll();
+        usb_poll(); /* includes this tick's audio service */
+#if FELUCCA_UAC
+    else if (audio_due)
+        uac_service();
+#endif
 #if FELUCCA_UART
     if (owed & 2u)
         uart_midi_poll();

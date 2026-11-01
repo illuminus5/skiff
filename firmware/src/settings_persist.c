@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+#include "usb_routes.h"
 /* Shared PER4 layout: each feature updates only its own fields, preserving
  * the other feature's saved preferences when either is built independently.
  * PER1/PER2 are upstream; PER3 added bold; PER4 added favorites.
@@ -51,6 +52,39 @@ typedef struct {
 #define SKS_MAGIC 0x534B5331u                  /* "SKS1" */
 _Static_assert(sizeof(sks_skiff_t) == 32u && ENGI_DIGITAL == 1u, "SKS1: favorites.factory[15], MIDI LEARN in row 1");
 
+/* USB1 in SKS1 room[0..15]. Stock 2.0 preserves these bytes unchanged.
+ * room[16..31] and all project/settings layouts remain upstream's. */
+#define USB_SETTINGS_TAG 0x31425355u
+static void usb_settings_defaults(void)
+{
+    usb_routes=USB_ROUTES_DEFAULT;
+#if FELUCCA_USB_6CH
+    usb_six_routes=USB_SIX_DEFAULT;usb_extra_routes=USB_EXTRA_DEFAULT;
+#endif
+}
+static void usb_settings_read(const uint8_t *room)
+{
+    uint32_t w[4];memcpy(w,room,sizeof w);usb_settings_defaults();
+    if(w[0]!=USB_SETTINGS_TAG)return;
+    usb_routes=usb_routes_valid(w[1]);
+#if FELUCCA_USB_6CH
+    usb_six_routes=usb_six_valid(w[2]);usb_extra_routes=usb_extra_valid(w[3]);
+#endif
+}
+static void usb_settings_write(uint8_t *room)
+{
+    uint32_t w[4]={USB_SETTINGS_TAG,usb_routes_valid(usb_routes),0,0};
+#if FELUCCA_USB_6CH
+    w[2]=usb_six_valid(usb_six_routes);w[3]=usb_extra_valid(usb_extra_routes);
+#endif
+    memcpy(room,w,sizeof w);
+}
+
+_Static_assert(sizeof(sks_t)>=sizeof(persist_t)+40u,"PER8 boot staging");
+static uint32_t usb_legacy_size(uint32_t magic)
+{
+    return magic==0x50455235u?4u:magic==0x50455236u?8u:magic==0x50455237u?36u:magic==0x50455238u?40u:0u;
+}
 /* Normalize in place; 1 = current, 2 = migrated, 0 = invalid. */
 static int settings_import_per(persist_t *p, int n)
 {
@@ -149,8 +183,26 @@ static int settings_import(void *b, int n)
 {
     sks_t *s = (sks_t *)b;
     persist_t p;
-    if (n != (int)sizeof *s || s->magic != SKS_MAGIC)
-        return settings_import_per((persist_t *)b, n);
+    if(n<4)return 0;
+    if (n != (int)sizeof *s || s->magic != SKS_MAGIC) {
+        /* 1.x USB PER5..PER8 append to an unchanged PER4 prefix. */
+        uint32_t magic;memcpy(&magic,b,sizeof magic);
+        uint32_t extra=usb_legacy_size(magic);
+        if(extra && n==(int)(sizeof(persist_t)+extra)){
+            uint32_t routes[10]={0};memcpy(routes,(uint8_t *)b+sizeof(persist_t),extra);
+            ((persist_t *)b)->magic=PERSIST_MAGIC;
+            int rc=settings_import_per((persist_t *)b,sizeof(persist_t));
+            usb_settings_defaults();usb_routes=usb_routes_valid(routes[0]);
+#if FELUCCA_USB_6CH
+            if(extra>=8)usb_six_routes=usb_six_valid(routes[1]);
+            if(extra==40)usb_extra_routes=usb_extra_valid(routes[9]);
+#endif
+            return rc?2:0;
+        }
+        int rc=settings_import_per((persist_t *)b,n);
+        if(rc)usb_settings_defaults();
+        return rc;
+    }
     p.magic = PERSIST_MAGIC; p.palette = s->palette; p.lowcut = s->lowcut; p.zoom = s->zoom; p.bold = s->bold;
     p.panel = s->panel;
     memcpy(p.favorites.factory, s->fav, sizeof s->fav);
@@ -160,6 +212,7 @@ static int settings_import(void *b, int n)
     memcpy(&p.favorites.factory[ENGI_DIGITAL][2], s->ml, sizeof s->ml);
     p.favorites.user = s->fav_user; p.favorites.filter = s->fav_filter;
     (void)settings_import_per(&p, sizeof p);
+    usb_settings_read(s->room);
     s->palette = p.palette;
     sks_pack(s, (const uint8_t (*)[32])p.favorites.factory, p.favorites.user, p.favorites.filter);
     return 1;
@@ -176,4 +229,5 @@ static void settings_export(sks_t *s)
     s->panel = panel;
     s->bold = hold_to_stored(s->bold, settings_hold);
     sks_pack(s, (const uint8_t (*)[32])favorites.factory, favorites.user, favorites.filter);
+    usb_settings_write(s->room);
 }
