@@ -522,3 +522,12 @@ asked first, as on the device. Nothing of these is pushed: the editor reads what
 
 **Still open:**
 - the 20 MHz LCD clock, `LCD_BAUD=2`, to try on hardware.
+
+
+## Optional HARMONY sample choir (FM-1)
+
+`FELUCCA_HARMONY=1` adds a track-1 sample choir at engine ID 16; all public engine IDs and the global 8/12 voice budgets stay unchanged. ID 15 is reserved for an unsupported earlier experimental VOCAL engine, never selectable. Up to sixteen virtual singers use at most five section voices (lead, bass, tenor, alto, soprano), one shared decoder and a shared playback clock. Existing VOICE remains unchanged.
+
+SOURCE uses populated broad-range user sample banks; fully single-key-mapped kits are excluded. ROOT identifies the source pitch and KEY guides generated harmony/correction. FOLLOW voicing preserves the played-note-relative stack; CHORD holds manually selected diatonic chord tones in section registers while the lead moves. NATURAL/HARD correction is experimental recorded-source processing, not microphone input. SECTION keeps group/count/level/pan knob order and reuses the track mixer visuals. WIDTH/HUMAN control singer spread/motion.
+
+FLT, sample EQ, and non-destructive TRIM remain separate pages. TRIM knobs are sample start, loop start, loop end, sample end; HOME-held turns move coarsely. The waveform prepares on selection and shows the source playhead. Held keys sustain the marked loop with a raised-cosine crossfade; releasing allows the ending, and legato keys preserve the live timeline. Trim/EQ append checked records to existing free sample-tail space without changing audio/header bytes or old record offsets. No automatic sample installation or overwrite.

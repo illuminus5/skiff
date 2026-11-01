@@ -57,10 +57,22 @@ _Static_assert(NTRK <= 8 && NPART < NVOICE, "a track mask is a uint8_t; each par
                                   * sounds (fm4_convert.c), settings PER1..PER3, 1.0's FM6 bank. Only the converter
                                   * (web/conv) and its tests build them; 2.0 keeps such a record's bytes (OLD FORMAT) */
 #endif
-#define NENGINES 15u             /* (Skiff) DRUM-X (14) after SLICE (13): the other engines keep their numbers */
+/* (Skiff) Optional sample choir; no standalone VOCAL engine is compiled. */
+#ifndef FELUCCA_HARMONY
+#define FELUCCA_HARMONY 0
+#endif
+#define FELUCCA_VOCAL FELUCCA_HARMONY
+#define FELUCCA_VOCAL_TRIM FELUCCA_HARMONY
+#define FELUCCA_VOCAL_STRETCH FELUCCA_HARMONY
+#define FELUCCA_VOCAL_AUTO FELUCCA_HARMONY
+#define FELUCCA_VOCAL_FLT FELUCCA_HARMONY
+#define FELUCCA_VOCAL_EQ FELUCCA_HARMONY
+#define ENGI_VOCAL 15u /* Reserved former experimental ID; no playback. */
+#define ENGI_HARMONY 16u
+#define NENGINES (15u+2u*FELUCCA_HARMONY)             /* (Skiff) DRUM-X (14) after SLICE (13): the other engines keep their numbers */
 #define ENGI_DIGITAL 1u          /* reserved without FELUCCA_FM4: never selectable (eng_ok), its sounds load as FM6 */
 #define ENGI_SLICE 13u           /* reserved without FELUCCA_SLICE, as DIGITAL is without FELUCCA_FM4 */
-#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - !FELUCCA_SLICE)   /* the engines one can pick: PRESETS, the EDIT layer,
+#define NENG_SHOWN (NENGINES - !FELUCCA_FM4 - !FELUCCA_SLICE - FELUCCA_HARMONY)   /* the engines one can pick: PRESETS, the EDIT layer,
                                                 * the editor, in the display order of engines.c ENGINE_ORDER */
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 #define NELEM(a) (sizeof(a) / sizeof((a)[0]))

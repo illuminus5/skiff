@@ -625,10 +625,22 @@ static int page_visible(uint32_t i)
     const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
     const sheet_t *sh = sheet_of(PAGES[i].graph);
     uint32_t id = PAGES[i].id[0];
+#if FELUCCA_HARMONY
+    if(PAGES[i].graph==GR_HARMONY||PAGES[i].id[0]==H_VOICING)return harmony_req(TSEL);
+#endif
     if (sh)
-        return TSEL->eng_req % NENGINES == sh->eng;
+        return eng_idx(TSEL->eng_req) == sh->eng;
+#if FELUCCA_VOCAL_FLT
+    if(vocal_flt_page(&PAGES[i]))return vocal_family_req(TSEL);
+#endif
+#if FELUCCA_VOCAL_EQ
+    if(PAGES[i].graph==GR_VEQ)return vocal_family_req(TSEL);
+#endif
     if (PAGES[i].graph == GR_LANES)
-        return TSEL->eng_req % NENGINES == ENGI_DRUM;
+        return eng_idx(TSEL->eng_req) == ENGI_DRUM;
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+    if(PAGES[i].graph==GR_VTRIM)return vocal_family_req(TSEL);
+#endif
     if (PAGES[i].graph == GR_LMIX)                      /* ((2.0, #36) a kit's: DRUM, DRUM-X) */
         return drum_engine(TSEL->eng_req % NENGINES);
     if (PAGES[i].graph == GR_SMIX)                     /* ((#21) a SAMPLE track's on a USR set with samples) */
@@ -1948,6 +1960,9 @@ static void preset_fill(int16_t *p, const engine_t *e, uint32_t pi)
     p[P_ED_FLT] = e->presets[pi].fenv;
     p[P_VOICE] = e->presets[pi].mono ? V_LEGATO : V_POLY;   /* mono presets keep the legato feel */
     {   /* the sends */
+#if FELUCCA_HARMONY
+    if(e==&ENG_HARMONY){harmony_defaults(p);if(pi==4)p[P_LDECAY4]=0;}
+#endif
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];
         for (i = 0; i < 4u; i++)
@@ -1993,7 +2008,15 @@ static void apply_preset_to(track_t *t, uint32_t pi)
 }
 
 /* (Skiff phase 6) an engine a light track may not play (engines.c eng_allowed), asked for: said, nothing changes */
-static void eng_refused(uint32_t e) { ui_say(ENGINES[e % NENGINES]->name, ": T1-T4 ONLY"); }
+static void eng_refused(uint32_t e) { if(e%NENGINES==ENGI_VOCAL){ui_message("VOCAL REMOVED");return;}ui_say(ENGINES[e % NENGINES]->name,
+#if FELUCCA_VOCAL
+ (e==ENGI_VOCAL
+#if FELUCCA_HARMONY
+ ||e==ENGI_HARMONY
+#endif
+ )?": T1 ONLY":
+#endif
+ ": T1-T4 ONLY"); }
 
 /* the engine's defaults and its first preset. With the audio IRQ off: the ISR sees the old engine with
  * its values or the new one with its own (voice.c engine_block), never one with the other's. 0 done; 1 refused (an
@@ -2281,6 +2304,12 @@ static void track_select(uint32_t i)
 static int go_id(uint32_t id) { return id == G_LOAD || id == G_SAVE; }
 
 /* (Skiff phase 5) SEQ > SONG: pattern id as the page writes it, "01" .. "64" (b: 3 bytes) */
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+#include "ui_vtrim.c"
+#if FELUCCA_VOCAL_EQ
+#include "ui_veq.c"
+#endif
+#endif
 static void pat_num(char *b, uint32_t id)
 {
     b[0] = (char)('0' + (id + 1u) / 10u % 10u);

@@ -309,7 +309,7 @@ static uint32_t tall_face(const char *s, const char *unit)
         return 0u;                                                                             /* slanted, the wider) */
     return ink_w(&AF_M, s) + (ux.neon ? cv_fx_w(&AF_M) : 0) <= COL_W - 6 ? 1u : 2u;
 }
-static void draw_column_tall(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc, int32_t ratio,
+static __attribute__((noinline)) void draw_column_tall(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc, int32_t ratio,
                              uint32_t icon, int hot, int mot, int32_t kid, const card_span_t *sp)
 {
     uint16_t lc = hot ? T_ACCENT : mot ? T_THEME : T_MID;
@@ -554,7 +554,8 @@ static int card_dead(const page_t *pg, uint32_t c)
 {
     const track_t *t = TSEL;
     uint32_t id = pg->id[c & 3u];
-    if (ENGINES[t->eng_req % NENGINES]->oneshot && (id == P_LPHASE || id == P_LFADE || id == P_LTRIG))
+    if((pg->scope==SC_TRACK||pg->scope==SC_ENGINE)&&vocal_control_dead(t,id))return 1;
+    if (ENGINES[eng_idx(t->eng_req)]->oneshot && (id == P_LPHASE || id == P_LFADE || id == P_LTRIG))
         return 1;                                       /* ((#16) TRIG too: the hits' LFO runs free) */
     if (id == P_LRATE && t->p[P_LSYNC])                 /* (#16) LFO 2 SYNC on: RATE does nothing */
         return 1;
@@ -564,7 +565,8 @@ static int card_dead(const page_t *pg, uint32_t c)
         ((uint32_t)t->p[P_FOLLOW] - 1u >= NTRK || (uint32_t)t->p[P_FOLLOW] - 1u == song.sel % NTRK ||
          (id == P_FNOTE && t->p[P_FMODE] == FM_FIT)))   /* FIT takes the whole chord: NOTE nothing) */
         return 1;
-    return pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_DRUM && id == P_E6 &&
+    return pg->scope == SC_ENGINE && eng_idx(t->eng_req) == ENGI_DRUM && id == P_E6 &&
+
            drum_kit_plays(t->p[P_E0]) != DK_STD;
 }
 
@@ -581,14 +583,14 @@ static void foot_hint(char *a, char *b)
  * patch (edited, INIT's): the patch's name ("INIT VOICE"); ((2.0, #35) DRUM on a user kit: its slot's name, "MY KIT") */
 static void sound_name(const track_t *t, char *b)
 {
-    const engine_t *e = ENGINES[t->eng_req % NENGINES];
-    uint32_t u = t->eng_req % NENGINES == ENGI_DRUM ? drum_user(t->p) : 0u;
+    const engine_t *e = ENGINES[eng_idx(t->eng_req)];
+    uint32_t u = eng_idx(t->eng_req) == ENGI_DRUM ? drum_user(t->p) : 0u;
     b[0] = 0;
     if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), b);
     else if (u && usr_nz[u - 1u])
         smp_user_name(u - 1u, b);
-    else if (t->eng_req % NENGINES == ENGI_FM6 && t->p[P_E7] == FM6_OWN) {
+    else if (eng_idx(t->eng_req) == ENGI_FM6 && t->p[P_E7] == FM6_OWN) {
         uint32_t n = 10;
         memcpy(b, fm6_patch[trk_index(t) % NTRK] + FP_NAME, 10);
         while (n && b[n - 1u] == ' ')
@@ -619,7 +621,7 @@ static void draw_foot(void)
     const track_t *t = TSEL;
     uint32_t sig;
     const page_t *pg = cur_page();
-    const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
+    const engine_t *e = ENGINES[eng_idx(TSEL->eng_req)];
     const char *ename = e->name;
     int32_t x, ly = foot_line_y();                     /* (BLOCKS: the one line) */
     int tiles = !ui.home && !grid_on() &&              /* ((Skiff 2.0) NOTES, FEEL, PATTERN: their hints; (issue #3) not */
@@ -787,7 +789,7 @@ static void draw_foot(void)
 /* the EDIT layer's cards (ui_layer.c): ENG (the engine), No. (its sounds: KNOB 2's list), FAV, an empty card */
 static void engine_columns(void)
 {
-    uint32_t total, cur = eng_list_pos(&total), e = TSEL->eng_req % NENGINES;
+    uint32_t total, cur = eng_list_pos(&total), e = eng_idx(TSEL->eng_req);
     char val[8], u[8];
     fmt_int(val, (int32_t)cur + 1);
     fmt_kn(u, -1, (int32_t)total);
@@ -1102,9 +1104,32 @@ static void draw_columns(void)
                     f < NSTEP ? (int32_t)step_vel(&t->step[f]) * 1000 / 127 : -1, ICON_AUTO);
         return;
     }
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+    if(cur_page()->graph==GR_VTRIM){
+        static const char*const labels[]={"START","LOOP ST","LOOP END","END"};
+        vocal_trim_region*r=vtrim_ui_region();fmt_named=0;
+        for(c=0;c<4;c++){if(r)fmt_int(val,(int32_t)((r->edge[c]*1000u+11025u)/22050u));
+            draw_column(c,labels[c],r?val:"--",r?"ms":"",r?VR_LIVE:VR_DIM,-1,ICON_AUTO);}
+        return;
+    }
+#endif
+#if FELUCCA_VOCAL_EQ
+    if(cur_page()->graph==GR_VEQ){fmt_named=0;static const char*const labels[]={"LOW CUT","BASS","MID","TREBLE"};for(c=0;c<4;c++){int value=0,valid=veq_ui_get(c,&value);unit=c?"dB":"Hz";if(c)fmt_fix(val,value*5,1);else if(!value){str_cpy(val,"OFF",sizeof val);unit="";}else{fmt_int(val,veq_hz((unsigned)value));}draw_column(c,labels[c],valid?val:"--",valid?unit:"",valid?VR_LIVE:VR_DIM,-1,ICON_AUTO);}return;}
+#endif
     for (c = 0; c < 4u; c++) {
         int16_t *vp;
         const param_desc_t *d = page_desc(cur_page(), c, &vp);
+#if FELUCCA_VOCAL_STRETCH
+        if(c==3&&vtiming_ui_on()){uint32_t slot,zone;int valid=vtrim_ui_pick(&slot,&zone);draw_column(c,
+#if FELUCCA_VOCAL_AUTO
+ TSEL->p[P_E1]?"VOICING":
+#endif
+ "TIMING",valid?(
+#if FELUCCA_VOCAL_AUTO
+ TSEL->p[P_E1]?(vtiming_ui_get()?"AUTO":"PLAY"):
+#endif
+ (vtiming_ui_get()?"STRETCH":"TAPE")):"--","",valid?VR_LIVE:VR_DIM,-1,ICON_AUTO);continue;}
+#endif
         if (cur_page()->graph == GR_SLOTS && c == 1u) {   /* ((Skiff U2) PROJECT: NAME, was EDIT; (1.2.1, #6) DELETE, */
             draw_act_column(1, ui.act == 2u && ui.act2 ? "NAME" : "DELETE",   /* one step further NAME) */
                             project_used((uint32_t)song.g[G_SLOT] - 1u) ? VR_THEME : VR_DIM, ICON_AUTO);
@@ -1125,12 +1150,15 @@ static void draw_columns(void)
             continue;
         }
         param_format(d, *vp, val, &unit);
+        if((cur_page()->scope==SC_TRACK||cur_page()->scope==SC_ENGINE)&&vocal_control_dead(TSEL,cur_page()->id[c])){
+            str_cpy(val,cur_page()->id[c]==P_VOICE?"AUTO":"--",sizeof val);unit="";
+        }
         card_mot_of(vp);                                /* (a global: never) */
         card_span_of(d);
         draw_column(c, (cur_page()->graph == GR_LANES || cur_page()->graph == GR_LMIX) && c == 1u ? "LEVEL" : d->label,
                     val, unit,                          /* ((phase 9) TUNE DECAY; (2.0) LANE MIX's PAN) */
                     card_dead(cur_page(), c) ? VR_DIM : VR_LIVE,
-                    d->fmt == F_ENUM && d->max < 2 ? -1 : RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
+                    (((cur_page()->scope==SC_TRACK||cur_page()->scope==SC_ENGINE)&&vocal_control_dead(TSEL,cur_page()->id[c]))||(d->fmt == F_ENUM && d->max < 2)) ? -1 : RATIO(d, enum_rank(d, *vp)), param_icon(d, *vp));
     }
 }
 
@@ -1328,7 +1356,7 @@ static void confirm_text(char *a, char *b)
         break;
     case CF_INIT_SOUND:
         str_cpy(a, "INITIALIZE SOUND?", 24);
-        if (TSEL->eng_req % NENGINES == ENGI_DRUMX)    /* ((Skiff phase 7) the project's kit, every DRUM-X track's) */
+        if (eng_idx(TSEL->eng_req) == ENGI_DRUMX)    /* ((Skiff phase 7) the project's kit, every DRUM-X track's) */
             str_cpy(b, "and the DRUM-X kit", 40);
         break;
     case CF_CLEAR_MOTION:

@@ -5,12 +5,23 @@
 /* Skiff: the parts' shared engine memory (eng_mem, after the engines): each engine's per-part state lives in its
  * part's area, never in arrays of its own for all the parts */
 static void *eng_part(const track_t *t);
+static inline uint32_t eng_idx(uint32_t e);
 #include "dsp.c"
 #include "eng_analog.c"
 #include "eng_phase.c"
 #include "eng_lofi.c"
 #include "eng_sample.c"
+#if FELUCCA_VOCAL
+#include "harmony_sample.h"
+#endif
 #include "eng_formant.c"
+#if FELUCCA_HARMONY
+#include "eng_harmony.c"
+#else
+#define harmony_req(t) 0
+#define vocal_family(t) 0
+#define vocal_family_req(t) 0
+#endif
 #include "eng_trio.c"
 #include "eng_wheel.c"
 #include "eng_grain.c"
@@ -26,6 +37,9 @@ static void *eng_part(const track_t *t);
 #if FELUCCA_SLICE
 #include "eng_slice.c"
 #endif
+#if FELUCCA_VOCAL_TRIM
+#include "vocal_trim_seek.c"
+#endif
 
 /* Skiff: a track runs one engine at a time, and an engine switch fades the old one out before the new one starts
  * (voice.c engine_block), so a part's engines share one area, as big as the biggest's (PHYS: its 3 slots): ~48 KB for
@@ -33,6 +47,9 @@ static void *eng_part(const track_t *t);
  * notes, blocks and renders); the switch zeroes it, the state each engine starts from at power-on (GRAIN rebuilds
  * its index, PHYS its model, from zero). Data the main loop writes (FM6's patches, WHEEL's bars) stays out. */
 typedef union {
+#if FELUCCA_HARMONY
+    harmony_part_t harmony;
+#endif
     phys_slot_t phys[PHYS_POLY];
     gr_part_t grain;
     drum_lane_t drum[DV_NLANE];
@@ -43,6 +60,9 @@ typedef union {
     int16_t slice[NVOICE][SLC_RB];   /* SLICE's reverse windows */
 #endif
 } eng_mem_t;
+#if FELUCCA_HARMONY
+_Static_assert(sizeof(harmony_part_t)<=sizeof(phys_slot_t)*PHYS_POLY,"HARMONY must fit reserved heavy workspace");
+#endif
 static eng_mem_t eng_mem[NHEAVY] __attribute__((section(".pool")));
 /* (Skiff phase 6) a light track's area (the tracks past NHEAVY): the engines it may play, no PHYS, no GRAIN (their
  * accessors give it none: a heavy engine forced there is silent); DRUM's lanes the biggest, 1.8 KB */
@@ -70,6 +90,15 @@ static uint32_t eng_size(const track_t *t)            /* its area's bytes (the e
     return sizeof(eng_mem_t);
 }
 
+#if FELUCCA_VOCAL
+/* No source, presets, processing state or playback for retired engine 15. */
+static void vocal_removed_note_on(struct track*t,voice_t*v){(void)t;(void)v;}
+static void vocal_removed_render(struct track*t,voice_t*v,int32_t*out,uint32_t n,const vmod_t*m){(void)t;(void)v;(void)out;(void)n;(void)m;}
+#define REMOVED_EDIT {"-",0,0,127,0,F_INT,0}
+static const engine_t ENG_VOCAL_REMOVED={.name="REMOVED",.page_title={"REMOVED","REMOVED"},.edit={REMOVED_EDIT,REMOVED_EDIT,REMOVED_EDIT,REMOVED_EDIT,REMOVED_EDIT,REMOVED_EDIT,REMOVED_EDIT,REMOVED_EDIT},.poly=1,.note_on=vocal_removed_note_on,.render=vocal_removed_render};
+#undef REMOVED_EDIT
+#endif
+
 /* the editor protocol, user presets and projects store these indices: append, never reorder */
 static const engine_t *const ENGINES[NENGINES] = {
     &ENG_ANALOG,                 /* 0 */
@@ -95,6 +124,12 @@ static const engine_t *const ENGINES[NENGINES] = {
     &ENG_FM4_GONE,               /* 13: reserved (FELUCCA_SLICE=0 builds without SLICE: never offered, eng_ok) */
 #endif
     &ENG_DRUMX,                  /* 14 (ENGI_DRUMX, Skiff) */
+#if FELUCCA_VOCAL
+    &ENG_VOCAL_REMOVED,          /* 15: tombstone only; never renumber HARMONY */
+#endif
+#if FELUCCA_HARMONY
+    &ENG_HARMONY,                /* 16: full-byte engine ID, existing IDs unchanged */
+#endif
 };
 
 /* a track's engine number as an index (the audio paths: a compare, cheaper than % NENGINES; a bad number: 0) */
@@ -115,7 +150,13 @@ static const char *snd_missing(const track_t *t, uint32_t *code)
         return slc_get(si) ? 0 : N_SLC_SRC[si];
     }
 #endif
-    if (e != &ENG_SAMPLE && e != &ENG_GRAIN)
+    if (e != &ENG_SAMPLE && e != &ENG_GRAIN
+#if FELUCCA_VOCAL
+#if FELUCCA_HARMONY
+        && e != &ENG_HARMONY
+#endif
+#endif
+       )
         return 0;
     *code = (e == &ENG_GRAIN ? 32u : 1u) + si % 32u;
     return smp_set_missing(si) ? SMP_ALL_NAMES[si] : 0;
@@ -130,18 +171,22 @@ static const uint8_t ENGINE_ORDER[NENG_SHOWN] = {
 #if FELUCCA_FM4
     1,                           /* DIGITAL */
 #endif
-    2, 3, 4, 5, 6, 7, 8, 9,      /* PHASE LOFI SAMPLE VOICE TRIO WHEEL GRAIN PHYS */
+    2, 3, 4,
+    5, 6, 7, 8, 9,                /* existing IDs remain unchanged */
     11,                          /* NOISE */
 #if FELUCCA_SLICE
     13,                          /* SLICE */
 #endif
     10,                          /* DRUM */
     14,                          /* DRUM-X */
+#if FELUCCA_HARMONY
+    ENGI_HARMONY,                /* appended; old engine shortcuts keep their positions */
+#endif
 };
 
 /* the engines one can pick (engine 1 only with FELUCCA_FM4), in ENGINE_ORDER: eng_ok(e), the n-th of them
  * eng_vis(n), e's place among them eng_rank(e), the next / previous one eng_step(e, dir) (wraps) */
-static int eng_ok(uint32_t e) { return e < NENGINES && (FELUCCA_FM4 || e != ENGI_DIGITAL) && (FELUCCA_SLICE || e != ENGI_SLICE); }
+static int eng_ok(uint32_t e) { return e < NENGINES && (!FELUCCA_VOCAL || e != ENGI_VOCAL) && (FELUCCA_FM4 || e != ENGI_DIGITAL) && (FELUCCA_SLICE || e != ENGI_SLICE); }
 static uint32_t eng_vis(uint32_t n) { return ENGINE_ORDER[n % NENG_SHOWN]; }
 static uint32_t eng_rank(uint32_t e)
 {
@@ -160,6 +205,16 @@ static uint32_t eng_step(uint32_t e, int32_t dir)
  * NHEAVY). The one rule: picking, presets, user presets, the editor, projects ask it */
 static int eng_allowed(uint32_t k, uint32_t e)
 {
+#if FELUCCA_VOCAL
+    if(e%NENGINES==ENGI_VOCAL)return 0;
+#endif
+#if FELUCCA_VOCAL
+    if(e==ENGI_VOCAL
+#if FELUCCA_HARMONY
+       ||e==ENGI_HARMONY
+#endif
+      )return k==0u;
+#endif
     return k < NHEAVY || (e % NENGINES != ENGI_PHYS && e % NENGINES != ENGI_GRAIN);
 }
 static uint32_t eng_step_for(uint32_t k, uint32_t e, int32_t dir)   /* eng_step past what track k may not play */

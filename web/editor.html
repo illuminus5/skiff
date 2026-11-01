@@ -1711,12 +1711,13 @@ const trackOwn = (i, pe0) => TRACK_OWN.has(i) || (pe0 >= 83 && P_CHORD.includes(
    opt: {gEng: G_ENGSEL id, progress(i, n)} */
 /* (Skiff phase 6, W4) whether track `tr` may not play engine `e` (INFO 54 01: the light tracks, the engines they may not) */
 function lightRefuses(info, tr, e) {
+  if (info?.engines?.[e] === "HARMONY" && tr !== 0) return true; /* one shared choir on T1 */
   const l = info && info.light;
   return !!l && ((l.tracks >> (tr | 0)) & 1) === 1 && ((l.engines >> (e | 0)) & 1) === 1;
 }
 async function auditionPatch(rq, info, pt, opt = {}) {
   if (lightRefuses(info, opt.track ?? 0, pt.engine))   /* ((Skiff W4) refused before anything is written) */
-    throw new Error(`${info.engines[pt.engine] || pt.engine}: not on T${(opt.track ?? 0) + 1} (a light track)`);
+    throw new Error(`${info.engines[pt.engine] || pt.engine}: not on T${(opt.track ?? 0) + 1} (engine unavailable on this track)`);
   await rq(req.set(1, opt.gEng ?? 20, pt.engine));
   const dump = parse[CMD.DUMP](await rq(req.dump()), info);
   const n = Math.min(info.pcount, pt.p.length);
@@ -3285,7 +3286,7 @@ function enumShown(d) {
    the engine numbers. engineOrder(names): the indices of names in that order, "-" (a reserved number) left out; a name
    the list does not know (another firmware) follows in index order */
 const ENGINE_ORDER = ["ANALOG", "FM6", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN", "PHYS", "NOISE",
-  "SLICE", "DRUM", "DRUM-X"];
+  "SLICE", "DRUM", "DRUM-X", "HARMONY"];
 function engineOrder(names) {
   const rank = (n) => { const k = ENGINE_ORDER.indexOf(n); return k < 0 ? ENGINE_ORDER.length : k; };
   return (names || []).map((n, i) => i).filter((i) => names[i] !== "-")
@@ -4279,7 +4280,7 @@ function renderSysinfo() {
 }
 
 /* (Skiff phase 6) engine e on the selected track: not on a light one (INFO 54: no GRAIN, no PHYS on T5, T6) */
-const engineAllowed = (e) => !dev || !((dev.info.light.tracks >> (dev.sel ?? 0)) & 1) || !((dev.info.light.engines >> e) & 1);
+const engineAllowed = (e) => !dev || !lightRefuses(dev.info, dev.sel ?? 0, e);
 
 function updateBrowser() {
   const e = dev.dump.engine;

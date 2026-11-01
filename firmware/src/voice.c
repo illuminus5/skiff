@@ -123,6 +123,9 @@ static uint32_t trk_nvoice(const track_t *t)
 /* the part's voice mode: P_VOICE, POLY for an engine of hits (engine_t.oneshot: DRUM) */
 static uint32_t trk_vmode(const track_t *t)
 {
+#if FELUCCA_HARMONY
+    if(harmony_on(t))return V_POLY;
+#endif
     return ENGINES[t->engine]->oneshot ? V_POLY : (uint32_t)t->p[P_VOICE];
 }
 
@@ -400,6 +403,29 @@ static void mono_remove(track_t *t, uint32_t note)
     t->nmono = (uint8_t)k;
 }
 
+#if FELUCCA_HARMONY
+static __attribute__((noinline,minsize)) void harmony_sections(track_t*t,unsigned vel,int retrig){
+ for(unsigned g=0;g<5;g++){
+  voice_t*v=0;for(unsigned k=0;k<5;k++)if(t->v[k].active&&t->v[k].s[4]==(int32_t)g)v=&t->v[k];
+  if(!harmony_count(t,g)){if(v){v->gate=0;v->stage=3;}continue;}
+  int fresh=!v;if(fresh)v=voice_alloc(t,128u+g);else if(v->stage==4u){v=voice_reuse(t,v);fresh=1;}
+  if(fresh||retrig)voice_start(t,v,t->mono_note,vel,0);
+  /* Held-note changes keep the existing grains running; do not freeze the
+   * waveform into a DC crossfade. Retriggers still preserve their tail. */
+  v->s[4]=(int32_t)g;v->note=t->mono_note;v->gate=1;v->pitch16=(int32_t)t->mono_note*16;glide_set(t,v,!retrig&&t->p[P_GLIDE]);
+ }
+}
+static void harmony_key_on(track_t*t,uint32_t note,uint32_t vel){
+ mono_remove(t,note);if(t->nmono>=8)mono_remove(t,t->mono_stack[0]);t->mono_stack[t->nmono++]=(uint8_t)note;
+ t->mono_note=(uint8_t)mono_pick(t);int retrig=t->p[P_VOICE]!=V_LEGATO||!harmony_live(t)||harm(t)->signature!=harmony_signature(t);
+ if(retrig){harm(t)->running=0;harm(t)->ready=0;}harmony_sections(t,vel,retrig);
+}
+static void harmony_key_off(track_t*t,uint32_t note){
+ (void)note;unsigned next=mono_pick(t);if(next==t->mono_note)return;
+ if(next){t->mono_note=(uint8_t)next;if(harmony_live(t))harmony_sections(t,100,0);return;}
+ for(unsigned k=0;k<5;k++)if(t->v[k].active)t->v[k].gate=0;t->mono_note=0;
+}
+#endif
 static void duck_note(const track_t *t, uint32_t note);   /* (Skiff) duck.c (fx.c) */
 /* a fresh phrase restarts the LFO and its fade; (#9) not on the hits (DRUM, DRUM-X): every hit restarted it, so each
  * heard the same LFO value; it runs free across them (noinline: off the ISR's loops, as lfo_rand). (#16) LFO 2's TRIG
@@ -432,7 +458,10 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
         t->xp_vel[i] = (uint8_t)vel;
         return;
     }
-    note = fol_on(t, note);                             /* ((2.1) a follower's: into the chord it follows) */
+#if FELUCCA_VOCAL
+    if(t->engine==ENGI_VOCAL)return;
+#endif
+    note = fol_on(t, note); /* (Skiff 2.1) preserve upstream chord-follow mapping. */
     duck_note(t, note);                                 /* (Skiff) a hit another track may duck under */
     t->hits++;                                          /* ((Skiff Q6) QUARK's event display) */
     vel = mod_note(t, note, vel);                       /* the matrix's VEL / KEY / RAND ((1.3) VEL as a destination) */
@@ -440,12 +469,16 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
         any |= t->v[i].gate;
     if (!any)                                           /* fresh phrase: LFO retrigger and fade */
         lfo_restart(t);
+#if FELUCCA_HARMONY
+    if(harmony_on(t)){harmony_key_on(t,note,vel);return;}
+#endif
     if (mode == V_POLY) {
         voice_t *v = voice_alloc(t, note);
         t->nmono = 0;                                   /* no stale mono stack after a mode change */
         t->mono_note = 0;
         v->fine = 0;
-        voice_start(t, v, note, vel, t->p[P_GLIDE] != 0 && !ENGINES[t->engine]->oneshot);
+        int glide=t->p[P_GLIDE]!=0&&!ENGINES[t->engine]->oneshot;
+        voice_start(t,v,note,vel,glide);
         return;
     }
     {
@@ -475,6 +508,9 @@ static void trk_note_off(track_t *t, uint32_t note)
     t->xp_n = (uint8_t)k;
     note = fol_off(t, note);                           /* ((2.1) the note it sounded; 255: another still sounds it) */
     mono_remove(t, note);                              /* a mode change must not retain a released key */
+#if FELUCCA_HARMONY
+    if(harmony_on(t)){harmony_key_off(t,note);return;}
+#endif
     if (mode != V_POLY) {
         uint32_t nv = mode == V_UNISON ? trk_nvoice(t) : 1u;
         if (t->mono_note == note) {
@@ -694,6 +730,21 @@ static __attribute__((noinline)) void spread_sum(int32_t *out, const int32_t *sb
  * the far side down, the near one as it is. A cost per panned lane's voice; the lanes at C as ever */
 static int32_t lpan_buf[C1_NP][CTL];
 #define LPAN_BUF(t) lpan_buf[C1_PI(t)]
+#if FELUCCA_HARMONY
+static __attribute__((noinline)) void vocal_stereo_block(track_t*t,int32_t*out,uint32_t n,const int32_t*left,const int32_t*right,const vmod_t*m){
+ /* Track-index division and buffer selection happen once per voice block. */
+ int32_t*sd=SPREAD_BUF(t),*rd=LPAN_BUF(t);
+ /* NULL is the choir cache: section envelopes have already been mixed. */
+ int amp0=m?m->amp0:32767,step=m?m->amp1-amp0:0;
+ for(uint32_t i=0;i<n;i++){
+  int32_t gain=amp0+vs_shift0(step*(int32_t)i,CTL_LOG2);
+  int32_t l=mulq15(mulq15(left[i],gain),VOICE_FS)<<1;
+  int32_t r=mulq15(mulq15(right[i],gain),VOICE_FS)<<1;
+  int32_t mid=vs_shift0(l+r,1); /* same signed truncation as /2 */
+  out[i]+=mid;sd[i]+=mid-l;rd[i]+=mid-r;
+ }
+}
+#endif
 static int lanes_panned(const track_t *t)
 {
     const int16_t *p = &t->p[P_LPAN0];
@@ -825,7 +876,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
                 env2_tick(t, v);
             mod_voice(t, v, &m, v->fine + tune_fine + bend_fine);
         }
-        if (t->lpan_on && t->p[P_LPAN0 + ((uint32_t)v->s[0] & 7u)])   /* ((2.0, #36) a lane off C: its share of the
+        if (drum_engine(t->engine) && t->lpan_on && t->p[P_LPAN0 + ((uint32_t)v->s[0] & 7u)])   /* ((2.0, #36) a lane off C: its share of the
                                                                       * sides (lpan_render) */
             lpan_render(t, v, out, n, &m);
         else if (t->engine == ENGI_SAMPLE && v->s[4] >= 0x8000)   /* ((Skiff, #21) a user sample's sound: its LEVEL and

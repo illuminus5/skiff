@@ -584,9 +584,26 @@ static void graph_osc(const track_t *t, uint16_t c)
 }
 
 /* ANALOG's FLT: the low pass's curve on a pitch axis: flat, a peak at CUTOFF as high as RES, falling after */
-static void graph_flt(const track_t *t, uint16_t c)
+/* Shared schematic shape in the existing filter chart's 0..1000 coordinates. */
+static __attribute__((noinline)) int32_t graph_filter_level(int32_t fc,int32_t res,int32_t f){
+ int32_t l;
+#if FELUCCA_VOCAL_EQ
+ if(res<0){uint32_t word=(uint32_t)res;int32_t d=f-559;
+  l=620+((veq_value(word,1)*clamp(458-f,0,240))>>3)+((veq_value(word,3)*clamp(f-659,0,240))>>3);
+  l+=(veq_value(word,2)*clamp(224-(d<0?-d:d),0,224))>>3;
+  if(veq_value(word,0))l-=(fc+24>f?(fc+24-f)*5:0);
+ }else
+#endif
+ {int32_t d=fc-f;l=d>=0?620+(d<60?(380*res/127)*(3600-d*d)/3600:0):620+380*res/127+d*32/10;}
+ return clamp(l,0,1000);
+}
+static __attribute__((noinline)) void graph_flt(const track_t *t, uint16_t c)
 {
     int32_t fc = t->p[P_E4] * 1000 / 127, res = t->p[P_E5], x, py = 0, xc = 12 + fc * 216 / 1000;
+    int eq=0;
+#if FELUCCA_VOCAL_EQ
+    eq=cur_page()->graph==GR_VEQ;if(eq){uint32_t word=vocal_options(t);fc=veq_value(word,0)*1000/254;res=(int32_t)(word|0x80000000u);xc=12+fc*216/1000;}
+#endif
     uint16_t fill = ux_mix(c, T_SURF, 75);
     char b[16], v[12];
     const char *unit;
@@ -595,8 +612,7 @@ static void graph_flt(const track_t *t, uint16_t c)
         uint8_t L[37];
         int32_t i, pk = 0;
         for (i = 0; i < 37; i++) {
-            int32_t f = i * 1000 / 36, d = fc - f, l = d >= 0 ? 620 + (d < 60 ? (380 * res / 127) * (3600 - d * d) / 3600 : 0) :
-                                                                620 + 380 * res / 127 + d * 32 / 10;
+            int32_t l=graph_filter_level(fc,res,i*1000/36);
             L[i] = (uint8_t)(8 - (l < 0 ? 0 : l) * 8 / 1000);
             if (L[i] < L[pk])
                 pk = i;
@@ -604,16 +620,11 @@ static void graph_flt(const track_t *t, uint16_t c)
         cr_dots(12, 16, 6, 13, L, 37, 8, T_DIM);
         cr_art(12, 16, 6, 13, L, 37, T_THEME);
         cr_skull(12 + pk * 6 - 4, 16 + L[pk] * 13 - 12, CR_FLAME, T_SURF, 0);
-        cr_dagger(xc - 4, 104, CR_GOLD);
+        if(!eq||fc)cr_dagger(xc - 4, 104, CR_GOLD);
     } else {
-    cv_rect(xc, 8, 1, 114, T_DIM);
+    if(!eq||fc)cv_rect(xc, 8, 1, 114, T_DIM);
     for (x = 0; x <= 216; x++) {
-        int32_t f = x * 1000 / 216, d = fc - f, peak = 620 + 380 * res / 127, l, y;
-        if (d >= 0)
-            l = 620 + (d < 60 ? (380 * res / 127) * (3600 - d * d) / 3600 : 0);
-        else
-            l = peak + d * 32 / 10;
-        if (l < 0) l = 0;
+        int32_t l=graph_filter_level(fc,res,x*1000/216),y;
         y = 120 - l * 104 / 1000;
         pg_under(12 + x, y, 16, 120, fill);          /* ((Skiff N4, Q4) NEON the sun's bands under it, QUARK a Monte
                                                       * Carlo fill) */
@@ -622,6 +633,7 @@ static void graph_flt(const track_t *t, uint16_t c)
         py = y;
     }
     }
+    if(!eq){
     param_format(&ENG_ANALOG.edit[4], t->p[P_E4], v, &unit);
     str_cpy(b, v, 10);
     if (unit && *unit) {
@@ -636,6 +648,7 @@ static void graph_flt(const track_t *t, uint16_t c)
         pg_text(xc + 5, 20, b, T_TEXT);
     else
         pg_text_r(xc - 4, 20, b, T_TEXT);
+    }
     pg_text(12, 135, "LOW", T_DIM);
     pg_text_r(228, 135, "HIGH", T_DIM);
 }

@@ -20,7 +20,7 @@ static int32_t graph_ht = 100;
 static int16_t eg_lv[217] __attribute__((section(".pool")));
 /* (Skiff 2.0) a column under a curve from (x, y) to the foot: NEON the sun's bands (from top), QUARK a Monte Carlo fill,
  * else fill */
-static void pg_under(int32_t x, int32_t y, int32_t top, int32_t foot, uint16_t fill)
+static __attribute__((noinline)) void pg_under(int32_t x, int32_t y, int32_t top, int32_t foot, uint16_t fill)
 {
     if (ux.neon)
         ne_band_col(x, y, top, foot);
@@ -529,7 +529,7 @@ static void graph_tiles(const track_t *t, uint16_t c)
             cv_frame(2 + 29 * a, top + TL_P * (int32_t)i - 2, 29 * (b - a) + TL_W + 4, TL_H + 4, T_TEXT);
     }
 }
-static void graph_roll(const track_t *t, uint16_t c)
+static __attribute__((noinline)) void graph_roll(const track_t *t, uint16_t c)
 {
     uint32_t i, k, len = (uint32_t)t->p[P_SLEN], base = ui.bank * 16u, ncol, mask = scale_mask(t), held = pr_held();
     uint64_t locks = motion_lock_steps(trk_index(t));
@@ -1103,9 +1103,22 @@ static struct {
     uint8_t ready;
 } sample_wave;
 
-static uint32_t sample_wave_zone(const track_t *t)
+/* Selection preview: VOCAL uses PHRASE, never the last played key. */
+static __attribute__((noinline)) int sample_wave_vocal(const track_t*t){
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+ return vocal_family_req(t);
+#else
+ return 0;
+#endif
+}
+static __attribute__((noinline)) int sample_wave_engine(const track_t*t){return eng_idx(t->eng_req)==ENGI_SAMPLE||sample_wave_vocal(t);}
+
+static __attribute__((noinline)) uint32_t sample_wave_zone(const track_t *t)
 {
     uint32_t si = (uint32_t)t->p[P_E0] % SMP_NALL, i, zi = 0xFFFFu, k;
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+    if(sample_wave_vocal(t)){uint32_t source,phrase;if(!vocal_selection(t,&source,&phrase))return 0xFFFFu;return 0x8000u|((source-SMP_NSETS)<<5)|phrase;}
+#endif
     if (cur_page()->graph == GR_SMIX && (i = smx_zone(&k)) != 0xFFu)   /* ((#21) SAMPLES: the one picked) */
         return 0x8000u | k << 5 | i;
     if (si < SMP_NSETS) {
@@ -1122,9 +1135,12 @@ static uint32_t sample_wave_zone(const track_t *t)
     return zi;
 }
 
-static void sample_wave_tick(const track_t *t)
+static __attribute__((noinline)) void sample_wave_tick(const track_t *t)
 {
     uint32_t zi = sample_wave_zone(t), key = zi + ((uint32_t)last_note << 16), i;
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+    if(sample_wave_vocal(t))key=zi; /* phrase selection, independent of played pitch */
+#endif
     if (key != sample_wave.key || sample_wave.gen != smp_user_gen || !sample_wave.zone) {
         sample_wave.key = key; sample_wave.gen = smp_user_gen;
         sample_wave.zone = zi == 0xFFFFu ? 0 : smp_zone(zi);
@@ -1134,7 +1150,7 @@ static void sample_wave_tick(const track_t *t)
     }
     const smp_zone_t *z = sample_wave.zone;
     if (!z || !z->n || sample_wave.ready) return;
-    for (i = 0; i < 512u && sample_wave.pos < z->n; i++) {
+    for (i = 0; i < (sample_wave_vocal(t)?2048u:512u) && sample_wave.pos < z->n; i++) {
         uint32_t pos = sample_wave.pos, b = SMP_DATA[z->off + (pos >> 1)];
         uint32_t code = (pos & 1u) ? b >> 4 : b & 15u;
         int32_t step = IMA_STEP[sample_wave.index], d = step >> 3;
@@ -1163,11 +1179,33 @@ static void graph_sample(uint16_t c)
         cv_line(x, 48 - sample_wave.hi[i] * 38 / sample_wave.peak,
                 x, 48 - sample_wave.lo[i] * 38 / sample_wave.peak, c);
     }
-    if (z->looped && TSEL->p[P_E3]) {
+    if (!sample_wave_vocal(TSEL) && z->looped && TSEL->p[P_E3]) {
         int32_t left = 12 + (int32_t)(z->ls * 216u / z->n), right = 12 + (int32_t)(z->le * 216u / z->n);
         cv_line(left, 4, left, 90, T_MID); cv_line(right, 4, right, 90, T_MID);
     }
 }
+
+
+
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+static void graph_vtrim(uint16_t c){
+ vocal_trim_region*r=vtrim_ui_region();if(!r){panel_alert(ICON_X_NOFILE,"SAMPLE NOT FOUND");return;}
+ uint32_t a=12+r->edge[0]*216/r->length,b=12+r->edge[3]*216/r->length;
+ uint32_t ls=12+r->edge[1]*216/r->length,le=12+r->edge[2]*216/r->length;
+ cv_rect((int32_t)a,12,(int32_t)(b-a),84,T_RAISE);
+ cv_rect((int32_t)ls,12,(int32_t)(le-ls),84,T_TINT);
+ for(unsigned i=0;i<SAMPLE_WAVE_COLS;i++){
+  int32_t x=12+(int32_t)i*216/(SAMPLE_WAVE_COLS-1u);
+  cv_line(x,54-sample_wave.hi[i]*36/sample_wave.peak,x,54-sample_wave.lo[i]*36/sample_wave.peak,x>=(int32_t)a&&x<=(int32_t)b?c:T_DIM);
+ }
+ for(unsigned j=0;j<4;j++){int32_t x=12+(int32_t)(r->edge[j]*216/r->length);if(x>227)x=227;
+  cv_rect(x,j==1||j==2?8:4,ui.hot_t&&ui.hot_col==j?2:1,j==1||j==2?92:100,ui.hot_t&&ui.hot_col==j?T_ACCENT:j==1||j==2?T_MID:T_TEXT);}
+ for(unsigned k=0;k<1;k++){uint32_t head=vtrim_ui_head(k);if(head){int32_t x=11+(int32_t)head;
+  cv_line(x,12,x,96,T_ACCENT);cv_line(x-2,6,x,9,T_ACCENT);cv_line(x,9,x+2,6,T_ACCENT);}}
+ cv_text(12,118-AF_S.asc,&AF_S,(harmony_req(TSEL)||TSEL->p[P_E1]==0)?"NEXT TRIGGER":"NEXT PHRASE",T_MID);
+ cv_text(12,137-AF_S.asc,&AF_S,"HOME+KNOB: FAST 100 MS",T_DIM);
+}
+#endif
 
 #if FELUCCA_SLICE
 /* SLICES (ui_slice.c): the waveform from the marker before the selected one to the one after it (the selected
@@ -1499,6 +1537,9 @@ static uint32_t strip_kind(void)
     if (ui.home)
         return SK_SCOPE;
     g = cur_page()->graph;
+#if FELUCCA_HARMONY
+    if(g==GR_HARMONY)return SK_TRK;
+#endif
     return g == GR_ADSR ? SK_ADSR : g == GR_LFO ? SK_LFO : g == GR_STEPS ? SK_STEPS : g == GR_TRK ? SK_TRK : SK_TITLE;
 }
 /* the page's title and its number in its family ("ENV DEST 2/2", EDIT: the engine's "OSC 1/2"); the piano roll: its
@@ -1507,7 +1548,7 @@ static void page_title(char *ti)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
-    const engine_t *e = ENGINES[t->eng_req % NENGINES];
+    const engine_t *e = ENGINES[eng_idx(t->eng_req)];
     uint32_t i, n = 0, k = 0;
     const char *pt = pg->scope == SC_ENGINE ? e->page_title[pg->id[0] != P_E0] : 0;   /* EDIT: the engine's */
     for (i = 0; i < NPAGES; i++)                     /* ((Skiff U3, N6) GLO's: MIXER first, then the others) */
@@ -1562,10 +1603,10 @@ static void graph_title(void)
 /* (Skiff U5) an EDIT page of ANALOG (its own graphs: ui_pgraph.c graph_osc, graph_flt) */
 static int analog_page(const page_t *pg, const track_t *t)
 {
-    return pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_ANALOG;
+    return pg->scope == SC_ENGINE && ENGINES[eng_idx(t->eng_req)] == &ENG_ANALOG;
 }
 
-static uint32_t graph_signature(void)
+static __attribute__((noinline)) uint32_t graph_signature(void)
 {
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
@@ -1580,6 +1621,9 @@ static uint32_t graph_signature(void)
     for (i = 0; i < P_COUNT; i++)
         h = (h ^ (uint32_t)t->p[i]) * 16777619u;
     h ^= (uint32_t)TSEL->preset * 7u + (uint32_t)song.g[G_SLOT] * 13u + TSEL->user * 257u + up_gen * 7919u + ui.uslot * 104729u;
+#if FELUCCA_VOCAL_EQ
+    if(pg->graph==GR_VEQ)h^=vocal_options(t)&VEQ_MASK;
+#endif
     if (pg->graph == GR_CHORD) {                     /* the last chord played */
         h = (h ^ (chord_last[song.sel].root + 131u * chord_last[song.sel].mask)) * 16777619u;
         for (i = 0; i < CHORD_MAX; i++)
@@ -1602,6 +1646,7 @@ static uint32_t graph_signature(void)
             h ^= (uint32_t)graph_project_used(i) << (20u + i);
         h += graph_pname_sig;
     }
+
     if (pg->graph == GR_LANES || pg->graph == GR_LMIX)   /* (Skiff U3) the levels, the lane; ((2.0, #36) the pans; #35 */
         for (i = 0; i < 8u; i++)                         /* a user kit's lanes: an upload) */
             h = (h ^ (uint32_t)t->p[P_LN0 + i] << 8 ^ (uint32_t)(t->p[P_LPAN0 + i] + 64) << 16 ^ (i == page_lane()) ^
@@ -1654,12 +1699,18 @@ static uint32_t graph_signature(void)
             h = (h ^ (bank_cur(i) | bank_next(i) << 8 | (uint32_t)trk_pid[i] << 16)) * 16777619u;
         h = (h ^ (sg.entry * 40503u + song_pick() * 769u + bank_gen() * 2654435761u)) * 16777619u;   /* ((2.0) COPY+) */
     }
-    if (pg->scope == SC_ENGINE && (ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL || t->eng_req % NENGINES == ENGI_FM6 ||
-                                   (FELUCCA_FM4 && t->eng_req % NENGINES == ENGI_DIGITAL)))
+    if (pg->scope == SC_ENGINE && (ENGINES[eng_idx(t->eng_req)] == &ENG_WHEEL || eng_idx(t->eng_req) == ENGI_FM6 ||
+                                   (FELUCCA_FM4 && eng_idx(t->eng_req) == ENGI_DIGITAL)))
         h ^= (ui.hot_t ? ui.hot_col + 1u : 0u) * 65537u;
-    if (pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_FM6)   /* the patch (PAT's algorithm, levels, FB) */
+    if (pg->scope == SC_ENGINE && eng_idx(t->eng_req) == ENGI_FM6)   /* the patch (PAT's algorithm, levels, FB) */
         h ^= (fm6_pgen[(t - trk) % NTRK] + 1u) * 2246822519u;
-    if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE) h ^= sample_wave.pos * 13u + sample_wave.key;
+    if (pg->scope == SC_ENGINE && sample_wave_engine(t)) h ^= sample_wave.pos * 13u + sample_wave.key;
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+    if(pg->graph==GR_VTRIM)h^=vtrim_ui_sig()+sample_wave.pos*13u+sample_wave.key;
+#if FELUCCA_VOCAL_STRETCH
+    if(vtiming_ui_on())h^=(vtiming_ui_get()+1u)*2654435761u;
+#endif
+#endif
     if (pg->graph == GR_STEPS || step_page(pg->graph) || pg->graph == GR_FEEL) {
         uint32_t ph = song.playing ? t->seq_idx : 0xFFFFu;
         if (pg->graph != GR_STEPS && ph / 16u != ui.bank)
@@ -1798,7 +1849,7 @@ static void graph_browse(void)
  * the engine's sounds) or "U07", the name, the star of a favourite */
 static void engine_sound_row(int32_t y)
 {
-    const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
+    const engine_t *e = ENGINES[eng_idx(TSEL->eng_req)];
     uint32_t total, cur = eng_list_pos(&total), u = user_of(TSEL);
     char tag[6], nm[13];
     int fav = preset_favorite();
@@ -1887,7 +1938,7 @@ static void graph_bank(void)
 #define SG_TH (SG_SIX ? 15 : 18)
 #define SG_Y(r) (4 + (SG_SIX ? 22 : 27) * (int32_t)(r))   /* row r's band; the tile 2 px into it */
 #define SG_H (SG_SIX ? 20 : 24)
-static void graph_song(void)
+static __attribute__((noinline)) void graph_song(void)
 {
     uint16_t g0 = T_BG;
     uint32_t k, p, r, pos;
@@ -2143,7 +2194,7 @@ static uint32_t trk_level(uint32_t c) { return (uint32_t)trk[c].p[P_LEVEL] & 127
 static void trk_short_name(uint32_t c, char *b)      /* the track's sound, b holds 13 */
 {
     const track_t *t = &trk[c];
-    const engine_t *e = ENGINES[t->eng_req % NENGINES];
+    const engine_t *e = ENGINES[eng_idx(t->eng_req)];
     if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), b);
     else if (e->npresets)
@@ -2196,108 +2247,131 @@ static void track_strip(uint32_t c, uint32_t pos, uint32_t sel, uint32_t st, uin
 #define MS_X(c) (4 + 39 * (int32_t)(c))
 #define MS_FY0 52                                    /* the fader: y 52 .. 101 */
 #define MS_FY1 102
-static void mix_strip(uint32_t c, uint32_t sel, uint32_t st, uint32_t mute, uint32_t hot, uint32_t lvl, int32_t pan,
+static __attribute__((noinline)) void mix_strip(uint32_t c, uint32_t sel, uint32_t st, uint32_t mute, uint32_t hot, uint32_t lvl, int32_t pan,
                       const char *b, int large)
 {
+#if FELUCCA_HARMONY
+    int choir=cur_page()->graph==GR_HARMONY;
+#else
+    int choir=0;
+#endif
+    int width=choir?44:MS_W;
     int ib = sel && !ux.quark;                       /* (the selected strip a band, INK on it; (Skiff Q3) QUARK: a tint) */
     uint16_t col = T_TRK(c), g = sel ? (ux.quark ? ux_mix(col, T_BG, 82) : col) : T_SURF, line = ib ? ux_mix(col, T_INK, 55) : T_RAISE;
     uint16_t vc = ib ? T_INK : hot == 1u ? T_ACCENT : mute ? T_DIM : T_THEME, nc = ib ? T_INK : mute ? T_DIM : col;
-    int32_t h = (int32_t)graph_h(), m = ts.meter[c], i;
-    char d[2] = {(char)('1' + c), 0}, nm[8], v[8];
-    cv_begin(MS_W, (uint32_t)h, T_BG);
+    int32_t h = (int32_t)graph_h(), m = choir?0:ts.meter[c], i;
+    char d[4] = {(char)('1' + c), 0}, nm[8], v[8];
+#if FELUCCA_HARMONY
+    if(choir)fmt_int(d,TSEL->p[P_LDECAY0+c]);
+#endif
+    cv_begin(width, (uint32_t)h, T_BG);
     if (ux.crypt && !sel)                            /* (Skiff C3) CRYPT: the strips stone */
-        cr_stone(0, 0, MS_W, h, g);
+        cr_stone(0, 0, width, h, g);
     else if (ux.neon && sel) {                       /* (Skiff N3) NEON: the selected one its colour into violet, the */
         uint16_t st[2] = {col, ux_mix(col, NE_VIOLET, 75)};   /* others glass */
-        ne_vgrad(0, 0, MS_W, h, st, 2);
+        ne_vgrad(0, 0, width, h, st, 2);
     } else if (ux.neon)
-        ne_glass(0, 0, MS_W, h, g);
+        ne_glass(0, 0, width, h, g);
     else if (ux.quark) {                             /* (Skiff Q3) QUARK: the selected one in its colour's corners */
-        cv_rect(0, 0, MS_W, h, g);
+        cv_rect(0, 0, width, h, g);
         if (sel)
-            qk_corners(0, 0, MS_W, h, col, 6);
+            qk_corners(0, 0, width, h, col, 6);
     } else
-        cv_rect(0, 0, MS_W, h, g);
-    GFX_HOOK_ALIGN(0, 3, 0, 27, AL_V, "mixer strip number on its line");
-    cv_text_on(4, 3 + CAP_IN(V, 24), &AF_V, d, nc, g);
+        cv_rect(0, 0, width, h, g);
+    GFX_HOOK_ALIGN(0, 3, choir?width:0, 27, AL_V|(choir?AL_H:0), "mixer strip number on its line");
+    cv_text_on(choir?ink_in(&AF_V,d,width):4, 3 + CAP_IN(V, 24), &AF_V, d, nc, g);
     if (st == 1u)                                    /* REC (recording) / armed, stopped / muted */
-        cv_rect(MS_W - 11, 10, 7, 7, ib ? T_INK : T_REC);
+        cv_rect(width - 11, 10, 7, 7, ib ? T_INK : T_REC);
     else if (st == 2u)
-        cv_frame(MS_W - 11, 10, 7, 7, ib ? T_INK : T_ACCENT);
+        cv_frame(width - 11, 10, 7, 7, ib ? T_INK : T_ACCENT);
     else if (st == 3u && ux.crypt)                   /* (Skiff C3) CRYPT: muted, a crossed skull */
-        cr_skull(MS_W - 12, 10, ib ? T_INK : hot == 4u ? T_ACCENT : T_MID, g, 1);
+        cr_skull(width - 12, 10, ib ? T_INK : hot == 4u ? T_ACCENT : T_MID, g, 1);
     else if (st == 3u) {
         GFX_HOOK_ALIGN(0, 3, 0, 27, AL_V, "mixer strip number on its line");
-        cv_text_r(MS_W - 4, 3 + CAP_IN(S, 24), &AF_S, "M", ib ? T_INK : hot == 4u ? T_ACCENT : T_MID, g);
+        cv_text_r(width - 4, 3 + CAP_IN(S, 24), &AF_S, "M", ib ? T_INK : hot == 4u ? T_ACCENT : T_MID, g);
     }
     for (i = 0; b[i] && b[i] != ' ' && i < 7; i++)    /* the sound's first word */
         nm[i] = b[i];
     nm[i] = 0;
-    cv_free_text(4, 29, &AF_S, nm, ib ? T_INK : mute ? T_DIM : T_TEXT, g, MS_W - 6);
+    if(choir)GFX_HOOK_ALIGN(0,0,width,0,AL_H,"vocal group centered");
+    cv_free_text(choir?ink_in(&AF_S,nm,width):4, 29, &AF_S, nm, ib ? T_INK : mute ? T_DIM : T_TEXT, g, width - 6);
     if (large) {                                     /* LARGE: LEVEL a gauge, the meter under it */
-        int32_t gw = MS_W - 8, fx = (int32_t)lvl * gw / 127;
+        int32_t gw = width - 8, fx = (int32_t)lvl * gw / 127;
         cv_rect(4, 46, gw, 3, line);
         cv_rect(4, 46, fx < 2 ? 2 : fx, 3, vc);
         cv_rect(4, 53, gw, 3, line);
         if (m)
             cv_rect(4, 53, m * gw / (TS_MH - 2), 3, ib ? T_INK : T_MID);
-        cv_blit((uint32_t)MS_X(c), LG_Y_GRAPH);
+        cv_blit((uint32_t)(choir?3+47*(int32_t)c:MS_X(c)), LG_Y_GRAPH);
         return;
     }
     {   /* LEVEL: the fader from its foot, its cap; the meter beside it */
+        int32_t dx=choir?width/2-(ux.neon?13:ux.quark?(mute?18:17):16):0;
         int32_t fh = (int32_t)lvl * (MS_FY1 - MS_FY0) / 127, mh = m * (MS_FY1 - MS_FY0) / (TS_MH - 2);
         if (ux.quark && mute) {                       /* (Skiff Q3) QUARK: muted, dark matter: there, nothing shows */
-            qk_dotframe(10, MS_FY0, 16, MS_FY1 - MS_FY0, T_DIM);
-            GFX_HOOK_ALIGN(0, 0, MS_W, 0, AL_H, "mixer strip value centred across");
-            cv_text_in(0, MS_FY0 + 20, MS_W, &AF_S, "DARK", T_DIM, g);
+            qk_dotframe(10+dx, MS_FY0, 16, MS_FY1 - MS_FY0, T_DIM);
+            GFX_HOOK_ALIGN(0, 0, width, 0, AL_H, "mixer strip value centred across");
+            cv_text_in(0, MS_FY0 + 20, width, &AF_S, "DARK", T_DIM, g);
         } else if (ux.quark) {                        /* (Skiff Q3) QUARK: a calorimeter tower, its cells the energy
                                                        * deposited (the level), a gold cap; the meter beside it */
             int32_t n = 12, lit = (fh * n + 25) / (MS_FY1 - MS_FY0), s;
             for (s = 0; s < n; s++)
-                cv_rect(10, MS_FY1 - (s + 1) * 4, 14, 3, s < lit ? ux_mix(col, T_TEXT, s * 50 / n) : ux_mix(T_SURF, T_TEXT, 10));
-            cv_rect(8, MS_FY1 - lit * 4 - 2, 18, 1, hot == 1u ? T_TEXT : T_ACCENT);
+                cv_rect(10+dx, MS_FY1 - (s + 1) * 4, 14, 3, s < lit ? ux_mix(col, T_TEXT, s * 50 / n) : ux_mix(T_SURF, T_TEXT, 10));
+            cv_rect(8+dx, MS_FY1 - lit * 4 - 2, 18, 1, hot == 1u ? T_TEXT : T_ACCENT);
             if (mh)
-                cv_rect(27, MS_FY1 - mh, 2, mh, T_THEME);
+                cv_rect(27+dx, MS_FY1 - mh, 2, mh, T_THEME);
         } else if (ux.neon && mute) {                        /* (Skiff N3) NEON: muted, no signal (selected: dark snow on its
                                                        * band) */
-            ne_snow(3, MS_FY0, MS_W - 6, MS_FY1 - MS_FY0, c * 7u + 3u, sel ? col : T_BG, ib ? T_INK : T_MID);
-            GFX_HOOK_ALIGN(0, 0, MS_W, 0, AL_H, "mixer strip value centred across");
-            cv_text_in(0, MS_FY0 + 22, MS_W, &AF_S, "MUTE", ib ? T_INK : T_THEME, g);
+            ne_snow(3, MS_FY0, width - 6, MS_FY1 - MS_FY0, c * 7u + 3u, sel ? col : T_BG, ib ? T_INK : T_MID);
+            GFX_HOOK_ALIGN(0, 0, width, 0, AL_H, "mixer strip value centred across");
+            cv_text_in(0, MS_FY0 + 22, width, &AF_S, "MUTE", ib ? T_INK : T_THEME, g);
         } else if (ux.neon) {                         /* (Skiff N3) NEON: VU columns, LEVEL (its cap white; turned: the
                                                        * accent) and the meter */
-            ne_vu(8, MS_FY1, 9, MS_FY1 - MS_FY0, fh, ib ? T_INK : 0, sel ? line : ux_mix(T_SURF, T_TEXT, 10),
+            ne_vu(8+dx, MS_FY1, 9, MS_FY1 - MS_FY0, fh, ib ? T_INK : 0, sel ? line : ux_mix(T_SURF, T_TEXT, 10),
                   sel ? 0 : hot == 1u ? T_ACCENT : T_TEXT);
-            ne_vu(19, MS_FY1, 9, MS_FY1 - MS_FY0, mh, ib ? T_INK : 0, sel ? line : ux_mix(T_SURF, T_TEXT, 10), 0);
+            ne_vu(19+dx, MS_FY1, 9, MS_FY1 - MS_FY0, mh, ib ? T_INK : 0, sel ? line : ux_mix(T_SURF, T_TEXT, 10), 0);
         } else
-        cv_rect(13, MS_FY0, 6, MS_FY1 - MS_FY0, line);
+        cv_rect(13+dx, MS_FY0, 6, MS_FY1 - MS_FY0, line);
         if (ux.neon || ux.quark)
             ;
         else if (ux.crypt && !sel) {                  /* (Skiff) CRYPT: a torch as tall as the level (muted: out) */
-            cr_meter(13, MS_FY1, fh, mute);
+            cr_meter(13+dx, MS_FY1, fh, mute);
         } else {
         if (fh)
-            cv_rect(13, MS_FY1 - fh, 6, fh, vc);
-        cv_rect(10, MS_FY1 - fh - 1, 12, 2, ib ? T_INK : T_TEXT);
+            cv_rect(13+dx, MS_FY1 - fh, 6, fh, vc);
+        cv_rect(10+dx, MS_FY1 - fh - 1, 12, 2, ib ? T_INK : T_TEXT);
         }
         if (!ux.neon && !ux.quark) {
-        cv_rect(23, MS_FY0, 2, MS_FY1 - MS_FY0, line);
+        cv_rect(23+dx, MS_FY0, 2, MS_FY1 - MS_FY0, line);
         if (mh)
-            cv_rect(23, MS_FY1 - mh, 2, mh, ib ? T_INK : T_MID);
+            cv_rect(23+dx, MS_FY1 - mh, 2, mh, ib ? T_INK : T_MID);
         }
     }
     if (lvl) {                                       /* its dB (OFF at 0), the PAN */
         int32_t dd = LEVEL_DB_X10(lvl);
-        fmt_int(v, (dd + (dd < 0 ? -5 : 5)) / 10);
+        fmt_int(v, choir?(int32_t)(lvl*100+63)/127:(dd + (dd < 0 ? -5 : 5)) / 10);
     } else {
         str_cpy(v, "OFF", sizeof v);
     }
-    GFX_HOOK_ALIGN(0, 0, MS_W, 0, AL_H, "mixer strip value centred across");
-    cv_text_in(0, 106, MS_W, &AF_M, v, ib ? T_INK : hot == 1u ? T_ACCENT : lvl && !mute ? T_TEXT : T_DIM, g);
+    GFX_HOOK_ALIGN(0, 0, width, 0, AL_H, "mixer strip value centred across");
+    cv_text_in(0, 106, width, &AF_M, v, ib ? T_INK : hot == 1u ? T_ACCENT : lvl && !mute ? T_TEXT : T_DIM, g);
     pan_txt(v, pan);
-    GFX_HOOK_ALIGN(0, 0, MS_W, 0, AL_H, "mixer strip value centred across");
-    cv_text_in(0, 123, MS_W, &AF_S, v, ib ? T_INK : hot == 2u ? T_ACCENT : T_MID, g);
-    cv_blit((uint32_t)MS_X(c), Y_GRAPH);
+    GFX_HOOK_ALIGN(0, 0, width, 0, AL_H, "mixer strip value centred across");
+    cv_text_in(0, 123, width, &AF_S, v, ib ? T_INK : hot == 2u ? T_ACCENT : T_MID, g);
+    cv_blit((uint32_t)(choir?3+47*(int32_t)c:MS_X(c)), Y_GRAPH);
 }
+#if FELUCCA_HARMONY
+/* The real mixer renderer, with sections in place of tracks. */
+static void draw_harmony(void){
+ track_t*t=TSEL;uint32_t sig=graph_signature();
+ if(!ui.force&&sig==ui.graph_sig)return;ui.graph_sig=sig;
+ lcd_fill(0,graph_y(),240,graph_h(),T_BG);
+ for(unsigned g=0;g<5;g++){unsigned sel=(unsigned)t->p[P_E7]==g,mute=t->p[P_LDECAY0+g]==0;
+  mix_strip(g,sel,0,mute,0,t->p[P_LN0+g],t->p[P_LPAN0+g],g==4?"SOP":H_NAMES[g],strip_kind()==SK_TRK);
+ }
+}
+#endif
+
 static void draw_tracks(void)
 {
     uint32_t c, pos, sk = strip_kind() == SK_TRK;
@@ -2561,8 +2635,14 @@ static void draw_graph(void)
         draw_tracks();
         return;
     }
-    if (!ui.home && (pg->scope == SC_ENGINE || pg->graph == GR_SMIX) && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE)
+    if (!ui.home && sample_wave_engine(t))
         sample_wave_tick(t);
+#if FELUCCA_HARMONY
+    if(!ui.home&&pg->graph==GR_HARMONY){draw_harmony();return;}
+#endif
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+    /* All VOCAL pages warm the same bounded selection cache above. */
+#endif
     sig = graph_signature() + (ui.take_t ? take_box.gen * 2654435761u + 0x7A6Bu : 0u);   /* (Skiff: the TAKE box) */
     if (!ui.force && sig == ui.graph_sig)
         return;
@@ -2708,6 +2788,14 @@ static void draw_graph(void)
             cv_oy = 0;
             graph_global(c);
             break;
+#if FELUCCA_VOCAL && FELUCCA_VOCAL_TRIM
+        case GR_VTRIM:
+            cv_oy=0;graph_vtrim(c);break;
+#endif
+#if FELUCCA_VOCAL_EQ
+        case GR_VEQ:
+            cv_oy=0;graph_flt(t,c);break;
+#endif
         case GR_VOICE:
             cv_oy = 0;
             graph_voice(t, c);
@@ -2728,17 +2816,17 @@ static void draw_graph(void)
             break;
 #endif
         default:
-            if (pg->scope == SC_ENGINE && ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL) graph_wheel(t, c);
-            else if ((pg->scope == SC_ENGINE || pg->graph == GR_SMIX) && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE &&
+            if (pg->scope == SC_ENGINE && ENGINES[eng_idx(t->eng_req)] == &ENG_WHEEL) graph_wheel(t, c);
+            else if ((pg->scope == SC_ENGINE || pg->graph == GR_SMIX) && sample_wave_engine(t) &&
                      sample_wave.ready) graph_sample(c);   /* ((#21) SAMPLES: the sample's) */
-            else if (pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_FM6) graph_fm6(t, c);   /* EDIT 1 and 2 */
+            else if (pg->scope == SC_ENGINE && eng_idx(t->eng_req) == ENGI_FM6) graph_fm6(t, c);   /* EDIT 1 and 2 */
             else if (analog_page(pg, t)) {           /* (Skiff U5) ANALOG's OSC and FLT */
                 cv_oy = 0;
                 if (pg->id[0] == P_E0) graph_osc(t, c);
                 else graph_flt(t, c);
             }
 #if FELUCCA_FM4
-            else if ((pg->scope == SC_ENGINE || pg->id[0] == P_FM1_LEVEL) && t->eng_req % NENGINES == ENGI_DIGITAL)
+            else if ((pg->scope == SC_ENGINE || pg->id[0] == P_FM1_LEVEL) && eng_idx(t->eng_req) == ENGI_DIGITAL)
                 graph_fm(t, c);                      /* (OP LEVEL too: the levels on the chart) */
 #endif
             else { cv_oy = 0; graph_scope(c); }   /* (it centres itself in the canvas) */
