@@ -1,0 +1,5 @@
+# Only needed for real CoreMIDI transport; mock mode uses the Python standard library.
+python-rtmidi==1.5.8
+
+# Optional dedicated bulk video transport.
+pyserial==3.5

@@ -5,6 +5,9 @@
 extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end[];
 extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[], _ramx_start[], _ramx_end[];
 
+#ifndef FELUCCA_DISPLAY_BULK
+#define FELUCCA_DISPLAY_BULK 0
+#endif
 
 /* TIMER5 outranks ALNK0, so the scan keeps its 100 us pace while a half buffer renders: before,
  * the ticks stopped for the whole render (0.7 ms idle, several ms loaded), the column lit when it
@@ -15,10 +18,14 @@ extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[], 
  * The USB audio stream cannot wait for the render (one packet per 1 ms frame, a render takes up to
  * ~5 ms): uac_service also runs nested. It touches only EP4 (INDEX is set on every access) and the
  * consumer side of the audio ring, and usb_poll never runs nested, so the two never interleave. */
+#if FELUCCA_DISPLAY_MIRROR
+#include "../../fm1-display-mirror/firmware/skiff/ui_adapter.h"
+#endif
+
 void fm1_timer5_irq(void)
 {
     static uint32_t sub, owed;
-    uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u;
+    uint32_t t0 = fm1_ticks(), usb_due = FELUCCA_DISPLAY_BULK || sub % 5u == 0u;
     fm1_timer5_ack();
     felucca_dbg.timer_irqs++;
     fm1_input_tick();
@@ -341,7 +348,6 @@ static void fm1_main(void)
 #if FELUCCA_CDC
         cdc_task();
 #endif
-        felucca_dbg.ui_frames++;
         felucca_dbg.page = ui.page;
         felucca_dbg.home = ui.home;
         felucca_dbg.stage = 1;
@@ -351,17 +357,36 @@ static void fm1_main(void)
 #endif
         settings_poll();                              /* queued settings save: only while stopped */
         autosave_poll();                              /* (1.2) the music, stopped and idle: project.c */
+#if FELUCCA_DISPLAY_BULK
+        /* Give the completed journal a short opportunity to drain before a
+         * new LCD DMA wait blocks the main-loop ACK. Inputs/editor stay live;
+         * a stalled host cannot defer the local UI beyond this deadline. */
+        if (dm_ui_wait()) continue;
+#endif
+        felucca_dbg.ui_frames++;
         felucca_dbg.stage = 2;
         ui_leds();
 #if BOARD_SMK37
         padled_flush();                               /* the pads' colours, between LCD transfers (lcd.c) */
 #endif
+#if FELUCCA_DISPLAY_MIRROR
+        dm_ui_begin();
+#endif
         ui_draw();
+#if FELUCCA_DISPLAY_MIRROR
+        dm_end();
+#if FELUCCA_DISPLAY_BULK
+        cdc_task();
+#endif
+#endif
         felucca_dbg.stage = 9;
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */
             ui_input();
 #if FELUCCA_OTA
             ed_service();                       /* editor replies without waiting for the next frame */
+#if FELUCCA_DISPLAY_BULK
+            cdc_task();
+#endif
 #endif
         }
     }
