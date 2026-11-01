@@ -11,5 +11,5 @@ for i,arg in enumerate(sys.argv[1:],1):
         raise SystemExit("HARMONY currently targets FM-1 only")
 build.CFLAGS += ["-DFELUCCA_HARMONY=1", "-DVS_METRICS=0"]
 if len(sys.argv)==1:
-    sys.argv += ["--release", "2.1.1-harmony1"]
+    sys.argv += ["--release", "2.1.1-harmony2"]
 build.main()

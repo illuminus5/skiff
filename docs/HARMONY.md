@@ -13,7 +13,7 @@ python3 tests/harmony/run.py
 tests/run_tests.sh
 ```
 
-The wrapper enables FELUCCA_HARMONY=1 and disables diagnostic DSP counters. Its default candidate version is 2.1.1-harmony1, for FM-1 only. It never invokes an updater. Tests generate a deterministic ADPCM tone fixture; no private audio, MIDI device or NumPy is needed. Sanitizer runs retain the existing fixed-point shift/signed-wrap/XIP exclusions; they do not claim strict coverage for those conventions.
+The wrapper enables FELUCCA_HARMONY=1 and disables diagnostic DSP counters. Its default candidate version is 2.1.1-harmony2, for FM-1 only. It never invokes an updater. Tests generate a deterministic ADPCM tone fixture; no private audio, MIDI device or NumPy is needed. Sanitizer runs retain the existing fixed-point shift/signed-wrap/XIP exclusions; they do not claim strict coverage for those conventions.
 
 ## Source and sections
 
@@ -23,13 +23,13 @@ SECTION keeps K1 group, K2 count, K3 level, K4 pan. LEAD allows zero or one sing
 
 ## Harmony and correction
 
-HARMONIZE has VOICING, CHORD and TUNE:
+HARMONIZE has VOICING, DEGREE and TUNE:
 
 - FOLLOW preserves the played-note-relative stack.
-- CHORD holds a manually chosen diatonic triad I..VII in the supporting sections' registers while the lead moves. KEY chooses major or natural minor. Nearby tones/common notes are retained where possible. This is initial section-aware voicing, not classical SATB optimization or a guarantee of four distinct pitches.
+- BACKING holds a manually chosen diatonic triad I..VII in the supporting sections' registers while the lead moves. KEY chooses major or natural minor. DEGREE selects I..VII without duplicating the source page KEY. Bass holds the chord root in C2..C3; tenor uses C3..C4, alto G3..G4 and soprano C4..C5. Nearby tones/common notes are retained where possible. The keyboard transposes the lead relative to sample ROOT in both modes; source melody is preserved, rather than forced to a single pitch. This is initial section-aware voicing, not classical SATB optimization or a guarantee of four distinct pitches.
 - TUNE OFF preserves the source contour. NATURAL applies partial smoothed correction; HARD applies faster full correction. Correction follows the detected source key before keyboard transposition, so transposing can still move the result outside that key. Pitch correction remains experimental, with the detector's range/artifact limitations and the existing +/-24-semitone render bound. This is not an Auto-Tune-branded implementation.
 
-Upstream SCL FOLLOW still maps input notes before HARMONY receives them. It is separate from HARMONIZE's FOLLOW/CHORD setting; the section triad is not automatically derived from SCL FOLLOW's live chord in this version.
+Upstream SCL FOLLOW still maps input notes before HARMONY receives them. It is separate from HARMONIZE's FOLLOW/BACKING setting; the section triad is not automatically derived from SCL FOLLOW's live chord in this version.
 
 ## Playback, trim and tone
 

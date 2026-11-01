@@ -51,6 +51,33 @@ def power(values,hz):
     c=2*math.cos(2*math.pi*hz/44100);a=b=0.0
     for x in values:a,b=x+c*a-b,a
     return a*a+b*b-c*a*b
+# The lead must audibly follow C4 -> E4 in either voicing; backing must not pin it.
+lead_renders=[]
+for backing in [False,True]:
+    dest=O/f'lead-{int(backing)}.wav'
+    env=dict(os.environ)
+    if backing:env['H_LEAD_BACKING']='1'
+    else:env.pop('H_LEAD_BACKING',None)
+    subprocess.run([str(O/'features'),str(O/'source'),str(dest),'0'],env=env,check=True)
+    lead_renders.append(dest.read_bytes())
+assert lead_renders[0]==lead_renders[1], 'BACKING must not change the lead pitch path'
+with wave.open(str(O/'lead-1.wav')) as f:lead=array.array('h',f.readframes(f.getnframes()))
+if sys.byteorder!='little':lead.byteswap()
+for second,expected in [(1,261.625565),(2.5,329.627557)]:
+    start=int(second*44100);n=16384
+    values=[(lead[2*(start+i)]+lead[2*(start+i)+1])/2*(.5-.5*math.cos(2*math.pi*i/(n-1))) for i in range(n)]
+    hz=max((expected-8+i*.25 for i in range(65)),key=lambda hz:power(values,hz))
+    assert abs(1200*math.log2(hz/expected))<20,(second,hz,expected)
+dest=O/'lead-high.wav'
+subprocess.run([str(O/'features'),str(O/'source'),str(dest),'0'],env=dict(os.environ,H_LEAD_BACKING='1',H_LEAD_HIGH='1'),check=True)
+with wave.open(str(dest)) as f:high=array.array('h',f.readframes(f.getnframes()))
+if sys.byteorder!='little':high.byteswap()
+for second,expected in [(1,523.25113),(2.5,659.255114)]:
+    start=int(second*44100);n=16384
+    values=[(high[2*(start+i)]+high[2*(start+i)+1])/2*(.5-.5*math.cos(2*math.pi*i/(n-1))) for i in range(n)]
+    hz=max((expected-8+i*.25 for i in range(65)),key=lambda hz:power(values,hz))
+    assert abs(1200*math.log2(hz/expected))<20,(second,hz,expected)
+print('Rendered lead follows C4 -> E4 and C5 -> E5; FOLLOW/BACKING lead paths match.',flush=True)
 measurements={}
 for mode in range(3):
     wav=O/f'tune-{mode}.wav';subprocess.run([str(O/'features'),str(O/'tune'),str(wav),str(mode)],check=True)

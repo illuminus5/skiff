@@ -76,9 +76,9 @@ static __attribute__((noinline,minsize)) int harmony_offset(const track_t*t,int 
   int degree=clamp(t->p[H_CHORD],0,6),tones[3],pc=root;
   for(int i=0;i<degree;i++)do{pc++;}while(!allowed(pc,root,minor));
   for(unsigned i=0;i<3;i++){tones[i]=pc%12;for(unsigned j=0;j<2;j++)do{pc++;}while(!allowed(pc,root,minor));}
-  static const uint8_t lo[4]={36,48,55,60},hi[4]={55,64,72,79},centre[4]={48,55,64,72};
+  static const uint8_t lo[4]={36,48,55,60},hi[4]={48,60,67,72},centre[4]={43,52,60,67};
   vs_note*v=&harm(t)->singer[g];int previous=v->period[1]?(int)v->period[1]-1:centre[g-1],best=previous,error=999;
-  for(int p=lo[g-1];p<=hi[g-1];p++)for(unsigned k=0;k<3;k++)if(p%12==tones[k]){
+  for(int p=lo[g-1];p<=hi[g-1];p++)for(unsigned k=0;k<(g==1?1u:3u);k++)if(p%12==tones[k]){
    int d=p-previous;if(d<0)d=-d;if(d<error){error=d;best=p;}
   }
   v->period[1]=(unsigned)(best+1);return best-note;
@@ -272,8 +272,8 @@ static __attribute__((noinline,minsize)) void harmony_render(track_t*t,voice_t*v
 static __attribute__((noinline,minsize)) const param_desc_t*harmony_desc(const track_t*t,uint32_t k){return k==3?vocal_desc(t,k):0;}
 static const char*const H_TRIG[]={"--","RETRIG","LEGATO"};
 static __attribute__((noinline,minsize)) const param_desc_t* harmony_param(uint32_t id){
- static const char*const voicing[]={"FOLLOW","CHORD"},*const chords[]={"I","II","III","IV","V","VI","VII"},*const tune[]={"OFF","NATURAL","HARD"};
- static const param_desc_t extra[]={ {"VOICING",voicing,0,1,0,F_ENUM,0},{"CHORD",chords,0,6,0,F_ENUM,0},{"TUNE",tune,0,2,0,F_ENUM,0} };
+ static const char*const voicing[]={"FOLLOW","BACKING"},*const chords[]={"I","II","III","IV","V","VI","VII"},*const tune[]={"OFF","NATURAL","HARD"};
+ static const param_desc_t extra[]={ {"VOICING",voicing,0,1,0,F_ENUM,0},{"DEGREE",chords,0,6,0,F_ENUM,0},{"TUNE",tune,0,2,0,F_ENUM,0} };
  if(id>=H_VOICING&&id<=H_TUNE)return &extra[id-H_VOICING];
  static const param_desc_t width={"WIDTH",0,0,127,127,F_PCT,0};
  if(id==P_SPRD)return &width;

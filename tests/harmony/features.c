@@ -9,11 +9,11 @@ int main(int argc,char**argv){assert(argc==4);fixture(argv[1]);memset(trk,0,size
  t->p[P_E2]=key;t->p[H_CHORD]=chord;int root=key%12,minor=key>=12,pc=root,tones=0;
  for(unsigned i=0;i<chord;i++)do{pc++;}while(!allowed(pc,root,minor));
  for(unsigned k=0;k<3;k++){tones|=1<<(pc%12);for(unsigned j=0;j<2;j++)do{pc++;}while(!allowed(pc,root,minor));}
- for(unsigned g=1;g<5;g++){int target=-1;for(int lead=48;lead<84;lead++){int n=lead+harmony_offset(t,lead,g);assert((tones>>(n%12))&1);if(target>=0)assert(n==target);target=n;}}
+ for(unsigned g=1;g<5;g++){int target=-1;for(int lead=48;lead<84;lead++){int n=lead+harmony_offset(t,lead,g);assert((tones>>(n%12))&1);static const int lo[]={36,48,55,60},hi[]={48,60,67,72};assert(n>=lo[g-1]&&n<=hi[g-1]);if(g==1){int bassroot=root;for(unsigned j=0;j<chord;j++)do{bassroot++;}while(!allowed(bassroot,root,minor));assert(n%12==bassroot%12);}if(target>=0)assert(n==target);target=n;}}
  }
  printf("All 24 keys / seven diatonic chords: section tones hold independently of lead. Source guards pass.\n");
- t->p[P_E2]=0;t->p[H_VOICING]=getenv("H_CHORD_TEST")?1:0;t->p[H_CHORD]=0;t->p[H_TUNE]=atoi(argv[3]);
+ t->p[P_E2]=0;t->p[H_VOICING]=(getenv("H_CHORD_TEST")||getenv("H_LEAD_BACKING"))?1:0;t->p[H_CHORD]=0;t->p[H_TUNE]=atoi(argv[3]);
  if(!getenv("H_CHORD_TEST"))for(unsigned g=1;g<5;g++)t->p[P_LDECAY0+g]=0;
- trk_note_on(t,60,110);FILE*f=fopen(argv[2],"wb");assert(f);unsigned blocks=FS*4/CTL;wav_hdr(f,blocks*CTL);int32_t out[CTL*2];unsigned maxvoices=0,peak=0;
- for(unsigned b=0;b<blocks;b++){if(b==FS*2/CTL){trk_note_on(t,64,110);trk_note_off(t,60);}mix_block(out,CTL);if(voices_busy()>maxvoices)maxvoices=voices_busy();for(unsigned i=0;i<CTL;i++){int l=out[2*i],r=out[2*i+1];assert(abs(l)<32767&&abs(r)<32767);if((unsigned)abs(l)>peak)peak=abs(l);wav_put(f,l,r);}}
+ int lead=getenv("H_LEAD_HIGH")?72:60;trk_note_on(t,lead,110);FILE*f=fopen(argv[2],"wb");assert(f);unsigned blocks=FS*4/CTL;wav_hdr(f,blocks*CTL);int32_t out[CTL*2];unsigned maxvoices=0,peak=0;
+ for(unsigned b=0;b<blocks;b++){if(b==FS*2/CTL){trk_note_on(t,lead+4,110);trk_note_off(t,lead);}mix_block(out,CTL);if(voices_busy()>maxvoices)maxvoices=voices_busy();for(unsigned i=0;i<CTL;i++){int l=out[2*i],r=out[2*i+1];assert(abs(l)<32767&&abs(r)<32767);if((unsigned)abs(l)>peak)peak=abs(l);wav_put(f,l,r);}}
  fclose(f);assert(maxvoices==(getenv("H_CHORD_TEST")?5:1));assert(!harm(t)->source.dropped_grains);printf("Mode %s: peak %u, voices %u, grains dropped 0.\n",argv[3],peak,maxvoices);return 0;}
