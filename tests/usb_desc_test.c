@@ -4,6 +4,8 @@
  *   -DT_CDC=0/1 (FELUCCA_CDC)  -DT_UAC=0/1 (FELUCCA_UAC)  -DT_LAYOUT=0..3 (FELUCCA_USB_LAYOUT)
  *   -DT_ON=0/1 (usb_cdc_on: the console presented or not)  -DT_48K=0/1 (FELUCCA_UAC_48K, default 1)
  *   -DT_ASF=0/1 (FELUCCA_UAC_AS_FIRST, default 1: the audio streaming interface first in the AC collection)
+ *   -DT_MIDILAST=0/1 (FELUCCA_UAC_MIDI_LAST, default 0, Skiff #59: AS physically right after AC, MIDI last)
+ *   -DT_ASONLY=0/1 (FELUCCA_UAC_AS_ONLY, default 0, Skiff #59: the AC collection lists AS alone, no MIDI)
  * The device and configuration descriptors come from get_desc(), as GET_DESCRIPTOR sends them, and are
  * parsed as a host does: lengths and wTotalLength, bNumInterfaces, interface numbers 0..n-1 in order, the
  * endpoints of each setting and their addresses (EP1 MIDI, EP2 / EP3 CDC, EP4 audio, each once), the IADs
@@ -37,6 +39,14 @@
 #define T_ASF 1
 #endif
 #define FELUCCA_UAC_AS_FIRST T_ASF
+#ifndef T_MIDILAST
+#define T_MIDILAST 0
+#endif
+#define FELUCCA_UAC_MIDI_LAST T_MIDILAST
+#ifndef T_ASONLY
+#define T_ASONLY 0
+#endif
+#define FELUCCA_UAC_AS_ONLY T_ASONLY
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"   /* SIE register macros (never touched here) */
 #include "../firmware/src/usb.c"
@@ -57,7 +67,10 @@ static uint32_t le16(const uint8_t *p) { return p[0] | (uint32_t)p[1] << 8; }
 #define CDC_SHOWN (T_CDC && T_ON)
 #define AUDIO_48K (T_UAC && T_48K)
 #define AS_FIRST (T_UAC && T_ASF)
-#define BCD_EXPECT (0x300u + 0x10 * (T_UAC + AUDIO_48K) + 0x08 * AS_FIRST + (CDC_SHOWN ? 1 + 2 * T_LAYOUT : 0))
+#define MIDI_LAST (T_UAC && T_MIDILAST)
+#define AS_ONLY (T_UAC && T_ASONLY)
+#define BCD_EXPECT (0x300u + 0x10 * (T_UAC + AUDIO_48K) + 0x08 * AS_FIRST + 0x04 * AS_ONLY + 0x40 * MIDI_LAST + \
+                    (CDC_SHOWN ? 1 + 2 * T_LAYOUT : 0))
 
 /* AppleUSBAudio-273.4.1 AUAConfigurationDictionary::parseConfigurationDescriptor (the kernel USB audio driver of
  * macOS up to 15), reduced to its walk of the AC collection: the list of baInterfaceNr is walked with the count
@@ -170,9 +183,10 @@ int main(void)
     memset(if_sub, 0, sizeof if_sub);
     memset(in_iad, 0, sizeof in_iad);
     memset(seen, 0, sizeof seen);
-    printf("-- USB descriptors: CDC %d (%s), UAC %d%s%s, layout %d\n", T_CDC,
+    printf("-- USB descriptors: CDC %d (%s), UAC %d%s%s%s%s, layout %d\n", T_CDC,
            !T_CDC ? "not built" : T_ON ? "presented" : "left out", T_UAC, AUDIO_48K ? " (44.1 / 48 kHz)" : "",
-           T_UAC ? (AS_FIRST ? ", AS first" : ", MIDI first") : "", T_LAYOUT);
+           T_UAC ? (AS_FIRST ? ", AS first" : ", MIDI first") : "", MIDI_LAST ? ", AS contiguous (MIDI last)" : "",
+           AS_ONLY ? ", AC collection AS only" : "", T_LAYOUT);
     check("GET_DESCRIPTOR device", get_desc(0x0100, &dev, &dev_len) && dev_len == 18 && dev[0] == 18 && dev[1] == 1);
     check("GET_DESCRIPTOR configuration", get_desc(0x0200, &c, &n) && c[1] == 2);
 
@@ -283,7 +297,9 @@ int main(void)
     }
     if (cur_if >= 0 && got != cur_neps)
         eps_ok = 0;
-    if (AS_FIRST)                                      /* 1.5.1 (#67): audio streaming, then MIDI */
+    if (AS_ONLY)                                        /* Skiff #59: the collection names AS alone */
+        coll_ok = ncoll == 1 && coll[0] == as_if;
+    else if (AS_FIRST)                                  /* 1.5.1 (#67): audio streaming, then MIDI */
         coll_ok = ncoll == 2 && coll[0] == as_if && coll[1] == midi_if;
     else
         coll_ok = ncoll == 1 + T_UAC && coll[0] == midi_if && (!T_UAC || coll[1] == as_if);
@@ -306,10 +322,14 @@ int main(void)
     } else {
         check("no IAD, audio from IF 0", niad == 0 && aud_if == 0);
     }
-    check("audio function: AC, MIDI, AS in a row", midi_if == aud_if + 1 && (!T_UAC || as_if == aud_if + 2));
-    check(AS_FIRST ? "AC header 1.00, collection = the audio streaming, then the MIDI interface"
-                   : "AC header 1.00, collection = the MIDI (and audio streaming) interfaces", ac_ok && coll_ok);
-    if (T_UAC)                                         /* #67: macOS 10.14 .. 15 (kernel AppleUSBAudio) */
+    check(MIDI_LAST ? "audio function: AC, AS, MIDI in a row (Skiff #59: AS contiguous with AC)"
+                    : "audio function: AC, MIDI, AS in a row",
+          MIDI_LAST ? (!T_UAC || (as_if == aud_if + 1 && midi_if == aud_if + 2))
+                    : (midi_if == aud_if + 1 && (!T_UAC || as_if == aud_if + 2)));
+    check(AS_ONLY  ? "AC header 1.00, collection = the audio streaming interface alone (Skiff #59)"
+          : AS_FIRST ? "AC header 1.00, collection = the audio streaming, then the MIDI interface"
+                     : "AC header 1.00, collection = the MIDI (and audio streaming) interfaces", ac_ok && coll_ok);
+    if (T_UAC && !AS_ONLY)                             /* #67: macOS 10.14 .. 15 (kernel AppleUSBAudio) */
         check(AS_FIRST ? "AppleUSBAudio (macOS <= 15) parser model reaches the audio streaming interface"
                        : "AppleUSBAudio (macOS <= 15) parser model stops before it (1.0 .. 1.5, #67)",
               aua_parses_as(c, n) == AS_FIRST);
@@ -318,14 +338,14 @@ int main(void)
     check("CDC union and call management name the data interface", union_ok && cm_ok &&
           (!CDC_SHOWN || (data_if == comm_if + 1 && if_class[data_if] == 10)));
 
-    /* ---- the released bytes ---- */
-    if (CDC_SHOWN && T_LAYOUT == 0)
+    /* ---- the released bytes (MIDI_LAST / AS_ONLY are new, unreleased layouts: no v1.0 reference to diff against) */
+    if (CDC_SHOWN && T_LAYOUT == 0 && !MIDI_LAST && !AS_ONLY)
         check(AS_FIRST    ? "layout 0 = Felucca 1.0 + the 48 kHz rate (if built) + the AC collection order, nothing else"
               : AUDIO_48K ? "layout 0 = Felucca 1.0 + the 48 kHz rate (format, EP 0x84 size, bcdDevice), nothing else"
                           : "layout 0 = Felucca 1.0 byte for byte",
               T_UAC ? same_as(dev, c, n, V10_CDC_DEV, V10_CDC_CFG, sizeof V10_CDC_CFG)
                     : same_as(dev, c, n, V10_CDC_NOUAC_DEV, V10_CDC_NOUAC_CFG, sizeof V10_CDC_NOUAC_CFG));
-    if (!CDC_SHOWN)
+    if (!CDC_SHOWN && !MIDI_LAST && !AS_ONLY)
         check(AS_FIRST    ? "without the console = 1.0's FELUCCA_CDC=0 build + 48 kHz (if built) + the AC order"
               : AUDIO_48K ? "without the console = 1.0's FELUCCA_CDC=0 build + the 48 kHz rate, nothing else"
                           : "without the console = a FELUCCA_CDC=0 build of 1.0 byte for byte",
