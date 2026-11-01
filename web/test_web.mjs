@@ -876,6 +876,10 @@ async function editorGrid() {
    an automation event's, made it one); a step's locks cleared (op 6); firmware of before: no kinds, op 7 refused */
 /* (Skiff W4) a light track (T5, T6: INFO 54 01) and the engines it may not play: refused before anything is written */
 async function editorLight() {
+  const choir = { engines: ["VOICE", "HARMONY"], light: { tracks: 48, engines: 0 } };
+  ok(!E.lightRefuses(choir, 0, 1) && E.lightRefuses(choir, 1, 1) &&
+     E.lightRefuses(choir, 5, 1) && !E.lightRefuses(choir, 1, 0),
+     "HARMONY: shared choir only on T1; VOICE remains available");
   const C = E.CMD;
   const { rq, done } = attachMock({});
   const info = E.parse[C.INFO](await rq(E.req.info()));
