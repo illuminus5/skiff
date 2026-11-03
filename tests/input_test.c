@@ -1011,6 +1011,33 @@ int main(void)
         }
     }
 
+    {   /* (2.2) MENU > MIDI > REMOTE (seq.c midi_event): a button held from MIDI (virt) is pressed and let go through
+         * the same debounce as its contact; a tap shorter than a frame (vtap toggled, virt already clear) lands once */
+        uint32_t i, was, pressed = 0, released = 0, ok;
+        reset();
+        sim_us = 0;
+        sim_col = 0;
+        fm1_in.virt = 1u << 6;
+        fm1_in.vtap ^= 1u << 6;
+        for (i = 0; i < FM1_NCOL * 4u; i++)
+            tick();
+        ok = state_of(6) && (fm1_in.pressed >> 6) & 1u;
+        fm1_in.virt = 0;
+        for (i = 0; i < FM1_NCOL * (FM1_DEB_RELEASE + 2u); i++)
+            tick();
+        ok &= !state_of(6) && (fm1_in.released >> 6) & 1u;
+        reset();
+        fm1_in.vtap ^= 1u << 6;
+        for (i = 0; i < FM1_NCOL * (FM1_DEB_RELEASE + 6u); i++) {
+            was = state_of(6);
+            tick();
+            pressed += !was && state_of(6);
+            released += was && !state_of(6);
+        }
+        check("(2.2) REMOTE: a MIDI-held button presses and lets go as its contact would; a sub-frame tap lands once",
+              ok && pressed == 1u && released == 1u);
+    }
+
     if (fails) {
         printf("INPUT TEST FAILED (%d)\n", fails);
         return 1;

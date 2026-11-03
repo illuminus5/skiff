@@ -244,8 +244,10 @@ static void cdc_task(void) {}
 #define usb_start() ((void)0)
 #define usb_retry(ms) ((void)(ms))
 #define usb_detach() ((void)0)
+#define ep1_tx() ((void)0)                       /* ((2.2) MIDI OUT's sender, nested in the render) */
 #include "../../firmware/src/master.c"
 #include "../../firmware/src/main.c"
+#undef ep1_tx
 #undef usb_poll
 #undef usb_start
 #undef usb_retry

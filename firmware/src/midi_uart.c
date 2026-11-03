@@ -7,7 +7,7 @@
  * USB-MIDI packets (cable 0, CIN = status >> 4), so seq.c routes them by channel
  * exactly as USB (CH1-4 or SEL;
  * host tests: midi_uart_test, hostsim TRACKS trs_test);
- * Clock/Start/Continue/Stop retain timestamps and source; other realtime,
+ * Clock/Start/Continue/Stop retain timestamps and source; ((2.2) Song Position as CIN 3;) other realtime,
  * system common and SysEx are ignored (no SysEx->UBOOT from DIN). */
 #include "../hal/fm1_uart.h"   /* registers; relative, so the host tests find it too */
 
@@ -29,6 +29,15 @@ static uint32_t um_len(uint32_t s)                 /* data bytes of a channel st
     return (s & 0xE0u) == 0xC0u ? 1u : 2u;         /* Cx Dx: 1, else 2 */
 }
 
+/* (2.2) MENU > MIDI > THRU ON: what the jack brings in goes out over USB too (the FM-1 as a TRS-to-USB MIDI interface:
+ * a keyboard on the jack reaches the computer as it plays): channel messages, the clock and its Start / Continue /
+ * Stop, Song Position; no SysEx. Due at once (usb.c mo_put; TIMER5, never with the audio ISR's queueing) */
+static void um_thru(uint32_t pkt)
+{
+    if (MSET(15, 17) & MO_THRU_ON)
+        (void)mo_put(pkt, mo.now);
+}
+
 static void um_byte(uint32_t b)
 {
     if (b >= 0xF8u) {
@@ -37,13 +46,14 @@ static void um_byte(uint32_t b)
                 um.msgs++;
             else
                 um.drops++;
+            um_thru(0xFu | b << 8);
         }
         return;                                    /* realtime keeps running status */
     }
     if (b & 0x80u) {
         um.sysex = b == 0xF0u;
-        um.st = b < 0xF0u ? (uint8_t)b : 0;        /* system common/SysEx cancel running status */
-        um.need = (uint8_t)um_len(b);
+        um.st = b < 0xF0u || b == 0xF2u ? (uint8_t)b : 0;   /* system common/SysEx cancel running status ((2.2) */
+        um.need = (uint8_t)um_len(b);                       /* Song Position F2: its two bytes first) */
         um.got = 0;
         return;
     }
@@ -58,12 +68,17 @@ static void um_byte(uint32_t b)
         uint32_t d1 = um.need == 2u ? um.d0 : b, d2 = um.need == 2u ? b : 0u;
         uint32_t pkt = (um.st >> 4) | (uint32_t)um.st << 8 | d1 << 16 | d2 << 24;
         um.got = 0;
+        if (um.st == 0xF2u) {                      /* ((2.2) Song Position: CIN 3 as USB brings it; no running status) */
+            pkt = 0x3u | 0xF2u << 8 | d1 << 16 | d2 << 24;
+            um.st = 0;
+        }
         if (midi_enqueue(pkt, 2u)) {
             um.msgs++;
         } else {
             midi_in_overflow = 1;
             um.drops++;
         }
+        um_thru(pkt);
     }
 }
 

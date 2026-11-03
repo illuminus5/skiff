@@ -84,6 +84,82 @@ static uint32_t trk_midi_ch(uint32_t i)            /* MIDI channel 0..15 of trac
     return mch_io ? (i + mch_io[i]) & 15u : i;
 }
 
+/* (2.2) T1..T6 CHANNEL's flags ride in their bytes' high bits (bit 6 EXT, bit 7 OFF), above the channel: (i + b) & 15,
+ * all an older firmware reads, is the channel still. NOTES OUT and the rest of MENU > MIDI: usb.c MSET */
+#define MCH_EXT 0x40u
+#define MCH_OFF 0x80u
+static uint32_t notes_out(void) { uint32_t m = MSET(15, 17) & 3u; return m == 3u ? NO_ALL : m; }
+static uint32_t trk_ext(uint32_t i) { return mch_io && (mch_io[i % NTRK] & (MCH_EXT | MCH_OFF)) == MCH_EXT; }
+static uint32_t trk_moff(uint32_t i) { return mch_io && (mch_io[i % NTRK] & MCH_OFF); }
+
+/* (2.2) NOTES OUT: what went out, per track. on[i]: a bit per note sent whose note-off is owed, all on channel ch[i];
+ * owe[i]: those whose note-off the ring had no room for (lost: sent again next block). quiet: MIDI IN's notes are going
+ * in (never sent back: no loop through a computer). cfg: the settings events_block last saw. clk, started: CLOCK OUT */
+static struct {
+    uint32_t on[NTRK][4], owe[NTRK][4], cfg[2], clk;
+    uint8_t ch[NTRK], quiet, lost, started;
+} mn __attribute__((section(".bss.mo")));
+
+static int mo_off(uint32_t i, uint32_t note)        /* note's note-off out on track i's channel; 0: no room */
+{
+    uint32_t w = note >> 5, bit = 1u << (note & 31u);
+    if (!mo_put(0x08u | (0x80u | mn.ch[i]) << 8 | note << 16, mo.tick)) {
+        mn.owe[i][w] |= bit;
+        mn.lost = 1;
+        return 0;
+    }
+    mn.on[i][w] &= ~bit;
+    mn.owe[i][w] &= ~bit;
+    return 1;
+}
+
+/* what tracks mask sent ends (the owed note-offs first); a full ring: the rest next block (lost) */
+static __attribute__((noinline)) void mo_flush(uint32_t mask)
+{
+    uint32_t i, j;
+    for (i = 0; i < NTRK; i++)
+        if ((mask >> i) & 1u)
+            for (j = 0; j < 128u; j++) {
+                if (!mn.on[i][j >> 5]) {
+                    j |= 31u;                           /* (a word with nothing: the next) */
+                    continue;
+                }
+                if ((mn.on[i][j >> 5] >> (j & 31u)) & 1u && !mo_off(i, j))
+                    return;
+            }
+}
+
+/* a note of track t to MIDI OUT (vel: on, 0: off), as NOTES OUT says: keys (key_on / key_off: KEYS's) or what it plays
+ * (voice.c trk_note_on / trk_note_off: ALL's; an EXT track's whatever NOTES OUT says; OFF: none). An off only for a note
+ * that went out, on the channel it went on; a note sent again ends first; a track's channel changed: what it sent ends
+ * there first. The velocity as played (the matrix's VEL moves the voice's). 1: an EXT track (no voice) */
+static __attribute__((noinline)) int mo_note(track_t *t, uint32_t note, uint32_t vel, uint32_t keys)
+{
+    uint32_t i = trk_index(t), ext = trk_ext(i), mode = notes_out(), ch, w = note >> 5, bit = 1u << (note & 31u);
+    if (note > 127u || trk_moff(i) || (keys ? mode != NO_KEYS || ext : mode != NO_ALL && !ext))
+        return (int)ext;
+    if (!vel) {
+        if ((mn.on[i][w] & bit) && !(mn.owe[i][w] & bit))
+            (void)mo_off(i, note);
+        return (int)ext;
+    }
+    if (mn.quiet)
+        return (int)ext;
+    ch = trk_midi_ch(i);
+    if (ch != mn.ch[i]) {
+        mo_flush(1u << i);                              /* (its notes end on the channel they went on) */
+        if (mn.on[i][0] | mn.on[i][1] | mn.on[i][2] | mn.on[i][3])
+            return (int)ext;                            /* (no room for all of them: this one not) */
+        mn.ch[i] = (uint8_t)ch;
+    }
+    if ((mn.on[i][w] & bit) && !mo_off(i, note))
+        return (int)ext;
+    vel = vel > 127u ? 127u : vel ? vel : 1u;
+    if (mo_put(0x09u | (0x90u | ch) << 8 | note << 16 | vel << 24, mo.tick))
+        mn.on[i][w] |= bit;
+    return (int)ext;
+}
+
 static int drum_track(const track_t *t) { return drum_engine(eng_idx(t->eng_req)); }   /* ((Skiff) DRUM or DRUM-X) */
 
 /* the 27 keys from F: black or white, and the key's place among the keys of its colour (white 0..15, black
@@ -902,10 +978,11 @@ static __attribute__((noinline)) uint32_t kb_chord_of(uint32_t k, track_t *t)
 }
 
 /* key k plays kb_note[k] on track t: its chord (chord.c; the note alone with CHRD OFF, (2.1, #74) a SOLO black key). A
- * note another key holds already sounds: it is not started again (nor sent to MIDI OUT); the key keeps its notes */
+ * note another key holds already sounds: it is not started again (nor sent to MIDI OUT); the key keeps its notes.
+ * ((2.2) NOTES OUT KEYS: the keys' notes out as pressed; ALL: what the track plays goes out instead, voice.c) */
 static void key_on(uint32_t k, track_t *t)
 {
-    uint32_t n = kb_chord_of(k, t), i, mc = trk_midi_ch(trk_index(t));
+    uint32_t n = kb_chord_of(k, t), i;
     kb_chn[k] = 0;
     in_key = (uint8_t)KB_IN(k);                     /* (the arp keeps the key: arp_add) */
     for (i = 0; i < n; i++) {
@@ -913,7 +990,7 @@ static void key_on(uint32_t k, track_t *t)
         if (midi_local_held(t, x))
             continue;
         input_on(t, x, KB_VEL(k));
-        midi_out_event(0x09u | (0x90u | mc) << 8 | x << 16 | KB_VEL(k) << 24);
+        (void)mo_note(t, x, KB_VEL(k), 1);
     }
     in_key = in_solo = 0;
     kb_chn[k] = (uint8_t)n;
@@ -923,7 +1000,7 @@ static void key_on(uint32_t k, track_t *t)
 /* key k is up: the notes it started end, but those another key still holds */
 static void key_off(uint32_t k, track_t *t)
 {
-    uint32_t n = kb_chn[k], i, mc = trk_midi_ch(trk_index(t));
+    uint32_t n = kb_chn[k], i;
     kb_chn[k] = 0;
     in_solo = kb_sol[k];
     for (i = 0; i < n; i++) {
@@ -931,19 +1008,18 @@ static void key_off(uint32_t k, track_t *t)
         if (midi_local_held(t, x))
             continue;
         input_off(t, x);
-        midi_out_event(0x08u | (0x80u | mc) << 8 | x << 16);
+        (void)mo_note(t, x, 0, 1);                  /* ((2.2) on the channel its note-on went on) */
     }
     in_solo = 0;
 }
 
 #ifdef FM1_INPUT_LAT
 /* the press latency stats (hal/fm1_input.h fm1_in_stat, console `inp`): from the first scan that saw
- * key k closed to its note-on here, and to the note's first sample leaving the DMA (kb_out_tick:
+ * key k closed to its note-on here, and to the note's first sample leaving the DMA (mo.tick:
  * audio.c, the TIMER4 tick at which the block being rendered starts to play) */
-static uint32_t kb_out_tick;
 static __attribute__((noinline)) void kb_lat(uint32_t k)
 {
-    uint32_t t0 = fm1_in.note_t0[k], d = fm1_ticks() - t0, o = kb_out_tick - t0;
+    uint32_t t0 = fm1_in.note_t0[k], d = fm1_ticks() - t0, o = mo.tick - t0;
     fm1_in_stat.kb_n++;
     fm1_in_stat.kb_sum += d;
     fm1_in_stat.dac_sum += o;
@@ -1068,7 +1144,10 @@ static void kb_outer(void)
 }
 #endif
 
-static void keyboard_block(void)
+/* the keys' changes, once a block. ((2.2) Not inlined, and measured on its own (tests/target_budget.py): its loop over
+ * the 27 keys (which runs only when one changed) laid out inside the audio ISR's own made that ISR's static cost jump
+ * with every small change in what it inlines (#74; a key's note to MIDI OUT here) */
+static __attribute__((noinline)) void keyboard_block(void)
 {
     uint32_t cur = fm1_in.notes, ch, k;
     uint32_t lay, fx;
@@ -1132,34 +1211,22 @@ static void keyboard_block(void)
 }
 
 /* -------------------------------------------------------- sequencer --- */
-#if BOARD_SMK37
-/* (SMK-37 Pro, SMK37_UX.md question 12) MIDI clock out of the TRS jack, from the internal clock: Start at PLAY, then 24
- * pulses a beat while playing (counted in samples, beat_samples: the song's tempo), Stop at STOP. With an external
- * clock (MENU > CLOCK) none: the clock is someone else's */
-static uint32_t smk_clk_acc;
-static void smk_clk_block(uint32_t n)
-{
-    uint32_t b;
-    if (!song.playing || song.g[G_CLOCK])
-        return;
-    b = beat_samples();
-    smk_clk_acc += n * 24u;
-    while (b && smk_clk_acc >= b) {
-        smk_uart_tx_put(0xF8u);
-        smk_clk_acc -= b;
-    }
-}
-#endif
+/* (2.2) MENU > MIDI > CLOCK OUT (ON by default): with the internal clock, MIDI clock out of USB ((SMK-37 Pro) and the
+ * TRS jack, as its 1.4 did): Start when the sequencer starts (after a count-in), its first pulse with step 0, then 24 a
+ * beat, while stopped too (the gear that follows knows the tempo), Stop when it stops. The pulses keep the sequencer's
+ * own grid: six to its 1/16 (div_samples, as the steps, the click and the launch points), each at its sample in the
+ * block (mo_block_begin / mo_block_end). An external clock (MENU > CLOCK USB or TRS): none, the clock is someone else's */
+static int clock_out(void) { return !song.g[G_CLOCK] && !(MSET(15, 17) & MO_CLOCK_OFF); }
+static void mo_rt(uint32_t b, uint32_t due) { (void)mo_put(0x0Fu | b << 8, due); }
 
 static void seq_start(void)
 {
     uint32_t i;
-#if BOARD_SMK37
-    if (!song.g[G_CLOCK]) {                        /* (the TRS jack: Start, the first pulse with the first block) */
-        smk_uart_tx_put(0xFAu);
-        smk_clk_acc = beat_samples();
+    if (clock_out()) {                             /* ((2.2) Start, and the first pulse with this block, step 0's) */
+        mo_rt(0xFAu, mo.tick);
+        mn.started = 1;
+        mn.clk = div_samples(2);
     }
-#endif
     motion_begin();
     take_clear();                                  /* (Skiff) TAKES: a new log from PLAY */
     for (i = 0; i < NTRK; i++) {                   /* every track from its step 0, together */
@@ -1171,8 +1238,9 @@ static void seq_start(void)
         t->rskip_n = 0;
         t->rh_n = 0;
         t->rat_left = 0;
-        if (t->p[P_LTRIG] && t->p[P_LSYNC])        /* (#16) LFO 2 FREE + SYNC: in time with the bars from PLAY */
-            t->lfo_ph = (uint32_t)t->p[P_LPHASE] << 25;
+        if (t->p[P_LSYNC] && (t->p[P_LTRIG] || ENGINES[t->engine]->oneshot))   /* (#16) LFO 2 FREE + SYNC: in time */
+            t->lfo_ph = (uint32_t)t->p[P_LPHASE] << 25;   /* with the bars from PLAY ((2.2, #94) a kit's too: its LFO
+                                                           * runs free, no note restarts it) */
     }
     song.tick = 0;
     beat_pos = 0; beat_n = 0;                      /* the ARP LED's beat from the top too */
@@ -1252,13 +1320,10 @@ static uint32_t seq_ties_of(track_t *t, const step_t *s, uint32_t qseq, int32_t 
     return m;
 }
 
+static void mo_motion_end(void);                   /* ((2.2) motion_end, an EXT track's CCs back with it) */
 static void seq_stop(void)
 {
     uint32_t i;
-#if BOARD_SMK37
-    if (song.playing && !song.g[G_CLOCK])
-        smk_uart_tx_put(0xFCu);                    /* (the TRS jack: Stop) */
-#endif
     song.playing = 0;
     thr_out = 0;                                   /* (Skiff) the throws back at once (throw.c) */
     cin_left = 0;                                  /* (a count-in: cancelled, nothing recorded) */
@@ -1275,7 +1340,48 @@ static void seq_stop(void)
         trk[i].nud = 0;                            /* (Skiff) no NUDGE pending */
     }
     memset(fol_src, 0, sizeof fol_src);            /* ((2.1) no chords: the followers as written until theirs play) */
-    motion_end();
+    if (mn.started) {                              /* ((2.2) CLOCK OUT: Stop, after the notes' ends) */
+        mo_rt(0xFCu, mo.tick);
+        mn.started = 0;
+    }
+    mo_motion_end();                               /* ((2.2) motion_end, an EXT track's CCs back with it) */
+}
+
+/* (2.2) Song Position (an external clock's SPP, then Continue; midi_clock.c): from the top as PLAY, then every track
+ * moved on, silently, to where pos 16ths put it: its steps (N_DIV in 48ths of a quarter: DIV_48) in its direction, its
+ * passes (TAKES, the trig conditions), a step part-way waiting for the next; the click, the launch points and the beat
+ * with them. SONG lists stay on their entries. ponytail: the straight grid (a swung step lands a few ms off until the
+ * next); PING / RAND walk their cycle, the rest of a long way skipped in whole cycles. DIV_48: voice.c */
+static __attribute__((noinline)) void seq_locate(uint32_t pos)
+{
+    uint32_t i, k, rem, adv, len, per, u;
+    seq_start();
+    if (!pos)
+        return;
+    for (i = 0; i < NTRK; i++) {
+        track_t *t = &trk[i];
+        u = DIV_48[(uint32_t)t->p[P_SDIV] % 10u];
+        len = t->p[P_SLEN] > 0 ? (uint32_t)t->p[P_SLEN] : 1u;
+        k = pos * 12u / u;
+        rem = pos * 12u % u;
+        adv = k + (rem != 0u);                      /* (the steps begun: the last one sounds from the next) */
+        per = t->p[P_DIR] == DIR_PING && len > 1u ? (2u * len - 2u) * len : len;   /* (the state's cycle, its passes) */
+        take_pass[i] = (uint16_t)(adv / per * (per / len));
+        for (adv %= per; adv; adv--) {              /* (seq_tick's bookkeeping, nothing played) */
+            t->seq_idx = (uint16_t)seq_next(t, len);
+            if (t->p[P_DIR] == DIR_FWD ? !t->seq_idx : !t->seq_cnt || t->seq_cnt >= len) {
+                t->seq_cnt = 0;
+                take_pass[i]++;
+            }
+            t->seq_cnt++;
+        }
+        t->seq_pos = rem ? rem * div_samples((uint32_t)t->p[P_SDIV]) / u : 0x7FFFFFFFu;
+    }
+    clk_step = (pos - 1u) & 15u;                    /* (the click's next 1/16: pos's) */
+    clk_pos = div_samples(2);
+    launch_steps = pos;
+    beat_n = (uint8_t)((pos >> 2) & 3u);
+    beat_pos = (pos & 3u) * div_samples(2);
 }
 
 /* play one step: TIE extends, REST releases, NOTE (re)triggers its notes, then its lane hits (their GM
@@ -1497,6 +1603,7 @@ static __attribute__((noinline)) void seq_ratchet(track_t *t, uint32_t period)
 
 /* (Skiff) step idx plays now: its trig condition and chance (ahead: it is played early, its pass not begun), its
  * automation and locks, then its notes (seq_step) */
+static void mo_motion(track_t *t, uint32_t idx, uint32_t play);   /* ((2.2) motion_step, an EXT track's CCs out) */
 static __attribute__((noinline)) void seq_fire(track_t *t, uint32_t idx, uint32_t period, uint32_t ahead)
 {
     const step_t *s = &t->step[idx];
@@ -1508,7 +1615,7 @@ static __attribute__((noinline)) void seq_fire(track_t *t, uint32_t idx, uint32_
         skip = SEQ_MISS;
     else if (step_chance(s) < 100u && rng() % 100u >= step_chance(s))
         skip = SEQ_MISS;
-    motion_step(t, idx, &motion, skip == SEQ_ROLLED);
+    mo_motion(t, idx, skip == SEQ_ROLLED);
     if (t->rskip_n && t->rskip_idx == idx) {
         for (k = 0; k < t->rskip_n; k++) {
             for (i = 0; i < s->n; i++)
@@ -1635,30 +1742,142 @@ static void seq_tick(track_t *t, uint32_t n)
 /* MIDI in: the track a channel plays (0..15): G_ROUTE CH1-6 (0) the first track set to channel ch ((1.3) T1..T6
  * CHANNEL: channels 1..6 tracks 1..6 unless set; a channel no track is set to never gets here: midi_event drops it),
  * SEL (1) every channel the selected track */
-static uint32_t midi_route;                /* G_ROUTE and the tracks' channels events_block last saw (a change: midi_route_drop) */
-static int32_t midi_slot(uint32_t ch)      /* the track set to channel ch, -1 none */
+static int32_t midi_slot(uint32_t ch)      /* the track set to channel ch, -1 none ((2.2) a track OFF: none) */
 {
     uint32_t i;
     for (i = 0; i < NPART; i++)
-        if (trk_midi_ch(i) == ch)
+        if (trk_midi_ch(i) == ch && !trk_moff(i))
             return (int32_t)i;
     return -1;
 }
+/* (2.2) MENU > MIDI > AUTO CHANNEL: that channel plays the selected track (a keyboard follows ALGORITHM), beside the
+ * tracks' own; it wins over a track set to it */
 static track_t *midi_track(uint32_t ch)
 {
-    int32_t k = song.g[G_ROUTE] ? -1 : midi_slot(ch);
+    int32_t k = song.g[G_ROUTE] || ch + 1u == mset_ch(MSET(1, 1) & 31u) ? -1 : midi_slot(ch);
     return k >= 0 ? &trk[k] : TSEL;
 }
-static uint32_t midi_route_key(void)
-{
-    uint32_t i, k = song.g[G_ROUTE] ? 1u << 31 : 0u;
-    for (i = 0; i < NPART; i++)
-        k |= trk_midi_ch(i) << (4u * i);
-    return k;
-}
-
 #include "midi_control.c"
 #include "midi_clock.c"
+
+/* (2.2) MIDI at a block's start (events_block, after the transport's requests, before any note): MENU > MIDI changed
+ * (MIDI IN, a track's channel or its OFF / EXT, NOTES OUT, AUTO, REMOTE): CH1-6 lets go of the channels it no longer
+ * hears (midi_route_drop), and what went out ends when a channel or NOTES OUT changed. Note-offs the ring had no room
+ * for go out again. CLOCK OUT's pulse in this block of n samples: at its start, out now (ahead of the block's notes);
+ * later in it, 1 + its sample (mo_block_end, at the block's end, sends it then); 0 none */
+static __attribute__((noinline)) uint32_t mo_block_begin(uint32_t n)
+{
+    uint32_t i, j, k0 = 0, k1 = notes_out() << 16 | mset_ch(MSET(1, 1) & 31u) << 18 | mset_ch(MSET(15, 5) >> 3) << 23 |
+                                 (uint32_t)(song.g[G_ROUTE] != 0) << 28, pulse = 0;
+    if (!clock_out()) {
+        if (mn.started) {                           /* (CLOCK OUT or CLOCK changed while started: Stop) */
+            mo_rt(0xFCu, mo.tick);
+            mn.started = 0;
+        }
+    } else {
+        uint32_t p = div_samples(2), c0 = mn.clk;   /* (six pulses a 1/16: mn.clk counts samples x 6) */
+        mn.clk += 6u * n;
+        if (mn.clk >= p) {
+            pulse = c0 < p ? (p - c0 + 5u) / 6u : 0u;
+            mn.clk -= p;
+            mn.clk = mn.clk < p ? mn.clk : 0u;      /* (a tempo raised a lot: no burst of pulses) */
+            if (!pulse)
+                mo_rt(0xF8u, mo.tick);
+            pulse += pulse != 0u;
+        }
+    }
+    for (i = 0; mch_io && i < NTRK; i++)
+        if (i < 4u)
+            k0 |= (uint32_t)mch_io[i] << (8u * i);
+        else
+            k1 |= (uint32_t)mch_io[i] << (8u * (i - 4u));
+    if (k0 != mn.cfg[0] || k1 != mn.cfg[1]) {
+        uint32_t x0 = k0 ^ mn.cfg[0], x1 = k1 ^ mn.cfg[1];   /* (a track's channel changed: its notes end, the others
+                                                             * play on; NOTES OUT changed: all of them) */
+        uint32_t ends = (x1 & 0x30000u) ? (1u << NTRK) - 1u :
+                        (uint32_t)((x0 & 0xFFu) != 0u) | (uint32_t)((x0 & 0xFF00u) != 0u) << 1 |
+                        (uint32_t)((x0 & 0xFF0000u) != 0u) << 2 | (uint32_t)((x0 >> 24) != 0u) << 3 |
+                        (uint32_t)((x1 & 0xFFu) != 0u) << 4 | (uint32_t)((x1 & 0xFF00u) != 0u) << 5;
+        if (x1 & 0x0F800000u)
+            fm1_in.virt = 0;                        /* (REMOTE moved or off: its buttons let go) */
+        mn.cfg[0] = k0;
+        mn.cfg[1] = k1;
+        if (!song.g[G_ROUTE])
+            midi_route_drop();
+        if (ends)
+            mo_flush(ends);
+    }
+    if (mn.lost) {
+        mn.lost = 0;
+        for (i = 0; i < NTRK; i++)
+            for (j = 0; j < 128u; j++)
+                if ((mn.owe[i][j >> 5] >> (j & 31u)) & 1u && !mo_off(i, j))
+                    return pulse;
+    }
+    return pulse;
+}
+/* (2.2) .. the block's pulse later in it (mo_block_begin's 1 + its sample), after the block's notes */
+static __attribute__((noinline)) void mo_block_end(uint32_t pulse)
+{
+    mo_rt(0xF8u, mo.tick + (pulse - 1u) * DAC_TICKS);
+}
+
+/* (2.2) an EXT track's parameters with a CC (midi_control.c cc_out_of: the standard map's, the ones learned to it):
+ * their CCs into cc, ids into id (MO_CCN at most), their values into v; how many */
+#define MO_CCN (NELEM(MIDI_CC_MAP) + ML_N)
+static uint32_t mo_ccs(const track_t *t, uint8_t *cc, uint8_t *id, uint8_t *v)
+{
+    uint32_t i, j, n = 0, e = MIDI_CC_ENG[eng_idx(t->eng_req)], c, p;
+    for (i = 0; i < MO_CCN; i++) {
+        if (i < NELEM(MIDI_CC_MAP)) {
+            p = MIDI_CC_MAP[i][1];
+            c = p == MCC_CUT ? e >> 4 : e & 15u;
+            p = p < MCC_CUT ? p : c ? P_E0 + c - 1u : P_COUNT;
+        } else
+            p = ml_tab && ml_tab[3u * (i - NELEM(MIDI_CC_MAP)) + 2u] == trk_index(t) ?
+                ml_id(ml_tab[3u * (i - NELEM(MIDI_CC_MAP))]) : P_COUNT;
+        if (p >= P_COUNT || !(c = cc_out_of(t, p)))
+            continue;
+        for (j = 0; j < n && id[j] != p; j++)
+            ;
+        if (j < n)
+            continue;
+        cc[n] = (uint8_t)c;
+        id[n] = (uint8_t)p;
+        v[n++] = (uint8_t)cc_value(t, p);
+    }
+    return n;
+}
+/* .. the ones that changed since (v), out now (as this block plays: before its notes) */
+static void mo_ccs_out(const track_t *t, const uint8_t *cc, const uint8_t *id, const uint8_t *v, uint32_t n)
+{
+    uint32_t i, x, ch = trk_midi_ch(trk_index(t));
+    for (i = 0; i < n; i++)
+        if ((x = cc_value(t, id[i])) != v[i])
+            (void)mo_put(0x0Bu | (0xB0u | ch) << 8 | (uint32_t)cc[i] << 16 | x << 24, mo.tick);
+}
+/* a step's automation and locks (motion.c motion_step: before its notes); on an EXT track what they move goes out as
+ * CCs first (an external synth's sound locked per step, as the track's own would be) */
+static __attribute__((noinline)) void mo_motion(track_t *t, uint32_t idx, uint32_t play)
+{
+    uint8_t cc[MO_CCN], id[MO_CCN], v[MO_CCN];
+    uint32_t n = trk_ext(trk_index(t)) ? mo_ccs(t, cc, id, v) : 0u;
+    motion_step(t, idx, &motion, play);
+    mo_ccs_out(t, cc, id, v, n);
+}
+/* .. the transport stops: the automation's values back (motion.c motion_end), an EXT track's CCs with them */
+static __attribute__((noinline)) void mo_motion_end(void)
+{
+    uint8_t cc[MO_CCN], id[MO_CCN], v[MO_CCN];
+    uint32_t k, n;
+    for (k = 0; k < NTRK; k++)
+        if (trk_ext(k)) {
+            n = mo_ccs(&trk[k], cc, id, v);
+            motion_restore(&trk[k]);
+            mo_ccs_out(&trk[k], cc, id, v, n);
+        }
+    motion_end();
+}
 
 /* the count-in: its first beat now (accented) */
 static __attribute__((noinline)) void cin_begin(void)
@@ -1732,10 +1951,31 @@ static int32_t click_beat_now(void)
     return clk_pos == CLK_START ? 0 : (int32_t)(clk_step >> 2);
 }
 
-/* everything that happens between two rendered blocks */
-static void events_block(uint32_t n)
+/* an external clock's block (CLOCK USB / TRS): the samples the sequencer moves on by, from the pulses (midi_clock.c).
+ * ((2.2) Not inlined: inlined, its `seq_n = 0` was parked before the render loop's head, a backward jump the ISR's
+ * budget (tests/target_budget.py) took for a loop around half of events_block) */
+static __attribute__((noinline)) uint32_t clock_ext_block(void)
 {
-    uint32_t i, pr, ord, seq_n = n;
+    uint32_t last;
+    if (!song.playing)
+        return 0;
+    last = midi_clock.have_pulse ? midi_clock.last_ms : midi_clock.start_ms;
+    if (fm1_ms - last > 500u) {
+        midi_clock.starved = !midi_clock.have_pulse;   /* ((2.2) none came at all: the UI says what it waited for) */
+        seq_stop();                                 /* cable loss must not leave a running held note */
+        midi_clock.tempo_valid = 0;
+        return 0;
+    }
+    return midi_clock_advance(fm1_ms);
+}
+
+/* everything that happens between two rendered blocks. ((2.2) Not inlined, measured on its own (tests/target_budget.py):
+ * inlined into the audio ISR's render loop, a cold stub the compiler parks before that loop's head (an external clock's
+ * seq_n = 0, the second core's wait) moved with each small change here, and its backward jump read as a loop around
+ * hundreds of instructions; a call once a block costs nothing) */
+static __attribute__((noinline)) void events_block(uint32_t n)
+{
+    uint32_t i, pr, ord, seq_n = n, pulse;
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
     if (midi_clock.mode != clock_mode) {
         seq_stop();
@@ -1765,12 +2005,8 @@ static void events_block(uint32_t n)
         }
         transport_req = 0;
     }
-    if (midi_route != midi_route_key()) {              /* MIDI IN or a track's channel changed: CH1-6 lets go of the
-                                                         * channels no track is set to */
-        midi_route = midi_route_key();
-        if (!song.g[G_ROUTE])
-            midi_route_drop();
-    }
+    pulse = mo_block_begin(n);                         /* ((2.2) MENU > MIDI changed: what no longer applies, let go;
+                                                         * CLOCK OUT's pulse) */
     pr = panic_req;
     panic_req = 0;
     if (midi_in_overflow) {                            /* a lost note-off must never leave a held note */
@@ -1785,6 +2021,7 @@ static void events_block(uint32_t n)
             trk[i].seq_n = trk[i].seq_hold = trk[i].slide_glide = trk[i].rat_left = 0;
         }
         pr |= (1u << NTRK) - 1u;
+        fm1_in.virt = 0;                               /* ((2.2) REMOTE's buttons: a lost release lets them go too) */
         RING_PUBLISH();
         midi_in_overflow = 0;
     }
@@ -1824,20 +2061,14 @@ static void events_block(uint32_t n)
                 else
                     midi_clock_transport(status, ms);
             }
+        } else if (status == 0xF2u) {                 /* ((2.2) Song Position, from the clock's source) */
+            if (clock_mode == source)
+                midi_clock_spp(d1 | d2 << 7);
         } else
             midi_event(st, ch, d1, d2);
     }
-    if (clock_mode) {
-        seq_n = 0;
-        if (song.playing) {
-            uint32_t last = midi_clock.have_pulse ? midi_clock.last_ms : midi_clock.start_ms;
-            if (fm1_ms - last > 500u) {
-                seq_stop();                         /* cable loss must not leave a running held note */
-                midi_clock.tempo_valid = 0;
-            } else
-                seq_n = midi_clock_advance(fm1_ms);
-        }
-    }
+    if (clock_mode)
+        seq_n = clock_ext_block();
     if (song.playing)
         launch_clock(seq_n);                          /* (Skiff) the steps a BAR / BEAT launch waits for */
     if (aud_req)
@@ -1848,11 +2079,10 @@ static void events_block(uint32_t n)
         cin_record();
     if (song.playing)
         click_tick(seq_n);
-#if BOARD_SMK37
-    smk_clk_block(n);
-#endif
     for (i = 0; i < NPART; i++)
         arp_step(&trk[i], clock_mode ? seq_n : n, clock_mode && song.playing ? seq_n : n);
+    if (pulse)
+        mo_block_end(pulse);                          /* ((2.2) CLOCK OUT: a pulse later in the block, after its notes) */
     beat_pos += clock_mode ? seq_n : n;               /* the beat the ARP LED flashes on (ui_leds) */
     if (beat_pos >= beat_samples()) {
         beat_pos -= beat_samples();

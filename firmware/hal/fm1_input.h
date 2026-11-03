@@ -169,6 +169,9 @@ static volatile struct {
     uint32_t buttons;            /* debounced: bit i = button i (0..13) */
     uint32_t pressed, released;  /* button edges since the last fm1_input_edges() */
     uint32_t notes_pressed;      /* note-key press edges since the last fm1_input_note_edges() */
+    uint32_t virt, vtap, vack;   /* ((2.2) MENU > MIDI > REMOTE, seq.c midi_control.c: buttons held from MIDI (virt), and
+                                  * pressed (vtap toggles; vack: the scan's press took it, so a tap shorter than a
+                                  * frame still lands); closed as the contacts are, through the same debounce */
     uint8_t raw[FM1_NCOL];       /* last frame, packed rows, 1 = closed */
     uint8_t cnt[FM1_NKEY];       /* frames in a row against the debounced state */
     uint32_t note_t0[27];        /* TIMER4 tick of the first scan that saw note key n closed */
@@ -287,6 +290,8 @@ static void fm1__key(uint32_t id, uint32_t closed)
     volatile uint8_t *c = &fm1_in.cnt[id];
     uint32_t note = id >= 14u, bit = note ? 1u << (id - 14u) : 1u << id;
     uint32_t on = ((note ? fm1_in.notes : fm1_in.buttons) & bit) != 0u;
+    if (!note)
+        closed |= ((fm1_in.virt | (fm1_in.vtap ^ fm1_in.vack)) >> id) & 1u;   /* ((2.2) REMOTE's) */
     if (closed == on) {                            /* agrees with the state: start over */
         *c = 0;
         return;
@@ -308,9 +313,10 @@ static void fm1__key(uint32_t id, uint32_t closed)
         fm1_in.notes ^= bit;
     } else {
         fm1_in.buttons ^= bit;
-        if (!on)
+        if (!on) {
             fm1_in.pressed |= bit;
-        else
+            fm1_in.vack = (fm1_in.vack & ~bit) | (fm1_in.vtap & bit);   /* ((2.2) REMOTE's tap: pressed) */
+        } else
             fm1_in.released |= bit;
     }
 }

@@ -5,8 +5,9 @@
  * pull-down, output low, input enabled; UART1 at 31250 baud from PLL48M, TX only, no IRQ. Not yet checked on a unit.
  *
  *   smk_uart_tx_init()        once, before TIMER5 starts
- *   smk_uart_tx_put(b)        queue a byte (one writer at a time: the audio ISR, or the main loop with IRQs off;
- *                             dropped when the ring is full)
+ *   smk_uart_tx_put(b)        queue a byte (TIMER5 only: usb.c mo_trs, (2.2) THRU; dropped when the ring is full)
+ *   smk_uart_tx_rt(b)         (2.2) a realtime byte (the MIDI clock): it goes ahead of the bytes queued (one waits; a
+ *                             second one queues), as MIDI lets a realtime byte go between any two
  *   smk_uart_tx_tick()        TIMER5 (10 kHz): the next byte once the last has gone (TPND), or after a timeout, so a
  *                             UART that never answers stalls nothing
  * A byte takes 320 us at 31250 baud, about 3 ticks: the ring drains at the wire's speed. */
@@ -30,6 +31,7 @@
 
 static volatile uint8_t smk_ut_ring[SMK_UT_TX_RING];
 static volatile uint8_t smk_ut_w, smk_ut_r, smk_ut_busy;   /* busy: ticks the byte on the wire has had */
+static volatile uint8_t smk_ut_rt;                         /* (2.2) the realtime byte waiting (0: none) */
 static volatile uint32_t smk_ut_sent, smk_ut_drops, smk_ut_timeouts;
 
 FM1_INLINE void smk_uart_tx_init(void)
@@ -60,6 +62,14 @@ static void smk_uart_tx_put(uint32_t b)
     smk_ut_w = (uint8_t)(w + 1u);
 }
 
+static void smk_uart_tx_rt(uint32_t b)
+{
+    if (smk_ut_rt)
+        smk_uart_tx_put(b);
+    else
+        smk_ut_rt = (uint8_t)b;
+}
+
 FM1_INLINE void smk_uart_tx_tick(void)
 {
     if (smk_ut_busy) {                                     /* the last byte: gone, or given up on */
@@ -71,11 +81,16 @@ FM1_INLINE void smk_uart_tx_tick(void)
             smk_ut_timeouts++;
         smk_ut_busy = 0;
     }
-    if (smk_ut_r == smk_ut_w)
+    if (smk_ut_r == smk_ut_w && !smk_ut_rt)
         return;
     SMK_UT1_CON0 |= 1u << 13;                              /* clear TPND */
-    SMK_UT1_BUF = smk_ut_ring[smk_ut_r % SMK_UT_TX_RING];
-    smk_ut_r = (uint8_t)(smk_ut_r + 1u);
+    if (smk_ut_rt) {
+        SMK_UT1_BUF = smk_ut_rt;
+        smk_ut_rt = 0;
+    } else {
+        SMK_UT1_BUF = smk_ut_ring[smk_ut_r % SMK_UT_TX_RING];
+        smk_ut_r = (uint8_t)(smk_ut_r + 1u);
+    }
     smk_ut_busy = 1;
     smk_ut_sent++;
 }

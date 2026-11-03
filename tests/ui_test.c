@@ -141,6 +141,7 @@ static void ui_power_on(void)
     memset(&song, 0, sizeof song); sel_set(0);
     memset(fol_src, 0, sizeof fol_src);           /* ((2.1) .pool at power-on: no chords, nothing followed) */
     memset(fol_map, 0, sizeof fol_map);
+    memset(&mn, 0, sizeof mn);                    /* ((2.2) .bss at power-on: no note out, nothing owed) */
     memset(&ui, 0, sizeof ui);
     memset(&nsel, 0, sizeof nsel);                /* ((Skiff 2.0) no selection, FEEL's tiles on CHANCE) */
     clip.n = 0;                                   /* (.. nothing copied) */
@@ -1092,26 +1093,38 @@ static int test_home_names(void)
 
 /* (a Learn video comment, 2026-10-19) PLAY on CLOCK USB with no clock coming: a second on, WAITING FOR USB CLOCK, then
  * where CLOCK is; once a start. With the clock's pulses: nothing */
+/* ((2.2) frames with the audio ISR's blocks between them, as on the unit: 22 to a 16 ms frame; clk: a pulse each) */
+static void frames_ev(uint32_t ms, int clk)
+{
+    uint32_t i, k;
+    for (i = 0; i < ms / 16u; i++) {
+        if (clk)
+            midi_enqueue(0x0Fu | 0xF8u << 8, 1);
+        frame();
+        for (k = 0; k < 22u; k++)
+            events_block(CTL);
+    }
+}
 static int test_clock_wait(void)
 {
     uint32_t ok;
     ui_power_on();
     song.g[G_CLOCK] = 1;
-    press(B_PLAY); events_block(32);
-    frames(800);
+    events_block(CTL);
+    press(B_PLAY); events_block(CTL);
+    frames_ev(400, 0);
     ok = song.playing && !msg_is("WAITING FOR USB CLOCK");
-    frames(300);
-    ok &= msg_is("WAITING FOR USB CLOCK") && str_eq(ui.msg2, "MENU > MIDI > CLOCK");
+    frames_ev(300, 0);                                  /* ((2.2) 0.5 s without one: stopped, and it says so) */
+    ok &= !song.playing && msg_is("WAITING FOR USB CLOCK") && str_eq(ui.msg2, "MENU > MIDI > CLOCK");
     ui.msg_t = 0; ui.msg2[0] = 0;
-    frames(2000);
+    frames_ev(2000, 0);
     ok &= !msg_is("WAITING FOR USB CLOCK");             /* (once) */
-    stop_transport(); frame();
-    press(B_PLAY); events_block(32);
-    midi_clock_pulse(fm1_ms);                           /* (the clock comes) */
-    frames(1500);
+    press(B_PLAY); events_block(CTL);
+    frames_ev(1500, 1);                                 /* (the clock comes) */
     ok &= song.playing && !msg_is("WAITING FOR USB CLOCK");
     song.g[G_CLOCK] = 0;
     stop_transport(); frame();
+    events_block(CTL);
     return check("PLAY on CLOCK USB with no clock: WAITING FOR USB CLOCK, MENU > MIDI > CLOCK, once; with pulses, quiet", ok);
 }
 
@@ -1576,8 +1589,9 @@ static int test_menu_tabs(void)
                  "tab gaps constant (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
                  mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 6u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN) */
-                 mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC && mtab_rows(MTAB_MIDI) == 10u);   /* ((Skiff) SYSTEM: CPU
-                                                         * CLOCK; (Skiff 2.0) USB SERIAL with the console only) */
+                 mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC && mtab_rows(MTAB_MIDI) == 16u);   /* ((Skiff) SYSTEM: CPU
+                                                         * CLOCK; (Skiff 2.0) USB SERIAL with the console only; (2.2)
+                                                         * MIDI: CLOCK OUT, AUTO CHANNEL, NOTES OUT, CC OUT, THRU, REMOTE) */
 
     ui_power_on();
     hold(B_HOME);
@@ -1612,14 +1626,15 @@ static int test_menu_tabs(void)
      * new value draws the menu again (drawn: the value in the menu's signature) */
     ok = drawn = 1;
     for (i = 0; i < MI_VALUES; i++) {
-        uint32_t n = menu_n(i), v, j, seen, want, s0;
+        uint32_t n = menu_n(i), v, j, want, s0;
+        uint64_t seen;                                 /* ((2.2) T1..T6 CHANNEL: 33 values) */
         if (i == MI_TUNE || i == MI_CPU || menu_act(i))   /* ((U3) TUNE's 101 values: below; CPU: below; (1.3) MIDI
                                                         * LEARN, LEARN CLEAR: actions, test_midi_learn) */
             continue;
         ui.menu_sel = (uint8_t)i;
         for (j = 0; j <= n; j++)                       /* down to the first value (COLOR: round) */
             press(B_OCTDN);
-        seen = 1u << menu_get(i);
+        seen = (uint64_t)1 << menu_get(i);
         for (j = 0; j <= n; j++) {                     /* up through every value */
             want = menu_step(i, 1);
             v = menu_get(i);
@@ -1627,9 +1642,9 @@ static int test_menu_tabs(void)
             press(B_OCTUP);
             ok &= menu_get(i) == want && ui.menu == 1;
             drawn &= menu_get(i) == v || ui.menu_sig != s0;
-            seen |= 1u << menu_get(i);
+            seen |= (uint64_t)1 << menu_get(i);
         }
-        ok &= seen == (1u << n) - 1u;
+        ok &= seen == ((uint64_t)1 << n) - 1u;
         for (j = 0; j <= n; j++) {                     /* and down again */
             want = menu_step(i, -1);
             v = menu_get(i);
@@ -1656,6 +1671,8 @@ static int test_menu_tabs(void)
     song.g[G_CLOCK] = song.g[G_ROUTE] = 0;
     menu_put(MI_PREVIEW, 0);
     memset(&favorites.factory[15][6], 0, 6);            /* ((1.3) T1..T6 on channels 1..6 again) */
+    MIDI_BYTE = AUTO_BYTE = 0;                          /* ((2.2) NOTES OUT ALL, CLOCK OUT ON, the rest OFF again) */
+    CPU2_BYTE &= 7u;
     bad += check("MENU: OCT+ / OCT- step every value row up / down (THEME wraps, the rest stop), the menu stays", ok);
     bad += check("MENU: every value row's new value draws the menu again (its value in the signature; 1.3.1's STEP "
                  "PREVIEW and SCREEN OFF stayed as drawn)", drawn);
@@ -2436,7 +2453,7 @@ static int test_layer(void)
     }
     /* combo: a key with FX: at once, silent, no MIDI, no recording, no step */
     ui_power_on();
-    usb.config = 1; mo = mo_w;
+    usb.config = 1; mo = mo_w; MIDI_BYTE = NO_KEYS | MO_CLOCK_OFF;   /* ((2.2) the keys as pressed, no clock: as written) */
     go_page(GR_ROLL); my_steps(TSEL); song.rec = 1; song.playing = 1;
     {
         step_t before[NSTEP];
@@ -2466,7 +2483,7 @@ static int test_layer(void)
     /* OCT UP (G4) and OCT DN (A4), the 9th and 10th white keys: held effects, silent; KNOB 4 the shimmer while
      * held, back to 0 with FX; ((Skiff phase 9) B4 GATE .. E5 VINYL) F5 on does nothing */
     ui_power_on();
-    usb.config = 1; mo = mo_w;
+    usb.config = 1; mo = mo_w; MIDI_BYTE = NO_KEYS | MO_CLOCK_OFF;   /* ((2.2) the keys as pressed, no clock: as written) */
     btn_down(B_FX); key_down(white(8)); frame();
     ok = ui.layer == LAYER_FX && !gates() && mo_w == mo && perf_held == PF_BIT(PF_OUP);
     perf_begin(CTL);                                    /* (an audio block: OCT UP runs, KNOB 4 is SHIMR) */
@@ -2720,7 +2737,7 @@ static int test_name(void)
     fm1_in.notes &= ~(1u << nm_black_key(NB_DEL, 0)); frame();
     bad += check("  DELETE held 0.64 s: one, then it repeats after 0.45 s, every 0.09 s (3 in all)", nm.len == 9u);
     /* the keys never sound, record or send MIDI */
-    usb.config = 1; mo = mo_w; song.rec = 1;
+    usb.config = 1; mo = mo_w; MIDI_BYTE = NO_KEYS | MO_CLOCK_OFF; song.rec = 1;   /* ((2.2) the keys as pressed, no clock: as written) */
     {
         step_t before[NSTEP];
         memcpy(before, TSEL->step, sizeof before);
@@ -3511,7 +3528,7 @@ static int test_quick_layers(void)
 
     /* GLO: mutes latch (lit = sounding), SOLO while held, UNMUTE ALL, TAP, levels, OCT- */
     ui_power_on();
-    usb.config = 1; mo = mo_w;
+    usb.config = 1; mo = mo_w; MIDI_BYTE = NO_KEYS | MO_CLOCK_OFF;   /* ((2.2) the keys as pressed, no clock: as written) */
     lay_combo(B_GLO, black(1));
     ok = !trk[1].p[P_MUTE] && trk_cut(1) && ui.layer == LAYER_GLO && !gates() && mo_w == mo;   /* ((2.0, D 1A) down: cut */
     {
@@ -5922,7 +5939,7 @@ static int test_seq_tools(void)
     go_page(GR_ROLL); frame();
     usb.config = 1;
     {
-        uint32_t mo = mo_w;
+        uint32_t mo = (MIDI_BYTE = NO_KEYS | MO_CLOCK_OFF, mo_w);   /* ((2.2) the keys as pressed, no clock: as written) */
         btn_down(B_SEQ); frame();
         tl_key(1);                                      /* G3: REVERSE */
         ok = ui.layer == LAYER_SEQ && !gates() && mo_w == mo && msg_is("REVERSED");
@@ -6176,7 +6193,7 @@ static int test_layer_lock(void)
     shift_lock(B_GLO); frames(100);
     usb.config = 1;
     {
-        uint32_t mo = mo_w;
+        uint32_t mo = (MIDI_BYTE = NO_KEYS | MO_CLOCK_OFF, mo_w);   /* ((2.2) the keys as pressed, no clock: as written) */
         int16_t l0 = trk[0].p[P_LEVEL];
         key_down(black(1)); frame(); key_up(black(1)); frame();
         ok = trk[1].p[P_MUTE] == 1 && !gates() && mo_w == mo;
@@ -6632,6 +6649,13 @@ static int test_head_oct(void)
     int bad = 0, ok = 1, p, o;
     uint32_t y, w;
     char b[8];
+    {   /* (2.2, YouTube @hipnofx) a pattern's mark too long for the header: shorter, not gone */
+        char m[16] = "B \xB7 01 \xB7 2x", c[16] = "A-B \xB7 02";
+        ok = head_mark_short(m) && str_eq(m, "B \xB7 01") && head_mark_short(m) && str_eq(m, "01") && !head_mark_short(m);
+        ok &= head_mark_short(c) && str_eq(c, "02") && !head_mark_short(c);
+        bad += check("(2.2) the header's pattern mark, too long: B . 01 . 2x, then B . 01, then 01 (a chain's: 02)", ok);
+        ok = 1;
+    }
     ui_power_on();
     set_engine_of(TSEL, ENGI_FM6);
     proj_cur = 2;                                     /* (project C: its letter's box before the title) */
@@ -8795,8 +8819,10 @@ static int test_large(void)
 static int test_menu_prefs(void)
 {
     int bad = 0, ok = 1;
-    uint32_t k, j, seen = 0;
+    uint32_t k, j;
+    uint64_t seen = 0;                              /* ((2.2) a bit per row: 35 rows passed 32, the MIDI tab's more) */
     static uint16_t shot[MTAB_COUNT][240 * 240];
+    _Static_assert(MI_COUNT < 64, "test_menu_prefs: a bit per MENU row");
     ui_power_on();
     ui_prefs = 0;
     hold(B_HOME);
@@ -8804,7 +8830,7 @@ static int test_menu_prefs(void)
     for (k = 0; k < MTAB_COUNT; k++) {              /* ALGORITHM right through the tabs, PRESETS through each one's rows */
         ok &= menu_tab() == k && ui.menu_sel == mtab_first(k);
         for (j = 0; j < mtab_rows(k); j++) {
-            seen |= 1u << ui.menu_sel;
+            seen |= (uint64_t)1 << ui.menu_sel;
             turn(EN_PRESET, 1);
         }
         ok &= ui.menu_sel == mtab_first(k);         /* (round the tab, back at its first row) */
@@ -8813,7 +8839,7 @@ static int test_menu_prefs(void)
         for (j = 0; j < k; j++) ok &= memcmp(shot[j], shot[k], sizeof shot[k]) != 0;
         turn(EN_ALGO, 1);
     }
-    ok &= seen == (1u << MI_COUNT) - 1u && ui.menu_sel == 0u;
+    ok &= seen == ((uint64_t)1 << MI_COUNT) - 1u && ui.menu_sel == 0u;
     bad += check("MENU: ALGORITHM and PRESETS reach every row, each tab a page of its own", ok);
     /* ANIM */
     ui.menu_sel = MI_ANIM;

@@ -115,6 +115,23 @@ static int lfo2(void)
     seq_stop();
     t->p[P_LTRIG] = 0;
     bad += check("  PLAY: a FREE + SYNC LFO from PHASE, on the bar; FREE alone runs on", ok);
+    {   /* (2.2, #94) a kit's synced LFO (no note restarts it): from PHASE at PLAY, and its cycle whole steps of the
+         * track's own (each rounded as the sequencer's), so after 256 bars it is still on the bar (2.1.1: 2.3 % off) */
+        track_t *d = &trk[3];                           /* T4: the DRUM kit */
+        uint32_t off;
+        d->p[P_LSYNC] = 3;                              /* 1/1 */
+        d->p[P_SDIV] = 2;                               /* 1/16 */
+        d->p[P_LPHASE] = 0;
+        d->lfo_ph = 0x0BADF00Du;
+        seq_start();
+        ok = d->lfo_ph == 0u;
+        seq_stop();
+        off = (uint32_t)((uint64_t)lfo_sync_inc(d) * (256ull * 16u * div_samples(2) / CTL));   /* 256 bars' blocks */
+        off = off > 0x80000000u ? 0u - off : off;
+        bad += check("(2.2, #94) a kit's LFO SYNC 1/1: from PHASE at PLAY; 256 bars of its 1/16 steps on, within 0.1 % "
+                     "of the bar", ok && off < 0xFFFFFFFFu / 1000u);
+        d->p[P_LSYNC] = 0;
+    }
     ui_power_on();
     go_title("LFO 2"); frame();
     ok = cur_page()->id[0] == P_LSYNC && cur_page()->id[1] == P_LTRIG && cur_page()->id[2] == P_LPOL &&
@@ -1040,13 +1057,13 @@ static int midi_learn_channels(void)
     midi_event(0x90u, 9, 60, 100);                      /* channel 10: T2 */
     midi_event(0x90u, 1, 62, 100);                      /* channel 2: no track's now */
     ok &= ui.menu == 0u && midi_notes[9][60] == 2u && midi_notes[1][62] == 0u;
-    menu_put(MI_TCH3, 9);                               /* T3 on 10 too: the first, T2, plays it */
-    midi_event(0x90u, 9, 64, 100);
+    menu_put(MI_TCH3, 10);                              /* T3 on 10 too: the first, T2, plays it ((2.2) the rows' values: */
+    midi_event(0x90u, 9, 64, 100);                      /* OFF, CH 1..16, CH 1..16 EXT) */
     ok &= midi_notes[9][64] == 2u;
-    menu_put(MI_TCH2, 1);                               /* T2 back on 2: T3 hears 10 (its notes held there kept: T3's */
+    menu_put(MI_TCH2, 2);                               /* T2 back on 2: T3 hears 10 (its notes held there kept: T3's */
     events_block(CTL);                                  /* channel), CH1-6's names again but for T3 */
     ok &= midi_slot(9) == 2 && midi_slot(1) == 1 && str_eq(menu_vname(MI_ROUTE, 0), "TRACK");
-    menu_put(MI_TCH3, 2);
+    menu_put(MI_TCH3, 3);
     events_block(CTL);                                  /* channel 10 no track's: its held notes let go */
     ok &= midi_notes[9][60] == 0u && midi_notes[9][64] == 0u && midi_slot(9) < 0 &&
           str_eq(menu_vname(MI_ROUTE, 0), "CH1-6");
@@ -1055,11 +1072,24 @@ static int midi_learn_channels(void)
     song.g[G_ROUTE] = 0;
     bad += check("CHANNELS: T2 on CH 10 hears it, its own channel let go; two on one: the first; a channel let go "
                  "releases its notes; MIDI IN says TRACK; the MIDI tab scrolls (six shown)", ok);
-    menu_put(MI_TCH2, 9);
+    /* (2.2) OFF and EXT */
+    menu_put(MI_TCH2, 0);
+    ok = trk_moff(1) && midi_slot(1) < 0 && str_eq(menu_vname(MI_TCH2, menu_get(MI_TCH2)), "OFF") &&
+         ((1u + favorites.factory[15][7]) & 15u) == 1u;   /* (what firmware before reads: CH 2 still) */
+    menu_put(MI_TCH2, 26);
+    ok &= trk_ext(1) && !trk_moff(1) && trk_midi_ch(1) == 9u && midi_slot(9) == 1 &&
+          str_eq(menu_vname(MI_TCH2, menu_get(MI_TCH2)), "CH 10 EXT") && menu_get(MI_TCH2) == 26u &&
+          ((1u + favorites.factory[15][7]) & 15u) == 9u;
+    menu_put(MI_TCH2, 2);
+    ok &= !trk_ext(1) && !trk_moff(1) && favorites.factory[15][7] == 0u;
+    bad += check("(2.2) T2 CHANNEL OFF (no channel heard), CH 10 EXT; the channel's byte as older firmware reads it", ok);
+    menu_put(MI_TCH2, 10);
+    menu_put(MI_TCH4, 0);
     (void)ml_learn(60, 1, P_PAN);
     settings_reset();
-    ok = !favorites.factory[15][6] && !favorites.factory[15][7] && ml_count() == 0u && trk_midi_ch(1) == 1u;
-    bad += check("  RESET SETTINGS: T1..T6 on channels 1..6, nothing learned", ok);
+    ok = !favorites.factory[15][6] && !favorites.factory[15][7] && !favorites.factory[15][9] && ml_count() == 0u &&
+         trk_midi_ch(1) == 1u;
+    bad += check("  RESET SETTINGS: T1..T6 on channels 1..6 ((2.2) none OFF or EXT), nothing learned", ok);
     return bad;
 }
 

@@ -51,12 +51,17 @@ static __attribute__((noinline)) uint32_t lfo_rand(track_t *t)   /* ((#9) noinli
  * too): the phase advances 2^32 x CTL / cycle a block (two 32-bit divides; the truncation drifts by less than a
  * millionth of a cycle a cycle). OFF: RATE's table, as before. LSYNC_DIV: each value's N_DIV (div_samples) */
 static const uint8_t LSYNC_DIV[11] = {0, 9, 8, 7, 6, 0, 1, 4, 2, 5, 3};
+/* (2.2) N_DIV's lengths in 48ths of a quarter (seq.c seq_locate too) */
+static const uint16_t DIV_48[10] = {48, 24, 12, 6, 16, 8, 96, 192, 384, 768};
 static uint32_t div_samples(uint32_t div);         /* (fx.c) */
+/* (2.2, #94) a whole number of the track's own steps when it divides into them (4BAR on a 1/16 track: 64 of its
+ * steps, each div_samples rounded as the sequencer's): the cycle stays with the steps however long it plays; else its
+ * own length (drifting a sample or so a cycle against them, as before) */
 static __attribute__((noinline)) uint32_t lfo_sync_inc(const track_t *t)   /* (not inlined: its divides stay out of
                                                                            * the audio ISR's loop over the tracks) */
 {
-    uint32_t cyc, q, r;
-    cyc = div_samples(LSYNC_DIV[(uint32_t)t->p[P_LSYNC] % NELEM(LSYNC_DIV)]);
+    uint32_t c = LSYNC_DIV[(uint32_t)t->p[P_LSYNC] % NELEM(LSYNC_DIV)], s = (uint32_t)t->p[P_SDIV] % 10u, cyc, q, r;
+    cyc = DIV_48[c] % DIV_48[s] ? div_samples(c) : DIV_48[c] / DIV_48[s] * div_samples(s);
     cyc = cyc ? cyc : 1u;
     q = 0xFFFFFFFFu / cyc;
     r = 0xFFFFFFFFu % cyc;
@@ -417,12 +422,22 @@ static __attribute__((noinline)) void lfo_restart(track_t *t)
 static uint32_t fol_on(track_t *t, uint32_t note);
 static uint32_t fol_off(track_t *t, uint32_t note);
 static void fol_drop(const track_t *t);
+/* (2.2) NOTES OUT (seq.c): a note the track sounds, out to MIDI (1: an EXT track's, which starts no voice); what it
+ * sent, ended */
+static int mo_note(track_t *t, uint32_t note, uint32_t vel, uint32_t keys);
+static void mo_flush(uint32_t mask);
+static void trk_sound_on(track_t *t, uint32_t note, uint32_t vel);
+/* a note starts on track t: moved into the chord it follows, out to MIDI as it is asked for (an engine switch's fade
+ * delays only the voice: what MIDI IN plays then is never sent back later), then its voice */
 static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
 {
-    uint32_t any = 0, i, mode = trk_vmode(t);
+    uint32_t i;
     if (t->p[P_MUTE])
         return;
-    if (t->xf_on || t->eng_req != t->engine) {          /* engine switch under way: after the fade */
+    note = fol_on(t, note);                             /* ((2.1) a follower's: into the chord it follows) */
+    if (mo_note(t, note, vel, 0))
+        return;                                         /* ((2.2) EXT: MIDI only) */
+    if (t->xf_on || t->eng_req != t->engine) {          /* engine switch under way: after the fade (the note moved) */
         for (i = 0; i < t->xp_n && t->xp_note[i] != note; i++)
             ;
         if (i == t->xp_n && t->xp_n < 4u)
@@ -432,7 +447,13 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
         t->xp_vel[i] = (uint8_t)vel;
         return;
     }
-    note = fol_on(t, note);                             /* ((2.1) a follower's: into the chord it follows) */
+    trk_sound_on(t, note, vel);
+}
+
+/* the voice of a note track t sounds (moved already) */
+static void trk_sound_on(track_t *t, uint32_t note, uint32_t vel)
+{
+    uint32_t any = 0, i, mode = trk_vmode(t);
     duck_note(t, note);                                 /* (Skiff) a hit another track may duck under */
     t->hits++;                                          /* ((Skiff Q6) QUARK's event display) */
     vel = mod_note(t, note, vel);                       /* the matrix's VEL / KEY / RAND ((1.3) VEL as a destination) */
@@ -467,13 +488,14 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
 static void trk_note_off(track_t *t, uint32_t note)
 {
     uint32_t i, k = 0, mode = trk_vmode(t);
-    for (i = 0; i < t->xp_n; i++)                       /* not sounding yet (engine switch): forget it */
-        if (t->xp_note[i] != note) {
+    note = fol_off(t, note);                           /* ((2.1) the note it sounded; 255: another still sounds it) */
+    for (i = 0; i < t->xp_n; i++)                       /* not sounding yet (engine switch): forget it ((2.2) kept */
+        if (t->xp_note[i] != note) {                    /* moved, as it will sound) */
             t->xp_note[k] = t->xp_note[i];
             t->xp_vel[k++] = t->xp_vel[i];
         }
     t->xp_n = (uint8_t)k;
-    note = fol_off(t, note);                           /* ((2.1) the note it sounded; 255: another still sounds it) */
+    (void)mo_note(t, note, 0, 0);                      /* ((2.2) NOTES OUT: its note-off, if it went out) */
     mono_remove(t, note);                              /* a mode change must not retain a released key */
     if (mode != V_POLY) {
         uint32_t nv = mode == V_UNISON ? trk_nvoice(t) : 1u;
@@ -509,6 +531,7 @@ static void trk_all_off(track_t *t)
     t->mono_note = 0;
     t->xp_n = 0;
     fol_drop(t);                                        /* ((2.1) nothing kept, no chord to lead with) */
+    mo_flush(1u << (t - trk));                          /* ((2.2) NOTES OUT: every note it sent, ended) */
 }
 
 /* engine switch, at each block start (events_block), before any note of the block. The UI writes
@@ -548,8 +571,8 @@ static void engine_block(track_t *t)
         {
             uint32_t n = t->xp_n;
             t->xp_n = 0;
-            for (i = 0; i < n; i++)
-                trk_note_on(t, t->xp_note[i], t->xp_vel[i]);
+            for (i = 0; i < n; i++)                     /* ((2.2) moved and sent already) */
+                trk_sound_on(t, t->xp_note[i], t->xp_vel[i]);
         }
     }
     for (i = 0; i < 8u; i++)                            /* the engine's own values, for a later fade */

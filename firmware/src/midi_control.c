@@ -281,6 +281,32 @@ static int __attribute__((noinline)) midi_learned(uint32_t cc, uint32_t value)
     return hit;
 }
 
+/* (2.2) CC OUT: the CC parameter id of track t goes out on: the CC learned to it (MIDI LEARN: the user's), else the
+ * standard map's (CC74 / CC71 the engine's own), unless MIDI LEARN took that CC for another parameter; 0 none */
+static uint32_t cc_out_of(const track_t *t, uint32_t id)
+{
+    uint32_t i, j, c = 0, e = MIDI_CC_ENG[eng_idx(t->eng_req)];
+    for (i = 0; ml_tab && i < ML_N; i++)
+        if (ml_tab[3u * i] && ml_id(ml_tab[3u * i]) == id && ml_tab[3u * i + 2u] == trk_index(t))
+            return ml_tab[3u * i + 1u];
+    for (i = 0; i < NELEM(MIDI_CC_MAP) && !c; i++) {
+        uint32_t p = MIDI_CC_MAP[i][1], n = p == MCC_CUT ? e >> 4 : e & 15u;
+        if ((p >= MCC_CUT ? n && P_E0 + n - 1u == id : p == id))
+            c = MIDI_CC_MAP[i][0];
+    }
+    for (j = 0; c && ml_tab && j < ML_N; j++)
+        if (ml_tab[3u * j] && ml_tab[3u * j + 1u] == c)
+            return 0;
+    return c;
+}
+/* .. its value, 0..127 over the parameter's range: midi_cc_set's inverse (that CC coming back sets the same value) */
+static uint32_t cc_value(const track_t *t, uint32_t id)
+{
+    const param_desc_t *d = param_desc_of(eng_idx(t->eng_req), id);
+    int32_t r = d->max - d->min;
+    return r > 0 ? (uint32_t)((clamp(t->p[id], d->min, d->max) - d->min) * 127 + r / 2) / (uint32_t)r : 0u;
+}
+
 static void __attribute__((noinline)) midi_cc_map(track_t *t, uint32_t cc, uint32_t value)
 {
     uint32_t i, id = 0xFFFFu, e;
@@ -368,7 +394,7 @@ static void __attribute__((noinline)) midi_route_drop(void)
     uint32_t ch, note;
     for (ch = 0; ch < 16u; ch++) {
         midi_channel_t *c;
-        if (midi_slot(ch) >= 0)
+        if (midi_slot(ch) >= 0 || ch + 1u == mset_ch(MSET(1, 1) & 31u))   /* ((2.2) AUTO CHANNEL's: heard) */
             continue;
         c = midi_channel(ch);
         for (note = 0; note < 128u; note++)
@@ -391,11 +417,26 @@ static void __attribute__((noinline)) midi_route_drop(void)
  * the main loop's work (undo, motion, FM6's patch), never the audio ISR's. ui.mpc (ui.c midi_pc_poll; a build without
  * the UI: none) */
 static volatile uint8_t *const mpc_io;
+/* (2.2) MENU > MIDI > REMOTE (channel 1..16, OFF): on its channel CC 102..115 press the panel's 14 buttons in the
+ * order of their labels (panel.c B_FX .. B_OCTUP: Sloop's REMOTE map, so a controller's template for it works here),
+ * 64 and up held down, below let go: the input's debounce takes them as the contacts (hal/fm1_input.h virt / vtap), so
+ * taps, holds, layers and a button with a key act as on the panel. ui.c rmt_btn: panel.btn (a label's button) */
+static const uint8_t *const rmt_btn;
 
 static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
-    if (!song.g[G_ROUTE] && midi_slot(ch) < 0)    /* (CH1-6: a channel no track is set to) */
+    if (st == 0xB0u && d1 - 102u < 14u && rmt_btn && ch + 1u == mset_ch(MSET(15, 5) >> 3)) {
+        uint32_t bit = 1u << rmt_btn[d1 - 102u];
+        if (d2 >= 64u) {
+            fm1_in.virt |= bit;
+            fm1_in.vtap ^= bit;
+        } else
+            fm1_in.virt &= ~bit;
         return;
+    }
+    if (!song.g[G_ROUTE] && midi_slot(ch) < 0 && ch + 1u != mset_ch(MSET(1, 1) & 31u))   /* (CH1-6: a channel no */
+        return;                                    /* track is set to; (2.2) AUTO CHANNEL's plays the selected one) */
+    mn.quiet = 1;                                  /* ((2.2) what MIDI IN plays is never sent back out: seq.c mo_note) */
     if (st == 0x90u || st == 0x80u)
         midi_note_event(ch, d1, st == 0x90u ? d2 : 0);
     else if (st == 0xE0u) {
@@ -408,4 +449,5 @@ static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint3
         mod_midi(midi_track(ch), st, d1, d2);
     else if (st == 0xC0u && mpc_io)                /* ((1.3) Program Change: the main loop loads it, ui.c) */
         mpc_io[trk_index(midi_track(ch))] = (uint8_t)(0x80u | d1);
+    mn.quiet = 0;
 }

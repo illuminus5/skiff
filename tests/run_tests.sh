@@ -177,9 +177,19 @@ for v in 1.1.0.1.1 1.1.0.0.1 1.1.0.1.0 1.1.0.0.0 0.1.0.1.1; do
     IFS=. read -r t_cdc t_uac t_lay t_on t_48 <<EOF
 $v
 EOF
-    $CC -DT_CDC="$t_cdc" -DT_UAC="$t_uac" -DT_LAYOUT="$t_lay" -DT_ON="$t_on" -DT_48K="$t_48" -DT_ASF=0 \
+    $CC -DT_CDC="$t_cdc" -DT_UAC="$t_uac" -DT_LAYOUT="$t_lay" -DT_ON="$t_on" -DT_48K="$t_48" -DT_ASF=0 -DT_ML=0 \
         -o "$OUT/usb_desc_test" tests/usb_desc_test.c
     run "USB descriptors (AC collection MIDI first): CDC $t_cdc (presented $t_on), UAC $t_uac (48 kHz $t_48)" \
+        "$OUT/usb_desc_test"
+done
+# (2.2) FELUCCA_UAC_MIDI_LAST=0: Skiff 1.3 .. 2.1's layout (AC, MIDI, AS; the collection AS first)
+for v in 1.1.0.1.1 1.1.0.0.1 1.1.2.1.1 0.1.0.1.1; do
+    IFS=. read -r t_cdc t_uac t_lay t_on t_48 <<EOF
+$v
+EOF
+    $CC -DT_CDC="$t_cdc" -DT_UAC="$t_uac" -DT_LAYOUT="$t_lay" -DT_ON="$t_on" -DT_48K="$t_48" -DT_ML=0 \
+        -o "$OUT/usb_desc_test" tests/usb_desc_test.c
+    run "USB descriptors (2.1's: MIDI between AC and AS): CDC $t_cdc (presented $t_on), UAC $t_uac, layout $t_lay" \
         "$OUT/usb_desc_test"
 done
 
@@ -276,6 +286,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "2.0 TIES (#25): notes going on while others start, a miss, a tie never starts a note, MONO, RATCH, STOP; record version 3" "$OUT/ties_test"
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_control_test" tests/midi_control_test.c -lm
     run "USB/TRS clock, bend, sustain, ownership and panic recovery" "$OUT/midi_control_test"
+    $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_out_test" tests/midi_out_test.c -lm
+    run "2.2 MIDI OUT: what plays goes out, every note-on one note-off (chords, RATCH, ARP, FOLLOW, mutes, channels, a full ring), KEYS / OFF, no MIDI IN echo, timed" "$OUT/midi_out_test"
     $CC -O1 -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/digital_test" tests/digital_test.c -lm
     run "DIGITAL (retired, built here with FELUCCA_FM4=1): operator envelopes/levels" "$OUT/digital_test"
     $CC -O2 -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/fm4_test" tests/fm4_test.c -lm

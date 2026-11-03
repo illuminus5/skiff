@@ -14,15 +14,19 @@ extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[], 
  * and the time spent nested is handed to the audio ISR so its load figures stay render-only.
  * The USB audio stream cannot wait for the render (one packet per 1 ms frame, a render takes up to
  * ~5 ms): uac_service also runs nested. It touches only EP4 (INDEX is set on every access) and the
- * consumer side of the audio ring, and usb_poll never runs nested, so the two never interleave. */
+ * consumer side of the audio ring, and usb_poll never runs nested, so the two never interleave.
+ * (2.2) Nor can MIDI OUT, which leaves as its audio plays (usb.c mo): ep1_tx also runs nested, as uac_service (EP1,
+ * INDEX set; the consumer side of its ring); mo.now is this tick for both */
 void fm1_timer5_irq(void)
 {
     static uint32_t sub, owed;
     uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u;
     fm1_timer5_ack();
+    mo.now = t0;
     felucca_dbg.timer_irqs++;
     fm1_input_tick();
 #if BOARD_SMK37
+    mo_trs(t0);                                 /* ((2.2) the TRS jack's MIDI OUT: the events due, as USB's) */
     smk_uart_tx_tick();                         /* (the TRS jack's MIDI OUT: a byte once the last has gone) */
 #endif
     {   /* milliseconds from the 24 MHz TIMER4 (robust to a late tick) */
@@ -48,6 +52,8 @@ void fm1_timer5_irq(void)
         if (usb_due)
             uac_service();
 #endif
+        if (usb_due && usb.up && usb.config)
+            ep1_tx();                           /* ((2.2) MIDI OUT as its audio plays, the render or not) */
         t5_nested_ticks += fm1_ticks() - t0;
         return;
     }

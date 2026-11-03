@@ -1941,9 +1941,10 @@ const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
 class FakeFM1 {
   /* writeReads: the loader's [addr, len] reads (default: six of 512 B); drops: request counts at which it drops
      off the bus and comes back in update mode 200 ms later (a pulled cable, a power cut, a loader reset) */
-  constructor(image, { unplugAfter = Infinity, back = ["FM-1_900", "Felucca"], writeReads = null, drops = [] } = {}) {
+  constructor(image, { unplugAfter = Infinity, back = ["FM-1_900", "Felucca"], writeReads = null, drops = [],
+                       loaderName = "Felucca Update" } = {}) {
     this.image = image; this.unplugAfter = unplugAfter; this.served = 0; this.bad = 0; this.back = back;
-    this.writeReads = writeReads; this.drops = new Set(drops);
+    this.writeReads = writeReads; this.drops = new Set(drops); this.loaderName = loaderName;
     this.access = { inputs: new Map(), outputs: new Map() };
     this.boot("FM-1_015", "FM-1");
   }
@@ -1984,7 +1985,7 @@ class FakeFM1 {
         setTimeout(() => this.boot("ota-" + this.back[0], "Felucca Update"), 200);
         return;
       }
-      if (addr === 0xE0000000) setTimeout(() => this.boot("ota-FM-1_900", "Felucca Update"), 300);
+      if (addr === 0xE0000000) setTimeout(() => this.boot("ota-FM-1_900", this.loaderName), 300);
       else if (addr === 0xF0000000) setTimeout(() => this.boot(...this.back), 300);
       else this.next();
     }
@@ -2042,6 +2043,12 @@ async function updater() {
   ok(e && e.code === "lost", "fm1ota.js: unplugged in step 1 -> error code 'lost'");
   const e2 = await new Updater({ inputs: new Map(), outputs: new Map() }).install(image, "FM-1_900").then(() => null, (x) => x);
   ok(e2 && e2.code === "notfound", "fm1ota.js: no device -> error code 'notfound'");
+  /* (2.2, #83) the loader not found in time (here it comes up under a name the installer passes by): the error says
+     which MIDI ports the computer showed meanwhile, for a report */
+  const hidden = new FakeFM1(image, { loaderName: "USB Audio Device" });
+  const eh = await new Updater(hidden.access, null, { loaderWaitMs: 1500 }).install(image, "FM-1_900").then(() => null, (x) => x);
+  ok(eh && eh.code === "noloader" && /USB Audio Device/.test(eh.detail) && /MIDI ports seen/.test(eh.message),
+    "fm1ota.js: (2.2, #83) no update loader in time -> 'noloader' with the MIDI ports seen meanwhile");
 
   /* (launch hardening) a drop during the write waits for the same model's loader and resumes, up to resumeMax */
   const flaky = new FakeFM1(image, { drops: [2, 5] });

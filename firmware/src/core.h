@@ -40,6 +40,7 @@
 _Static_assert(NTRK <= 8 && NPART < NVOICE, "a track mask is a uint8_t; each part protects one voice (voice.c)");
 #define NSTEP 64
 #define HALF_FRAMES 128          /* I2S half buffer: 2.9 ms at 44.1 kHz (a key waits 0..1 half, then plays 1 half later) */
+#define DAC_TICKS 544u           /* TIMER4 ticks per I2S frame (24 MHz / 44,117.6 Hz): (2.2) MIDI OUT's times (usb.c mo) */
 #ifndef AUDIO_RAM
 #define AUDIO_RAM                /* (Skiff) audio code run from RAM on the unit (felucca.c); host builds: nothing */
 #define AUDIO_FAR(fn) fn         /* .. a call between it and XIP code: on the unit through a pointer; here direct */

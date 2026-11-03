@@ -6,7 +6,6 @@
  * click (click.c, the DAC only) -> 24-bit stereo. */
 /* registers: hal/fm1_audio.h */
 #define HALF_WORDS (HALF_FRAMES * 2u)
-#define DAC_TICKS 544u            /* TIMER4 ticks per I2S frame (24 MHz / 44,117.6 Hz) */
 #define CPU_AVG (4096u / HALF_FRAMES)   /* halves the load meter averages: ~93 ms whatever the half */
 #define OUT_SHIFT 7               /* Q15 -> 24-bit, -6 dBFS ceiling (M0f ran clean at -18 dBFS) */
 
@@ -116,9 +115,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         uac_render_start();
 #endif
         for (b = 0; b < HALF_FRAMES; b += CTL) {
-#ifdef FM1_INPUT_LAT
-            kb_out_tick = t0 + (HALF_FRAMES + b) * DAC_TICKS;   /* when this block plays (seq.c kb_lat) */
-#endif
+            mo.tick = t0 + (HALF_FRAMES + b) * DAC_TICKS;   /* when this block plays ((2.2) MIDI OUT, usb.c; seq.c kb_lat) */
             audio_block(o + 2u * b, CTL);
         }
         fm1_audio_ack_half();

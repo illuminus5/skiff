@@ -24,6 +24,9 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "slicer_track",
          "slice_render", "slc_rev",                          # SLICE (eng_slice.c): the render, the reverse windows
          "fm1_alnk0_irq", "fm1_timer5_irq",               # the audio ISR; TIMER5: the key / LED scan (hal/fm1_input.h)
+         "events_block", "keyboard_block",                 # ((2.2) a block's events, the keys' changes: out of the audio
+                                                           # ISR's own (seq.c), measured here
+         "ep1_tx",                                         # ((2.2) MIDI OUT's sender (usb.c): TIMER5, two callers now
          "uac_tap48",                                       # the USB audio input at 48 kHz: the 44.1 -> 48 resampler (usb.c)
          "click_render",                                    # the metronome's click (click.c), while it sounds
          "mod_begin", "mod_voice", "mod_end",                 # the modulation matrix (mod.c), called when active

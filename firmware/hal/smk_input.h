@@ -107,6 +107,7 @@ static volatile struct {
     uint32_t buttons;            /* debounced: bit i = button i (0..17) */
     uint32_t pressed, released;  /* button edges since the last fm1_input_edges() */
     uint32_t notes_pressed;      /* note-key press edges since the last fm1_input_note_edges() */
+    uint32_t virt, vtap, vack;   /* ((2.2) MENU > MIDI > REMOTE's buttons: fm1_input.h) */
     uint64_t keys;               /* all 37 keybed keys: bit k = key k (0 = lowest C) */
     uint8_t key_vel[FM1_NKEY];   /* MIDI velocity 1..127 of each key's last press (a pad: its white key's) */
     uint8_t raw[FM1_NCOL];       /* last frame, rows packed, 1 = closed */
@@ -354,6 +355,7 @@ static void smk__buttons(void)
     for (i = 0; i < FM1_NBTN; i++) {
         uint32_t closed = smk__closed(SMK_BTNC[i]), bit = 1u << i, on = (fm1_in.buttons & bit) != 0u;
         volatile uint8_t *c = &fm1_in.cnt[i];
+        closed |= ((fm1_in.virt | (fm1_in.vtap ^ fm1_in.vack)) >> i) & 1u;   /* ((2.2) REMOTE's: fm1_input.h) */
         if (closed == on) {
             *c = 0;
             continue;
@@ -362,9 +364,10 @@ static void smk__buttons(void)
             continue;
         *c = 0;
         fm1_in.buttons ^= bit;
-        if (!on)
+        if (!on) {
             fm1_in.pressed |= bit;
-        else
+            fm1_in.vack = (fm1_in.vack & ~bit) | (fm1_in.vtap & bit);
+        } else
             fm1_in.released |= bit;
     }
 }

@@ -30,10 +30,13 @@
 #ifndef HOST_FM1_IN                         /* (tests/smk_ui_test.c brings the SMK-37 input's) */
 #if BOARD_SMK37                             /* (-DBOARD_SMK37=1: what the SMK's keys and KEY VELOCITY read; no TRS jack) */
 #include "../firmware/hal/smk_pads.h"
-static struct { volatile uint32_t notes, buttons; uint8_t key_vel[37]; } fm1_in;
+static struct { volatile uint32_t notes, buttons, virt, vtap, vack; uint8_t key_vel[37]; } fm1_in;
 static void smk_uart_tx_put(uint32_t b) { (void)b; }
+static void smk_uart_tx_rt(uint32_t b) { (void)b; }
+#define SMK_UT_TX_RING 128u
+static uint8_t smk_ut_w, smk_ut_r;                /* ((2.2) usb.c mo_trs: the UART's ring, never full here) */
 #else
-static struct { volatile uint32_t notes, buttons; } fm1_in;
+static struct { volatile uint32_t notes, buttons, virt, vtap, vack; } fm1_in;   /* ((2.2) REMOTE: virt, vtap, vack) */
 #endif
 #endif
 #include "../firmware/src/core.h"

@@ -53,6 +53,26 @@ static int head_mark(char *b)
     }
     return 1;
 }
+/* (2.2, YouTube) a mark that does not fit, shorter: its count goes ("B \xB7 02 \xB7 2x" -> "B \xB7 02"), then its
+ * entry ("02"); 0 when nothing is left to take (it went before: some marks said nothing where they were long) */
+static int head_mark_short(char *b)
+{
+    uint32_t n = str_len(b), i;
+    if (n && b[n - 1u] == 'x') {
+        for (i = n - 1u; i > 2u && b[i] != ' '; i--)
+            ;
+        if (i > 2u) {
+            b[i - 2u] = 0;                             /* (" \xB7 " before the count) */
+            return 1;
+        }
+    }
+    for (i = 0; i + 2u < n; i++)
+        if ((uint8_t)b[i + 1u] == 0xB7u && b[i] == ' ') {
+            str_cpy(b, b + i + 3u, 16);                /* (the entry and its " \xB7 ") */
+            return 1;
+        }
+    return 0;
+}
 static void draw_head_blocks(void)
 {
     const track_t *t = TSEL;
@@ -156,8 +176,10 @@ static void draw_head_blocks(void)
                 cv_rect(x + 11, (H_HEAD - 15) / 2 - 2, 5, 5, T_THEME);
             x -= 8;
         }
-        if (mark && x - text_w(&AF_S, mk) - (song.octave ? text_w(&AF_S, "OCT") + 4 + text_w(&AF_M, "+3") + 8 : 0) >=
-            lx + 8) {                                   /* ((Skiff phase 5) where it fits) */
+        while (mark && x - text_w(&AF_S, mk) - (song.octave ? text_w(&AF_S, "OCT") + 4 + text_w(&AF_M, "+3") + 8 : 0) <
+               lx + 8)
+            mark = head_mark_short(mk);                 /* ((2.2) shorter, not gone) */
+        if (mark) {                                     /* ((Skiff phase 5) where it fits) */
             GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
             x = cv_text_r(x, HEAD_SY, &AF_S, mk, T_TRK(song.sel), T_BG) - 8;
         }

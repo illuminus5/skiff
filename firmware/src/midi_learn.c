@@ -94,9 +94,26 @@ static void ml_start(void)                       /* MENU > MIDI > MIDI LEARN */
     ui.foot_sig = 0;
     ui_message("MIDI LEARN ON");
 }
-/* a knob turned parameter id of track t (ui_input.c, ui_layer.c): picked while learning */
+/* (2.2) MENU > MIDI > CC OUT: a knob turned a parameter with a CC (midi_control.c cc_out_of: learned, or the standard
+ * map's): that CC out on the track's channel, with CC OUT ON, and always on an EXT track (its sound is out there);
+ * none while MIDI LEARN picks, the same value twice none. Due at once (behind what the audio ISR queued) */
+static void cc_knob(const track_t *t, uint32_t id)
+{
+    uint32_t k = trk_index(t), c, v;
+    if (ui.ml.on || id >= P_COUNT || trk_moff(k) || (!(MIDI_BYTE & MO_CC_ON) && !trk_ext(k)) || !(c = cc_out_of(t, id)))
+        return;
+    v = cc_value(t, id);
+    if (ui.cc_last == (k << 16 | c << 8 | v) + 1u)
+        return;
+    ui.cc_last = (k << 16 | c << 8 | v) + 1u;
+    fm1_irq_off();
+    (void)mo_put(0x0Bu | (0xB0u | trk_midi_ch(k)) << 8 | c << 16 | v << 24, mo.now);
+    fm1_irq_on();
+}
+/* a knob turned parameter id of track t (ui_input.c, ui_layer.c): picked while learning; (2.2) its CC out */
 static void ml_knob(const track_t *t, uint32_t id)
 {
+    cc_knob(t, id);
     if (!ui.ml.on || id >= P_COUNT)
         return;
     ui.ml.trk = (uint8_t)trk_index(t);

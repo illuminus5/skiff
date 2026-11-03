@@ -25,7 +25,7 @@ static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3 (zero: empty
 #include "../firmware/hal/smk_pads.h"            /* (as it is: the tables, queues and curves) */
 #define HOST_FM1_IN 1                             /* (hostsim.c: this fm1_in, the SMK's fields the UI reads) */
 static struct {
-    volatile uint32_t notes, buttons;
+    volatile uint32_t notes, buttons, virt, vtap, vack;   /* ((2.2) REMOTE: the HAL's virtual buttons) */
     uint8_t key_vel[37];
     uint8_t fader[4];
     uint16_t wheel[2], pedal, batt;
@@ -40,9 +40,15 @@ static void smk_uart_tx_put(uint32_t b)
         host_ut[host_ut_n] = (uint8_t)b;
     host_ut_n++;
 }
+static void smk_uart_tx_rt(uint32_t b) { smk_uart_tx_put(b); }   /* ((2.2) the clock: here in line with the rest) */
+#define SMK_UT_TX_RING 128u
+static uint8_t smk_ut_w, smk_ut_r;                /* ((2.2) usb.c mo_trs: the UART's ring, never full here) */
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
+/* (2.2) MIDI OUT's events to the TRS jack as TIMER5 sends them (usb.c mo_trs; all due here: no times in the host),
+ * USB's taken as by a host reading */
+static void trs(void) { mo_trs(mo.tick + 0x10000000u); mo_r = mo_w; }
 
 /* ------------------------------------------------------------ HAL stubs --- */
 #define FM1_NCOL 16u
@@ -238,7 +244,7 @@ static void smk_power_on(void)
     memset(smk_fd, 0xFF, sizeof smk_fd);
     smk_kv_mode = SMK_KV_DYN;
     smk_master = 724;
-    host_ut_n = 0;
+    trs(); host_ut_n = 0;
     smk_sh_t0 = 0;
     last_note = 60;
 }
@@ -470,21 +476,21 @@ static int test_outer_keys(void)
     fm1_in.key_vel[0] = 90u;                            /* C3, struck at 90 (the scan: key_vel, then the queue) */
     smk_extq[smk_extq_w] = (uint16_t)(0u << 8 | 90u);
     smk_extq_w = (uint8_t)((smk_extq_w + 1u) % SMK_EXTQ);
-    host_ut_n = 0;
+    trs(); host_ut_n = 0;
     usb.config = 1;
-    keyboard_block();
+    keyboard_block(); trs();
     bad += check("SMK outer key C3: note 48 on T1 at its velocity, out of the TRS jack too",
                  last_note == 48u && host_ut_n >= 3u && host_ut[0] == 0x90u && host_ut[1] == 48u && host_ut[2] == 90u);
     smk_extq[smk_extq_w] = (uint16_t)(0u << 8);         /* let go */
     smk_extq_w = (uint8_t)((smk_extq_w + 1u) % SMK_EXTQ);
-    host_ut_n = 0;
-    keyboard_block();
+    trs(); host_ut_n = 0;
+    keyboard_block(); trs();
     bad += check("SMK outer key let go: its note off", host_ut_n >= 3u && host_ut[0] == 0x80u && host_ut[1] == 48u);
     smk_kv_mode = SMK_KV_F100;
     smk_extq[smk_extq_w] = (uint16_t)(36u << 8 | 30u);  /* C6, soft, with KEY VELOCITY FIXED 100 */
     smk_extq_w = (uint8_t)((smk_extq_w + 1u) % SMK_EXTQ);
-    host_ut_n = 0;
-    keyboard_block();
+    trs(); host_ut_n = 0;
+    keyboard_block(); trs();
     bad += check("SMK outer key C6: note 84, KEY VELOCITY FIXED 100", host_ut_n >= 3u && host_ut[1] == 84u && host_ut[2] == 100u);
     smk_kv_mode = SMK_KV_DYN;
     bad += check("SMK KEY VELOCITY curves: SOFT louder, HARD softer, both ends kept",
@@ -583,6 +589,7 @@ static int sounding(const track_t *t, uint32_t note)   /* a voice of t holds not
 static uint32_t note_offs(uint32_t note)          /* note-offs of note out of the TRS jack since host_ut_n was 0 */
 {
     uint32_t i, n = 0;
+    trs();
     for (i = 0; i + 1u < host_ut_n && i + 1u < HOST_UT; i++)
         n += (host_ut[i] & 0xF0u) == 0x80u && host_ut[i + 1u] == note;
     return n;
@@ -607,7 +614,7 @@ static int test_pedal(void)
     pedal_to(1);
     key_to(7, 1);
     outer_to(0, 100);
-    host_ut_n = 0;
+    trs(); host_ut_n = 0;
     key_to(7, 0);
     outer_to(0, 0);
     for (i = 0; i < 20u; i++)
@@ -618,7 +625,7 @@ static int test_pedal(void)
     ok = note_offs(60) == 1u && sounding(t, 60);
     key_to(7, 0);
     bad += check("SMK pedal: a held key struck again: its held note ends first, then it plays", ok && sounding(t, 60));
-    host_ut_n = 0;
+    trs(); host_ut_n = 0;
     pedal_to(0);
     bad += check("SMK pedal up: the notes it held end (note-offs out), the keys keep nothing",
                  !sounding(t, 60) && !sounding(t, 48) && note_offs(60) == 1u && note_offs(48) == 1u && !kb_chn[7] &&
@@ -627,7 +634,7 @@ static int test_pedal(void)
     pedal_to(1);                                  /* T1's C4 held, then T2 selected with the pedal still down */
     key_to(7, 1);
     key_to(7, 0);
-    host_ut_n = 0;
+    trs(); host_ut_n = 0;
     song.sel = 1;
     frame();
     events_block(CTL);
@@ -645,7 +652,7 @@ static int test_pedal(void)
     pedal_to(1);                                  /* a preset loaded while it holds: its keys let go, nothing kept */
     key_to(7, 1);
     key_to(7, 0);
-    host_ut_n = 0;
+    trs(); host_ut_n = 0;
     apply_preset(2);
     events_block(CTL);
     ok = !sounding(t, 60) && note_offs(60) == 1u && !kb_chn[7] && !kb_ped[7];
@@ -671,7 +678,7 @@ static int test_pedal(void)
     song.sel = 3;                                 /* T4 DRUM KIT: a hit's key ends as it is let go */
     frame();
     pedal_to(1);
-    host_ut_n = 0;
+    trs(); host_ut_n = 0;
     key_to(7, 1);
     drum = kb_note[7];
     key_to(7, 0);
@@ -778,33 +785,63 @@ static int test_master(void)
     return bad;
 }
 
+/* the TRS jack's bytes since host_ut_n was 0: realtime b's */
+static uint32_t ut_count(uint32_t b)
+{
+    uint32_t i, n = 0;
+    trs();
+    for (i = 0; i < host_ut_n && i < HOST_UT; i++)
+        n += host_ut[i] == b;
+    return n;
+}
+static void clk_second(void)                       /* one second of blocks, as the audio ISR runs them */
+{
+    uint32_t i;
+    for (i = 0; i < (uint32_t)FS / CTL; i++)
+        events_block(CTL);
+}
 static int test_clock_out(void)
 {
     int bad = 0;
-    uint32_t i, pulses = 0, starts = 0, stops = 0;
+    uint32_t pulses;
     smk_power_on();
     song.g[G_CLOCK] = 0;
     song.g[G_BPM] = 120;
-    host_ut_n = 0;
-    seq_start();
-    song.playing = 1;
-    for (i = 0; i < (uint32_t)FS / 64u; i++)      /* one second in 64-sample blocks: 2 beats */
-        smk_clk_block(64u);
-    seq_stop();
-    for (i = 0; i < host_ut_n && i < HOST_UT; i++) {
-        pulses += host_ut[i] == 0xF8u;
-        starts += host_ut[i] == 0xFAu;
-        stops += host_ut[i] == 0xFCu;
-    }
+    events_block(CTL);
+    trs(); host_ut_n = 0;
+    transport_req = 1;
+    clk_second();
+    transport_req = 2;
+    events_block(CTL);
+    pulses = ut_count(0xF8u);
     bad += check("SMK TRS MIDI OUT clock: Start, 24 pulses a beat (48 in 1 s at 120), Stop",
-                 starts == 1u && stops == 1u && pulses >= 48u && pulses <= 49u);
+                 ut_count(0xFAu) == 1u && ut_count(0xFCu) == 1u && pulses >= 48u && pulses <= 49u && host_ut[0] == 0xFAu &&
+                 host_ut[1] == 0xF8u);
+    trs(); host_ut_n = 0;
+    clk_second();
+    pulses = ut_count(0xF8u);
+    bad += check("(2.2) SMK TRS MIDI OUT clock: stopped, the pulses go on (the gear that follows keeps the tempo)",
+                 pulses >= 47u && pulses <= 49u && !ut_count(0xFAu) && !ut_count(0xFCu));
     song.g[G_CLOCK] = 1;
-    host_ut_n = 0;
-    seq_start();
-    song.playing = 1;
-    smk_clk_block(4096u);
-    seq_stop();
-    bad += check("SMK TRS MIDI OUT clock: none with an external clock", host_ut_n == 0u);
+    events_block(CTL);
+    trs(); host_ut_n = 0;
+    transport_req = 1;
+    clk_second();
+    transport_req = 2;
+    events_block(CTL);
+    bad += check("SMK TRS MIDI OUT clock: none with an external clock",
+                 !ut_count(0xF8u) && !ut_count(0xFAu) && !ut_count(0xFCu));
+    song.g[G_CLOCK] = 0;
+    MIDI_BYTE = MO_CLOCK_OFF;
+    events_block(CTL);
+    trs(); host_ut_n = 0;
+    transport_req = 1;
+    clk_second();
+    transport_req = 2;
+    events_block(CTL);
+    bad += check("(2.2) SMK TRS MIDI OUT clock: none with MENU > MIDI > CLOCK OUT OFF",
+                 !ut_count(0xF8u) && !ut_count(0xFAu) && !ut_count(0xFCu));
+    MIDI_BYTE = 0;
     return bad;
 }
 

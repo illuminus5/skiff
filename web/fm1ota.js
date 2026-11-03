@@ -171,12 +171,15 @@ export class Updater {
     this.log = log || (() => {});
     this.resumeWaitMs = opts.resumeWaitMs ?? 120000;
     this.resumeMax = opts.resumeMax ?? 5;
+    this.loaderWaitMs = opts.loaderWaitMs ?? 30000;   // ((2.2) how long the update loader may take to appear)
+    this.seen = new Set();                            // ((2.2, #83) the MIDI inputs a wait saw: said when nothing came)
   }
 
   // every in/out pair with the same port name that answers the handshake
   async find(filter) {
     const outs = [...this.access.outputs.values()];
     for (const input of this.access.inputs.values()) {
+      this.seen.add(`${input.name || "?"}${input.state === "disconnected" ? " (disconnected)" : ""}`);
       if (input.state === "disconnected") continue;
       if (!/fm-1|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi/i.test(input.name || "")) continue;   // never probe other gear
       const output = outs.find((o) => o.name === input.name && o.state !== "disconnected");
@@ -192,6 +195,7 @@ export class Updater {
 
   async waitFor(filter, ms) {
     const end = Date.now() + ms;
+    this.seen = new Set();
     while (Date.now() < end) {
       const dev = await this.find(filter);
       if (dev) return dev;
@@ -248,8 +252,11 @@ export class Updater {
     }
     step("loader");
     await sleep(3000);
-    const ota = await this.waitFor((id) => id.model === "ota-" + model, 30000);
-    if (!ota) throw fail("noloader", "the update loader did not appear. Replug the USB cable and press Install again: the device stays in update mode until it is finished.");
+    const ota = await this.waitFor((id) => id.model === "ota-" + model, this.loaderWaitMs);
+    if (!ota) {                                         // ((2.2, #83) what the computer showed meanwhile, for a report)
+      const seen = this.seen.size ? ` (MIDI ports seen: ${[...this.seen].join(", ")})` : " (no MIDI ports seen)";
+      throw fail("noloader", "the update loader did not appear. Replug the USB cable and press Install again: the device stays in update mode until it is finished." + seen, seen);
+    }
     const s2 = await this.writeResuming(ota, image, model, step);
     if (!s2.finished) throw fail(s2.lost ? "lost" : "stopped", `the loader ${s2.lost ? "was disconnected" : "stopped"} after ${s2.served} requests. Replug and press Install again to resume.`);
     step("reboot");

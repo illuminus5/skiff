@@ -167,6 +167,7 @@ static void smk_faders(void)
         smk_fd[j].last = (uint8_t)v;
         t->p[id] = (int16_t)(TP[id].min + (int32_t)v);
         smk_fd[j].wrote = t->p[id];
+        cc_knob(t, id);                              /* ((2.2) CC OUT: a fader is a knob too) */
         param_format(&TP[id], t->p[id], val, &unit);
         b[0] = 'T';
         b[1] = (char)('1' + k % NTRK);

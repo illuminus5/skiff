@@ -179,6 +179,13 @@ static const char *const CLK_WHY[11] = {"", "ALREADY 320", "SYS MODE", "PLL2 NOT
 #define SMK_MASTER_BYTE (favorites.factory[15][13])
 #endif
 static const uint8_t *const mch_io = &ui_mch(0);
+/* (2.2) MENU > MIDI's own (seq.c MSET): [15][17] NOTES OUT (bits 0..1: ALL KEYS OFF), CLOCK OUT OFF (2), CC OUT ON
+ * (3), THRU ON (4) (SKS1's midi, its rsv17 before: 0 in every older setting, the defaults); REMOTE's channel in CPU2_BYTE's bits 3..7;
+ * AUTO CHANNEL's in [1][1] bits 0..4 (DIGITAL's row: its stars byte 0 only, MIDI LEARN 2..31) */
+#define MIDI_BYTE (favorites.factory[15][17])
+#define AUTO_BYTE (favorites.factory[ENGI_DIGITAL][1])
+static const uint8_t *const mset_io = &favorites.factory[0][0];
+static const uint8_t *const rmt_btn = panel.btn;     /* ((2.2) REMOTE: a label's button, midi_control.c) */
 static const uint8_t UNIT_G[3] = {G_CLOCK, G_ROUTE, G_TUNE};
 static uint8_t unit_g_adopt __attribute__((section(".pool")));   /* the first boot: a load takes them (main.c) */
 static uint32_t unit_g_t __attribute__((section(".pool")));      /* fm1_ms | 1 of a change not saved yet */
@@ -196,6 +203,7 @@ _Static_assert(PT_N == 8, "settings_persist.c keeps ui_ptag below 8");
  * 0 in older settings = OFF: REC and TAKES on the grid, as they were) */
 #define ui_rec_prefs (favorites.factory[15][28])
 #define PREF_REC 0xFF00u                       /* (menu_items.c MENU_FLAGS: a bit of ui_rec_prefs, << 8) */
+#define PREF_MIDI 0xFF0000u                    /* ((2.2) .. of MIDI_BYTE, << 16: CLOCK OUT OFF, CC OUT ON, THRU ON) */
 #define PREF_SCALE_LEDS (0x40u << 8)
 #define REC_FEEL 0x80u                         /* (Skiff: a bit of ui_rec_prefs itself) */
 enum { RP_CLICK, RP_LEVEL, RP_COUNTIN };
@@ -288,6 +296,7 @@ static struct {
     uint8_t menu;                /* 0 off, 1 list, 2 about + credits (HOME held) */
     uint8_t menu_sel;            /* MENU: the row (menu_items.c MI_*; its tab MI_TAB), kept while the device runs */
     uint8_t menu_row[5];         /* MENU: the row last picked in each tab, from its first (ALGORITHM comes back to it) */
+    uint32_t cc_last;            /* ((2.2) CC OUT: the last a knob sent, track << 16 | CC << 8 | value, + 1 (midi_learn.c) */
     volatile uint8_t mpc[NTRK];  /* ((1.3) MIDI Program Change per track, 0x80 | program, 0 none: midi_control.c mpc_io
                                   * notes it, midi_pc_poll loads it) */
     uint16_t menu_scroll;        /* continuous ABOUT + CREDITS position, pixels */
@@ -670,15 +679,13 @@ static void unit_g_poll(void)
  * videos, 2026-10-19: PLAY and REC did nothing after the install till RESET SETTINGS; Skiff's first boot takes CLOCK
  * from the session it restores, unit_g_boot) */
 static void ui_way(const char *s, const char *way);
-static void clock_wait_poll(void)
-{
-    static uint8_t said;
-    if (!song.playing || !song.g[G_CLOCK] || midi_clock.have_pulse)
-        said = 0;
-    else if (!said && fm1_ms - midi_clock.start_ms >= 1000u) {
-        said = 1;
+static void clock_wait_poll(void)                /* ((2.2) when the audio ISR gives up, 0.5 s on: seq.c clock_ext_block; a */
+{                                                /* second on, as before, it had stopped already and never said it) */
+    if (!midi_clock.starved)
+        return;
+    midi_clock.starved = 0;
+    if (song.g[G_CLOCK])
         ui_way(song.g[G_CLOCK] == 1 ? "WAITING FOR USB CLOCK" : "WAITING FOR TRS CLOCK", "MENU > MIDI > CLOCK");
-    }
 }
 /* after the session came back (main.c, autosave_boot): the unit's into song.g; the first boot the other way */
 static void unit_g_boot(void)

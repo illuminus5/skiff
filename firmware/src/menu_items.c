@@ -23,15 +23,15 @@
 /* (SMK-37 Pro, SMK37_UX.md) KEY VELOCITY in CONTROL (question 8); no LEDS row (button LEDs A: on or off only): MI_LEDS
  * past MI_COUNT, so its setting stays and no tab shows it */
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED, MI_PREVIEW,
-       MI_RETURN, MI_KVEL, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_ROUTE,
-       MI_LEARN, MI_LCLEAR, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK,
-       MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT, MI_LEDS MI_SERIAL_OUT };
+       MI_RETURN, MI_KVEL, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
+       MI_AUTOCH, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_NOTES, MI_CCOUT, MI_THRU, MI_REMOTE, MI_LEARN,
+       MI_LCLEAR, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK, MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT, MI_LEDS MI_SERIAL_OUT };
 static const char *const KVEL_N[SMK_KV_N] = {"DYNAMIC", "SOFT", "HARD", "FIXED 64", "FIXED 100", "FIXED 127"};
 #else
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED,
-       MI_PREVIEW, MI_RETURN, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_ROUTE,
-       MI_LEARN, MI_LCLEAR, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK,
-       MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT MI_SERIAL_OUT };
+       MI_PREVIEW, MI_RETURN, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
+       MI_AUTOCH, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_NOTES, MI_CCOUT, MI_THRU, MI_REMOTE, MI_LEARN,
+       MI_LCLEAR, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK, MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT MI_SERIAL_OUT };
 #endif   /* ((Skiff U4, A3) HINTS; RESET SETTINGS, a row with no value: its dialog) */   /* ((Skiff U3, R8, R2) CLOCK, MIDI IN, TUNE: the unit's, GLOBAL's and SYSTEM's before; CPU: read) */   /* (1.1: the metronome's rows in
                                                                                              * AUDIO; 1.2: RESTORE LAST in SYSTEM, SCALE LEDS
                                                                                              * in CONTROL) */
@@ -46,8 +46,9 @@ static const char *const MI_NAME[MI_COUNT] = {"THEME", "PLAYHEAD", "LARGE", "ANI
                                               "KEY VELOCITY",
 #endif
                                               "SPEAKER EQ", "USB LEVEL", "CLICK", "CLICK LEVEL", "COUNT-IN", "TUNE",
-                                              "CLOCK", "MIDI IN", "MIDI LEARN", "LEARN CLEAR",
+                                              "CLOCK", "CLOCK OUT", "MIDI IN", "AUTO CHANNEL",
                                               "T1 CHANNEL", "T2 CHANNEL", "T3 CHANNEL", "T4 CHANNEL", "T5 CHANNEL", "T6 CHANNEL",
+                                              "NOTES OUT", "CC OUT", "THRU", "REMOTE", "MIDI LEARN", "LEARN CLEAR",
                                               MI_SERIAL_NAME "RESTORE LAST", "CPU", "CPU CLOCK", "CALIBRATION", "RESET SETTINGS",
                                               "ABOUT"};
 /* 1.0.5: the MENU's tabs (ui_menu.c: ALGORITHM steps between them, PRESETS among one tab's rows; the editor gets a
@@ -77,10 +78,12 @@ static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_AUDIO, MTAB_AUDIO, MTAB_AUDIO, MTAB_AUDIO, MTAB_AUDIO,             /* SPEAKER EQ, USB LEVEL, CLICK, CLICK LEVEL,
                                                                              * COUNT-IN */
     MTAB_AUDIO,                                                             /* (Skiff U3) TUNE */
-    MTAB_MIDI, MTAB_MIDI,                                                   /* (Skiff U3) CLOCK, MIDI IN ((1.3) from
-                                                                             * CONTROL) */
-    MTAB_MIDI, MTAB_MIDI,                                                   /* (1.3) MIDI LEARN, LEARN CLEAR */
+    MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI,                             /* (Skiff U3) CLOCK, ((2.2) CLOCK OUT), MIDI
+                                                                             * IN ((1.3) from CONTROL), ((2.2) AUTO
+                                                                             * CHANNEL) */
     MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI,       /* (1.3) T1..T6 CHANNEL */
+    MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI,                             /* (2.2) NOTES OUT, CC OUT, THRU, REMOTE */
+    MTAB_MIDI, MTAB_MIDI,                                                   /* (1.3) MIDI LEARN, LEARN CLEAR */
     MI_SERIAL_TAB MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM,                    /* USB SERIAL, RESTORE LAST, (Skiff U3) CPU,
                                                                              * (Skiff) CPU CLOCK (SYSTEM's seven scroll) */
     MTAB_SYSTEM, MTAB_SYSTEM, MTAB_SYSTEM,                                  /* CALIBRATION, (U4) RESET SETTINGS, ABOUT */
@@ -108,8 +111,11 @@ static int menu_act(uint32_t row) { return row >= MI_VALUES || row == MI_LEARN |
  * the default, bit set). A step up (a knob right,
  * OCT+) = ON on the ON / OFF rows (the switch's knob to the right; ANIM, USB SERIAL: their bit clears), else the
  * second name (STYLE LINE, USB LEVEL FIXED); a step down the other (menu_step) */
-typedef struct { uint8_t row; uint16_t bit; const char *name[2]; } menu_flag_t;
+typedef struct { uint8_t row; uint32_t bit; const char *name[2]; } menu_flag_t;
 static const menu_flag_t MENU_FLAGS[] = {
+    {MI_CLKOUT, MO_CLOCK_OFF << 16, {"ON", "OFF"}},   /* (2.2) MIDI clock out from the internal clock (seq.c clock_out) */
+    {MI_CCOUT, MO_CC_ON << 16, {"OFF", "ON"}},        /* (2.2) a knob's CC out (midi_learn.c cc_knob) */
+    {MI_THRU, MO_THRU_ON << 16, {"OFF", "ON"}},       /* (2.2) TRS IN to USB OUT ((SMK-37) USB IN to TRS OUT) */
     {MI_LARGE, PREF_LARGE, {"OFF", "ON"}},            /* #15 / Discussion #80: ON, big knob labels and values (ui.c large_kind) */
     {MI_ANIM, PREF_ANIM_OFF, {"ON", "OFF"}},          /* #46: OFF, values snap (ui_draw.c roll_note, ui_graph.c pr_follow) */
     {MI_ACCEL, PREF_ACCEL, {"OFF", "ON"}},            /* #52: ui_input.c accel */
@@ -169,7 +175,8 @@ static uint32_t menu_n(uint32_t row)
            row == MI_LOWCUT || row == MI_RETURN || (row >= MI_CLICK && row <= MI_COUNTIN) ? 3u :
            row == MI_HOLD ? 4u : row == MI_LEDS ? LEDS_COUNT : row == MI_SCROFF ? NELEM(SCROFF_N) :
            row == MI_CLOCK ? NELEM(N_CLOCK) : row == MI_TUNE ? 101u : row == MI_CPU ? 1u + FELUCCA_CPU2 :
-           MI_TCH(row) ? 16u : row == MI_LEARN || row == MI_LCLEAR ? 1u :
+           MI_TCH(row) ? 33u : row == MI_LEARN || row == MI_LCLEAR ? 1u :
+           row == MI_AUTOCH || row == MI_REMOTE ? 17u : row == MI_NOTES ? 3u :
 #if BOARD_SMK37
            row == MI_KVEL ? SMK_KV_N :
 #endif
@@ -180,7 +187,7 @@ static uint32_t menu_get(uint32_t row)
     const menu_flag_t *f = menu_flag(row);
     uint32_t i = 0;
     if (f)
-        return ((ui_prefs | (uint32_t)ui_rec_prefs << 8) & f->bit) != 0;
+        return ((ui_prefs | (uint32_t)ui_rec_prefs << 8 | (uint32_t)MIDI_BYTE << 16) & f->bit) != 0;
     switch (row) {
     case MI_COLOR: return cpal_on() ? NPALETTES : settings.palette % NPALETTES;   /* ((Skiff #27) CUSTOM: last) */
     case MI_PHEAD: return ui_ph_line != 0;
@@ -190,7 +197,11 @@ static uint32_t menu_get(uint32_t row)
     case MI_CLICK: case MI_CLKLVL: case MI_COUNTIN: return rp_get(row - MI_CLICK);
     case MI_CLOCK: return (uint32_t)song.g[G_CLOCK] % NELEM(N_CLOCK);
     case MI_ROUTE: return song.g[G_ROUTE] != 0;
-    case MI_TCH1: case MI_TCH2: case MI_TCH3: case MI_TCH4: case MI_TCH5: case MI_TCH6: return trk_midi_ch(row - MI_TCH1);
+    case MI_TCH1: case MI_TCH2: case MI_TCH3: case MI_TCH4: case MI_TCH5: case MI_TCH6:   /* ((2.2) OFF, CH 1..16, then */
+        return trk_moff(row - MI_TCH1) ? 0u : 1u + trk_midi_ch(row - MI_TCH1) + 16u * trk_ext(row - MI_TCH1);   /* EXT */
+    case MI_NOTES: return 2u - notes_out();            /* ((2.2) OFF KEYS ALL: stored ALL 0, KEYS 1, OFF 2) */
+    case MI_AUTOCH: return mset_ch(AUTO_BYTE & 31u);
+    case MI_REMOTE: return mset_ch(CPU2_BYTE >> 3);
     case MI_HINTS: return ui_hints_off != 0;
     case MI_PREVIEW: return PREVIEW_SET ? 1u : 0u;
     case MI_RETURN: return ret_mode();
@@ -226,16 +237,21 @@ static const char *menu_vname(uint32_t row, uint32_t v)
     case MI_LEDS: return LEDS_NAME[LEDS_MENU[v % LEDS_COUNT]];
     case MI_CLOCK: return N_CLOCK[v % NELEM(N_CLOCK)];
     case MI_ROUTE:                                     /* ((1.3) CH1-6 with a track set elsewhere: TRACK) */
-        if (!(v & 1u) && (ui_mch(0) | ui_mch(1) | ui_mch(2) | ui_mch(3) | ui_mch(4) | ui_mch(5)))
+        if (!(v & 1u) && ((ui_mch(0) | ui_mch(1) | ui_mch(2) | ui_mch(3) | ui_mch(4) | ui_mch(5)) & 15u))
             return "TRACK";
         return N_ROUTE[v & 1u];
-    case MI_LCLEAR: case MI_TCH1: case MI_TCH2: case MI_TCH3: case MI_TCH4: case MI_TCH5: case MI_TCH6: {
-        static char c[8] __attribute__((section(".pool")));   /* ((1.3) "CH 10"; LEARN CLEAR: "3 CC", "NONE") */
+    case MI_NOTES: return v == 0u ? "OFF" : v == 1u ? "KEYS" : "ALL";
+    case MI_LCLEAR: case MI_TCH1: case MI_TCH2: case MI_TCH3: case MI_TCH4: case MI_TCH5: case MI_TCH6:
+    case MI_AUTOCH: case MI_REMOTE: {
+        static char c[12] __attribute__((section(".pool")));  /* ((1.3) "CH 10"; LEARN CLEAR: "3 CC", "NONE"; (2.2) "OFF",
+                                                               * "CH 10 EXT") */
         if (row == MI_LCLEAR && !ml_count())
             return "NONE";
+        if (row != MI_LCLEAR && !v)
+            return "OFF";
         str_cpy(c, row == MI_LCLEAR ? "" : "CH ", sizeof c);
-        fmt_int(c + str_len(c), row == MI_LCLEAR ? (int32_t)ml_count() : (int32_t)v + 1);
-        str_cpy(c + str_len(c), row == MI_LCLEAR ? " CC" : "", sizeof c - str_len(c));
+        fmt_int(c + str_len(c), row == MI_LCLEAR ? (int32_t)ml_count() : (int32_t)(v - 1u) % 16 + 1);
+        str_cpy(c + str_len(c), row == MI_LCLEAR ? " CC" : v > 16u ? " EXT" : "", sizeof c - str_len(c));
         return c;
     }
     case MI_LEARN: return ui.ml.on ? "ON" : "";
@@ -287,7 +303,9 @@ static void menu_put(uint32_t row, uint32_t v)
 {
     const menu_flag_t *f = menu_flag(row);
     if (f) {
-        if (f->bit & PREF_REC)
+        if (f->bit & PREF_MIDI)                        /* ((2.2) the ISR reads it at its next block) */
+            MIDI_BYTE = (uint8_t)(v ? MIDI_BYTE | f->bit >> 16 : MIDI_BYTE & ~(f->bit >> 16));
+        else if (f->bit & PREF_REC)
             ui_rec_prefs = (uint8_t)(v ? ui_rec_prefs | f->bit >> 8 : ui_rec_prefs & ~(f->bit >> 8));
         else
             ui_prefs = (uint8_t)(v ? ui_prefs | f->bit : ui_prefs & ~f->bit);
@@ -310,8 +328,12 @@ static void menu_put(uint32_t row, uint32_t v)
     case MI_CLOCK: song.g[G_CLOCK] = (int16_t)v; break;   /* ((Skiff U3) the unit's: ui.c unit_g_poll keeps them) */
     case MI_ROUTE: song.g[G_ROUTE] = (int16_t)v; break;
     case MI_TCH1: case MI_TCH2: case MI_TCH3: case MI_TCH4: case MI_TCH5: case MI_TCH6:   /* ((1.3) the ISR reads it */
-        ui_mch(row - MI_TCH1) = (uint8_t)((v - (row - MI_TCH1)) & 15u);                 /* at its next block) */
-        break;
+        ui_mch(row - MI_TCH1) = (uint8_t)(v ? ((v - 1u - (row - MI_TCH1)) & 15u) | (v > 16u ? MCH_EXT : 0u) :   /* at */
+                                          (ui_mch(row - MI_TCH1) & 15u) | MCH_OFF);   /* its next block; (2.2) OFF keeps */
+        break;                                                                        /* the channel, EXT a flag) */
+    case MI_NOTES: MIDI_BYTE = (uint8_t)((MIDI_BYTE & ~3u) | (2u - v % 3u)); break;   /* ((2.2) OFF KEYS ALL: 2 1 0) */
+    case MI_AUTOCH: AUTO_BYTE = (uint8_t)((AUTO_BYTE & ~31u) | v); break;
+    case MI_REMOTE: CPU2_BYTE = (uint8_t)((CPU2_BYTE & 7u) | v << 3); break;
     case MI_TUNE: song.g[G_TUNE] = (int16_t)((int32_t)v - 50); break;
 #if BOARD_SMK37
     case MI_KVEL: SMK_KV_BYTE = (uint8_t)(v % SMK_KV_N); smk_kv_mode = SMK_KV_BYTE; break;
@@ -357,7 +379,10 @@ static void settings_reset(void)
     menu_put(MI_CLOCK, 0);
     menu_put(MI_ROUTE, 0);
     for (i = 0; i < NTRK; i++)                         /* ((1.3) T1..T6 on channels 1..6; nothing learned) */
-        menu_put(MI_TCH1 + i, i);
+        menu_put(MI_TCH1 + i, i + 1u);
+    MIDI_BYTE = 0;                                     /* ((2.2) NOTES OUT ALL, CLOCK OUT ON, CC OUT and THRU OFF; */
+    menu_put(MI_AUTOCH, 0);                            /* AUTO CHANNEL and REMOTE OFF) */
+    menu_put(MI_REMOTE, 0);
     ml_off();
     (void)ml_clear_all();
     menu_put(MI_TUNE, 50);

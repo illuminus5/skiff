@@ -485,8 +485,10 @@ grid lives in the steps themselves, so every engine has it:
   port with other SysEx (the `F0 22 24 35 …` keys, `00 59 …` frames); never send those
   from the editor. Since 1.0 the same USB device also has an audio input ("Felucca",
   44.1 kHz stereo; bcdDevice 3.11; since 1.1 44.1 or 48 kHz, the host's choice, bcdDevice 3.21
-  (3.20 with MENU > USB SERIAL OFF)); the MIDI port and this protocol are unchanged, and both
-  work while the computer records.
+  (3.20 with MENU > USB SERIAL OFF); Skiff 1.3 to 2.1: 3.29 / 3.28; Skiff 2.2, the MIDI interface after the audio
+  streaming one: 3.A1 / 3.A0, a release 3.A0); the MIDI port and this protocol are unchanged, and both
+  work while the computer records. (2.2) With MENU > MIDI > NOTES OUT ALL (the default) and CLOCK OUT ON the port also
+  carries the tracks' notes and MIDI clock: the editor ignores both.
 - **Global ids.** (Skiff U3: `G_CLOCK`, `G_ROUTE` and `G_TUNE` are the unit's, MENU > CLOCK, MIDI IN, TUNE on the
   device: still read and set here as globals, kept in the unit's settings, and a project load no longer changes them;
   `G_CRATE` / `G_CDEPTH` are labelled RATE / DEPTH.) `G_ROUTE` (id 14, label "ROUT", GLO > SYSTEM) was a placeholder ("--", range 0..0);

@@ -2,6 +2,11 @@
 /* Exercise the real keyboard, recording, arp and MIDI-out paths on the host.
  * Build with the same generated headers and flags as hostsim.c. */
 #include <assert.h>
+#include <stdint.h>
+/* (2.2) MENU > MIDI's settings (seq.c mset_io; no ui.c here): NOTES OUT KEYS, as the MIDI checks below were written
+ * (the keys as pressed; ALL's what-plays-goes-out: tests/midi_out_test.c) */
+static uint8_t host_mset[16 * 32];
+static const uint8_t *const mset_io = host_mset;
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
@@ -85,6 +90,7 @@ static void key_events_test(void)
     kb_prev = 0;
     usb.config = 1;
     mo_w = mo_r = 0;
+    host_mset[32u * 15u + 17u] = NO_KEYS;
     t->p[P_QUANT] = 2;
     t->p[P_SCALE] = 2;                      /* C minor: E key plays Eb */
     t->p[P_AMODE] = 1;

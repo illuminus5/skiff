@@ -11,6 +11,8 @@
 #define FELUCCA_CDC 0
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"   /* SIE register macros (never touched here) */
+static uint8_t host_mset[16 * 32];                  /* ((2.2) MENU > MIDI's settings (usb.c mset_io): THRU below */
+static const uint8_t *const mset_io = host_mset;
 #include "../firmware/src/usb.c"
 #include "../firmware/src/midi_uart.c"
 
@@ -107,11 +109,12 @@ int main(void)
         0xF8, 64, 0xFE, 102,             /* realtime inside a message */
         0xC1, 5, 6,                      /* program change + running */
         0xF0, 0x22, 0x24, 0x35, 0x7D, 0xF7, 70, 71,   /* SysEx dropped; cancels running status */
-        0xB0, 7, 0x7F, 0xF2, 1, 2, 9, 9, /* CC, song position (dropped), data without status */
+        0xB0, 7, 0x7F, 0xF2, 1, 2, 9, 9, /* CC, song position ((2.2) CIN 3), data without status after it */
         0x80, 60, 0,
     };
     static const uint32_t want[] = {
-        0x643C9009u, 0x653E9009u, 0x0000F80Fu, 0x66409009u, 0x0005C10Cu, 0x0006C10Cu, 0x7F07B00Bu, 0x003C8008u,
+        0x643C9009u, 0x653E9009u, 0x0000F80Fu, 0x66409009u, 0x0005C10Cu, 0x0006C10Cu, 0x7F07B00Bu, 0x0201F203u,
+        0x003C8008u,
     };
     uint32_t i, bad = 0, n = sizeof want / sizeof want[0];
     for (i = 0; i < sizeof in; i++)
@@ -147,6 +150,23 @@ int main(void)
                   ((pkt >> 16) & 0x7Fu) == chs[3u * i + 1u] && (pkt >> 24) == chs[3u * i + 2u];
         }
         bad += (uint32_t)check("uart: channels 1, 2, 3, 10, 16 -> USB-MIDI packets", ok);
+    }
+    {   /* (2.2) THRU: what the jack brings in, out over USB too (channel messages, the clock, Song Position) */
+        static const uint8_t thru[] = {0x90, 60, 100, 0xF8, 0xF2, 4, 0, 0xF0, 1, 0xF7};
+        uint32_t ok;
+        usb.config = 1;
+        mo_w = mo_r = 0;
+        for (i = 0; i < sizeof thru; i++)
+            um_byte(thru[i]);
+        ok = mo_w == 0u;                              /* (THRU OFF, the default: nothing) */
+        host_mset[32u * 15u + 17u] = MO_THRU_ON;
+        for (i = 0; i < sizeof thru; i++)
+            um_byte(thru[i]);
+        ok &= mo_w == 3u && midi_out_q[0] == 0x643C9009u && midi_out_q[1] == 0x0000F80Fu && midi_out_q[2] == 0x0004F203u;
+        host_mset[32u * 15u + 17u] = 0;
+        bad += (uint32_t)check("(2.2) uart THRU: a note, the clock, Song Position out to USB (no SysEx); OFF: none", ok);
+        usb.config = 0;
+        mo_w = mo_r = 0;
     }
     bad += (uint32_t)test_usb_sysex();
     printf("%s\n", bad ? "MIDI PARSER TEST FAILED" : "midi parser test passed");

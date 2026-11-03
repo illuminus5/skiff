@@ -32,7 +32,8 @@ typedef struct {                               /* Skiff's settings: favorites.fa
     uint8_t cpu;                               /* bit 0 CPU 2 CORES, 1 STEP PREVIEW, 2 CPU CLOCK 320 MHZ (ui.c CPU2_BYTE) */
     uint8_t mch[6];                            /* T1..T6 CHANNEL (ui.c ui_mch) */
     uint8_t smk_kv, smk_master;                /* (SMK-37) KEY VELOCITY, MASTER's level / 4 + 1 (ui.c SMK_*_BYTE) */
-    uint8_t cpal, playhead, ret, rsv17;        /* THEME CUSTOM's flags (CPAL_BYTE), PLAYHEAD LINE, RETURN (RET_BYTE) */
+    uint8_t cpal, playhead, ret, midi;         /* THEME CUSTOM's flags (CPAL_BYTE), PLAYHEAD LINE, RETURN (RET_BYTE),
+                                                * (2.2) MENU > MIDI's switches (ui.c MIDI_BYTE) */
     uint8_t unit_g[3];                         /* the unit's CLOCK, MIDI IN, TUNE (ui.c ui_unit_g) */
     uint8_t ptag, hints_off, set_rev, rsv24;   /* PRESETS' LIST type, HINTS OFF, the one-time changes; (24: RAM's mark) */
     uint8_t perf_keys, launch, scr, rec;       /* PERFORM KEYS, LAUNCH, SCREEN OFF, CLICK .. FEEL (ui_rec_prefs) */

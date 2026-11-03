@@ -11,11 +11,12 @@
  * the 1 MiB part ignores the high address bits, so a wrapped range lands low. */
 #define FL_IN(off, n, lo, hi) ((uint32_t)(off) >= (lo) && (uint32_t)(off) <= (hi) && \
                                (uint32_t)(n) <= (hi) - (uint32_t)(off))
-/* the flash part the storage accepts (JEDEC id, project.c persist_boot); else the unit runs without saving */
+/* the flash parts the storage accepts (JEDEC id, project.c persist_boot); else the unit runs without saving or updating.
+ * (2.2, #96) 0xB36014: the UC25HQ80 of newer FM-1s, 1 MiB and the commands of the Puya P25Q80 (0x856014) */
 #if BOARD_SMK37
-#define FL_JEDEC_OK(id) ((id) == 0xEB6014u || (id) == 0x856014u)   /* the SMK-37's part (read on a unit), the FM-1's */
+#define FL_JEDEC_OK(id) ((id) == 0xEB6014u || (id) == 0x856014u || (id) == 0xB36014u)   /* the SMK-37's part, the FM-1's */
 #else
-#define FL_JEDEC_OK(id) ((id) == 0x856014u)
+#define FL_JEDEC_OK(id) ((id) == 0x856014u || (id) == 0xB36014u)   /* (as project.c's FM-1 check) */
 #endif
 
 #if BOARD_SMK37

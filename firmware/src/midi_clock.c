@@ -5,7 +5,10 @@
 static struct {
     uint32_t pos, rendered, last_ms, start_ms, rem, interval_ms;
     uint32_t pulse_samples, interp_q8, tempo_ms;
+    uint16_t spp;                                  /* ((2.2) a Song Position + 1 waiting for Continue; 0 none) */
     uint8_t mode, have_pulse, tempo_valid, tempo_n;
+    volatile uint8_t starved;                      /* ((2.2) PLAY stopped with no pulse since: ui.c clock_wait_poll says
+                                                    * WAITING FOR .. CLOCK, and clears it) */
 } midi_clock;
 
 static __attribute__((noinline)) void midi_clock_transport(uint32_t status, uint32_t ms)
@@ -15,19 +18,35 @@ static __attribute__((noinline)) void midi_clock_transport(uint32_t status, uint
         midi_clock.have_pulse = midi_clock.tempo_valid = 0;
         midi_clock.interval_ms = 0;
         midi_clock.start_ms = ms;
+        midi_clock.spp = 0;
         seq_start();
-    } else if (status == 0xFBu) {                  /* Continue: preserve the step */
+    } else if (status == 0xFBu) {                  /* Continue: preserve the step ((2.2) or go where SPP said) */
         midi_clock.pos = midi_clock.rendered;
         midi_clock.rem = 0;
         midi_clock.have_pulse = midi_clock.tempo_valid = 0;
         midi_clock.interval_ms = 0;
         midi_clock.start_ms = ms;
+        if (midi_clock.spp) {
+            seq_locate(midi_clock.spp - 1u);
+            midi_clock.spp = 0;
+            return;
+        }
         if (!song.playing)
             motion_begin();
         song.playing = 1;
     } else if (status == 0xFCu) {
         seq_stop();
     }
+}
+/* (2.2) Song Position Pointer (F2, 16ths from the top: a DAW starting or looping mid-song): kept for the Continue that
+ * follows; while playing, there at once (a loop's jump back) */
+static __attribute__((noinline)) void midi_clock_spp(uint32_t pos)
+{
+    pos &= 0x3FFFu;
+    if (song.playing)
+        seq_locate(pos);
+    else
+        midi_clock.spp = (uint16_t)(pos + 1u);
 }
 
 static __attribute__((noinline)) void midi_clock_pulse(uint32_t ms)

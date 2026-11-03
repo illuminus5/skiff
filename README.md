@@ -14,7 +14,11 @@ synths and drums, patterns and songs, live performance, and a screen that shows 
   <img src="https://img.shields.io/badge/hardware-M--VAVE%20FM--1%20%7C%20SMK--37%20Pro-555" alt="Hardware: M-VAVE FM-1 | SMK-37 Pro">
 </p>
 
-<p align="center"><b>New in 2.1.1:</b> a drum struck again while it still rings starts without a click: tom rolls,
+<p align="center"><b>New in 2.2:</b> USB MIDI: everything the tracks play goes out, timed with the sound (steps, the
+arp, chords, ratchets), MIDI clock and Start / Stop, a track as an external synth's, knob CCs, remote buttons, Song
+Position; newer FM-1s with another flash chip save and update ·
+<a href="https://github.com/illuminus5/skiff/releases/tag/v2.2">the release notes</a><br>
+<b>New in 2.1.1:</b> a drum struck again while it still rings starts without a click: tom rolls,
 ratchets and the long-decay kits ·
 <a href="https://github.com/illuminus5/skiff/releases/tag/v2.1.1">the release notes</a><br>
 <b>New in 2.1:</b> chord follow, a bass line or an arp that moves with another track's chords, and
@@ -72,12 +76,12 @@ Custom firmware, at your own risk; the way back to the official firmware is belo
 connect the FM-1 by USB and follow it. The same page takes the FM-1 back to the official firmware (V15 or V16: the
 version it had before Skiff), saving a complete backup of your music first.
 
-**With Python 3:** download `skiff-2.1.1.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
+**With Python 3:** download `skiff-2.2.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
 and, with this repository's `tools/` folder,
 
 ```
 pip install mido python-rtmidi
-python tools/fm1_install.py skiff-2.1.1.fwsc
+python tools/fm1_install.py skiff-2.2.fwsc
 ```
 
 It takes about two minutes and the FM-1 restarts on Skiff.
@@ -89,10 +93,25 @@ October 21 (Skiff 2.0.2 and later; done on a unit: back to V16, then on to Skiff
 [fm1_open repository](https://github.com/m-vave/fm1_open) as `sdk/firmware/FM-1_015.fwsc`. The official firmware
 writes its Bluetooth settings anew on its first start, so pair Bluetooth devices again if they don't connect.
 
-**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.1.1-smk37.fwsc` for
+**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.2-smk37.fwsc` for
 Python). Two steps come first: M-VAVE's firmware V016 on the keyboard, and a backup of its flash, which holds the
 keyboard's own key calibration. [SMK37.md](SMK37.md#install) has both, the way back and what to do if it does not
 start.
+
+**Updating to 2.2:** nothing is converted.
+- On Windows the FM-1 is set up once more: 2.2 lists its USB audio before its MIDI, for macOS. Pick its recording
+  input again in your recorder or DAW; it may be named "Line (2- Felucca)". MIDI apps find "Felucca" as before.
+- NOTES OUT is ALL from 2.2: what the sequencer plays goes out over USB MIDI too. For only the keys you play, as
+  before, set MENU › MIDI › NOTES OUT KEYS ([MIDI implementation](#midi-implementation)).
+
+**Saves gone after switching off, or the installer can't update the FM-1 from Skiff:**
+- The cause: some newer FM-1s carry another flash chip, the UC25HQ80. Skiff before 2.2 didn't know it, so it kept
+  everything in RAM and refused updates ([#96](https://github.com/illuminus5/skiff/issues/96)). 2.2 knows the chip.
+- From the official firmware, the installer puts 2.2 on as usual.
+- From Skiff 2.1.1 or older on such a unit, the installer and M-VAVE's own updater are both refused by that old check.
+  Hold OCT- and OCT+ for 5 seconds: the FM-1 goes into the chip's boot mode, and a computer sees a USB disk named
+  WL82 UBOOT1.00. Put the official firmware back as [below](#if-the-fm-1-does-not-start) describes (FM-1
+  Transporter, or jl-uboot-tool), then install 2.2.
 
 **Updating to 2.0** from Skiff 1.x or Felucca: 2.0 reads what Skiff 1.0 and later saved, and keeps it in newer
 formats from then on. The installer page first takes a complete backup and saves it to your computer
@@ -125,7 +144,7 @@ Edge, over USB MIDI).
 | **Effects** | chorus (CHORUS, FLANGER or PHASER, with FEEDBACK), delay and reverb (ROOM, SPRING or a stereo HALL) as sends |
 | **Memory** | 4 projects, 32 user sounds, 3 user sample slots; the music comes back at power-on (RESTORE LAST); 8 levels of undo |
 | **Screen** | 240 × 240 colour; a graph on every page; HOME held shows every control's job; 6 themes and colours of your own; LARGE mode with tall cards |
-| **MIDI and USB** | USB MIDI in and out, TRS MIDI in; clock from inside, USB or TRS; each track its own channel (1–6 by default); MIDI LEARN for any knob; Program Change; a stereo USB audio input to record the master on a computer |
+| **MIDI and USB** | USB MIDI in and out, TRS MIDI in; (2.2) everything the tracks play goes out on their channels (steps, arp, chords, ratchets), MIDI clock and Start / Stop out, a track as an external synth's (EXT), knob CCs out, remote buttons, a channel for the selected track, TRS-to-USB thru, Song Position in; clock from inside, USB or TRS; MIDI LEARN for any knob; Program Change; a stereo USB audio input to record the master on a computer ([MIDI implementation](#midi-implementation)) |
 | **Editor** | in the browser: sounds, steps, the mixer, the song lists, scenes and pattern pool, projects, the DRUM-X kit, the settings, PLAY, STOP and REC |
 | **Audio** | 44.1 kHz |
 
@@ -400,7 +419,15 @@ Felucca) first, and lists what it converted.
   cards; messages say the way out; idle buttons glow, what can be pressed breathes, never blinks
 - **USB and MIDI:** class-compliant MIDI in and out, TRS MIDI in, a stereo USB audio input to record the
   master on a computer; channels 1–6 play tracks 1–6 (MENU › MIDI IN CH1-6), and (1.3) each track can listen on a
-  channel of its own (MENU › MIDI › T1–T6 CHANNEL); clock from internal, USB or TRS. **MIDI LEARN** (1.3): MENU › MIDI
+  channel of its own (MENU › MIDI › T1–T6 CHANNEL); clock from internal, USB or TRS. (2.2) **NOTES OUT ALL**: every note
+  a track plays goes out on its channel (its steps, ratchets and flams, the arp, chords, chord follow, the keys), each
+  leaving when its sound does (to within half a millisecond), every note-on with its note-off; a muted track sends
+  nothing and what MIDI IN plays is never sent back. **CLOCK OUT**: MIDI clock and Start / Stop from the internal
+  clock, on the sequencer's own grid, while stopped too. A track set to **CH n EXT** plays only through MIDI (an
+  external synth's track: no sound or voices of its own; its locks and automation go out as CCs). **CC OUT**: the knobs
+  send their CCs (the map below). **REMOTE**: a channel on which CC 102–115 press the 14 buttons. **AUTO CHANNEL**: a
+  channel that plays the selected track. **THRU**: what the TRS jack brings in goes out over USB. **Song Position**
+  from a DAW puts the patterns on the right step. See [MIDI implementation](#midi-implementation). **MIDI LEARN** (1.3): MENU › MIDI
   › MIDI LEARN, turn a knob, send a CC: the controller sets that parameter, up to 10 of them; **Program Change** (1.3)
   loads the track's nth preset. **Standard CCs**, each on the track its channel plays (recorded as automation while it's
   armed): CC7 LEVEL, CC10 PAN, CC5 GLIDE, CC73 ATTACK, CC75 DECAY, CC72 RELEASE, CC74 the engine's brightness (ANALOG's
@@ -580,8 +607,8 @@ and BREAK 1.1's own break.
 Hold **HOME** and let it go for the menu. It is in five tabs: **DISPLAY** (THEME, PLAYHEAD, LARGE, ANIM, LEDS,
 SCREEN OFF, HINTS), **CONTROL** (HOLD, KNOB ACCEL, BPM LOCK, SCALE LEDS, STEP PREVIEW, RETURN), **AUDIO** (SPEAKER EQ,
 USB LEVEL, CLICK, CLICK LEVEL, COUNT-IN, TUNE), **SYSTEM** (RESTORE LAST, CPU, CPU CLOCK, HARDWARE CALIBRATION, RESET
-SETTINGS, ABOUT) and **MIDI** (CLOCK, MIDI IN, MIDI LEARN, LEARN CLEAR, T1–T6 CHANNEL); a tab of more than six rows
-scrolls.
+SETTINGS, ABOUT) and **MIDI** (CLOCK, CLOCK OUT, MIDI IN, AUTO CHANNEL, T1–T6 CHANNEL, NOTES OUT, CC OUT, THRU, REMOTE,
+MIDI LEARN, LEARN CLEAR); a tab of more than six rows scrolls.
 ALGORITHM moves between the tabs and PRESETS through the rows of one; any of KNOB 1–4, or OCT+ / OCT−,
 changes the value (OCT+ opens HARDWARE CALIBRATION and ABOUT, starts MIDI LEARN and clears what it learned); press
 HOME to close the menu. RESET SETTINGS puts
@@ -622,8 +649,32 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
 - **CLOCK:** INT, USB or TRS, where the tempo comes from. **MIDI IN:** CH1-6, channels 1–6 play tracks 1–6 (TRACK
   once one of them is set to another channel), or SEL, every channel the selected track. **TUNE** (AUDIO): the whole
   unit in cents, ±50. The three are the unit's, so loading a project never changes them
-- **T1–T6 CHANNEL** (MIDI, 1.3): the channel each track hears and its keys play out on, CH 1–16 (CH 1–6 by default); two
-  tracks on one channel: the first of them plays it, and a channel no track is on is left for other instruments
+- **CLOCK OUT** (MIDI, 2.2): ON (default) or OFF: with CLOCK INT, MIDI clock out over USB (and the SMK-37's TRS jack),
+  24 a beat on the sequencer's own 1/16 grid, while stopped too; Start when the sequencer starts (after a count-in),
+  Stop when it stops. With CLOCK USB or TRS none: the clock is someone else's
+- **AUTO CHANNEL** (MIDI, 2.2): OFF (default) or CH 1–16: that channel plays the selected track, so a keyboard follows
+  ALGORITHM while the tracks keep their own channels; it wins over a track set to the same channel
+- **T1–T6 CHANNEL** (MIDI, 1.3): the channel each track hears and plays out on, CH 1–16 (CH 1–6 by default); two
+  tracks on one channel: the first of them plays it, and a channel no track is on is left for other instruments.
+  (2.2) **OFF**: the track neither hears MIDI IN nor sends. **CH n EXT**: the track plays only through MIDI, for an
+  external synth (or a DAW's): its notes go out whatever NOTES OUT says, it sounds nothing of its own and takes no
+  voices, and its knobs, locks and automation of the parameters with a CC (the map below) go out as CCs, a step's
+  before its notes. Older firmware reads the channel and ignores OFF and EXT
+- **NOTES OUT** (MIDI, 2.2): ALL (default), KEYS or OFF. ALL: everything a track plays goes out on its channel (its
+  steps, ratchets, flams, the arp, chords, chord follow, the keys as they sound), each note-on with its note-off on
+  the same channel, ending when its sound does, a channel changed or a panic too; a muted track sends nothing, and
+  what MIDI IN plays is never sent back (no loop through a computer). KEYS: the keys as pressed, as before 2.2.
+  OFF: none (an EXT track still sends)
+- **CC OUT** (MIDI, 2.2): OFF (default) or ON: a knob turned sends its CC on the track's channel (a CC learned to that
+  parameter, else the standard map's), so a DAW can record it and play it back; a CC that came in is never sent back.
+  An EXT track sends them with CC OUT OFF too
+- **THRU** (MIDI, 2.2): OFF (default) or ON: what the TRS jack brings in (notes, controllers, the clock, Song Position;
+  no SysEx) also goes out over USB, so the FM-1 is a TRS-to-USB MIDI interface for a keyboard. (SMK-37: what USB
+  brings in goes out of its TRS jack.) Never from USB back to USB
+- **REMOTE** (MIDI, 2.2): OFF (default) or CH 1–16: on that channel CC 102–115 press the 14 buttons (see MIDI
+  implementation), 64 and up held, below let go, as on the panel (taps, holds, layers, a button with a key); the
+  same numbers as Sloop's REMOTE, so a controller template made for it works. Other messages on that channel act as
+  usual
 - **MIDI LEARN** (MIDI, 1.3): OCT+ turns it on and closes the menu. Turn a knob (on HOME, a sound page, the MIXER, the
   GLO layer's levels): the footer says what it picked; send a CC from your controller and it is learned to that
   parameter of that track. Turn the next knob for another; OCT− clears the picked one's CC, OCT+ is done. Up to 10 CCs,
@@ -666,6 +717,50 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
   seconds after your last change, or right after a save. OFF starts with the power-on sounds
 - **HARDWARE CALIBRATION** and **ABOUT** (the version, the credits and a QR code to this repository)
 </details>
+
+## MIDI implementation
+
+One USB MIDI port (named "Felucca", as the firmware Skiff comes from), class compliant, and on the FM-1 a TRS MIDI IN
+jack (the SMK-37's TRS jack is MIDI OUT). The channels are MENU › MIDI's: track *n* on channel *n* unless T*n* CHANNEL
+says otherwise.
+
+| Message | In | Out |
+|---|---|---|
+| Note on / off | plays the track the channel is set to (MIDI IN SEL: the selected one; AUTO CHANNEL's: the selected one); recorded when it's armed | NOTES OUT ALL: everything the track plays, on its channel; KEYS: the keys as pressed; never what came in |
+| Velocity | as played | as played (a step's, a key's) |
+| Pitch bend | ±2 semitones, RPN 0 sets the range | — |
+| CC (the map below) | sets the parameter as a knob, recorded as automation while armed | CC OUT ON, or an EXT track: a knob, and on an EXT track its locks and automation |
+| CC1, CC11, channel pressure | the MOD sources MW, EXPR, AT | — |
+| CC64 | sustain | — |
+| CC120, CC121, CC123 | sound off, reset controllers, notes off | — |
+| CC 102–115 (REMOTE's channel) | press the 14 buttons | — |
+| Program Change | loads the track's *n*th preset of its engine | — |
+| Clock, Start, Continue, Stop | with CLOCK USB or TRS, from that source | CLOCK OUT ON, CLOCK INT: 24 a beat (stopped too), Start, Stop |
+| Song Position | with CLOCK USB or TRS: Continue starts there (playing: at once) | — |
+| SysEx | the web editor, the installer | the web editor's replies |
+| TRS IN (THRU ON) | — | out over USB as it came (not SysEx) |
+
+**The CC map**, in and out, on the track's channel (a CC learned with MIDI LEARN takes the place of the map's):
+
+| CC | Parameter | CC | Parameter |
+|---|---|---|---|
+| 5 | GLIDE | 73 | ATTACK |
+| 7 | LEVEL | 74 | the engine's brightness (ANALOG's CUTOFF ..) |
+| 10 | PAN | 75 | DECAY |
+| 71 | the engine's resonance | 91 | REVERB send |
+| 72 | RELEASE | 93 | CHORUS send |
+|  |  | 94 | DELAY send |
+
+**REMOTE** (its channel only; 64 and up: held down, below: let go):
+
+| CC | 102 | 103 | 104 | 105 | 106 | 107 | 108 | 109 | 110 | 111 | 112 | 113 | 114 | 115 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Button | FX | SEL | ENV | LFO | EDIT | GLO | HOME | SAVE | ARP | SEQ | PLAY | REC | OCT− | OCT+ |
+
+With a DAW: record the FM-1's port on MIDI tracks (one per channel) while NOTES OUT is ALL; to play the FM-1 back from
+the DAW, stop its own sequencer or mute its tracks (the notes would double), and CLOCK USB makes it follow the DAW's
+tempo, Start, Stop and Song Position. A DAW track that sends the FM-1's own port back to it doubles notes but makes no
+loop: what comes in never goes out.
 
 ## Scale keyboard
 
@@ -743,7 +838,7 @@ On the SMK-37: [SMK37.md](SMK37.md#if-it-does-not-start).
 **The screen says UPDATE MODE, or stays black while a computer sees a USB MIDI device named "Felucca
 Update":** an install was cut off, and the FM-1 waits in Skiff's update loader at every power-on. Nothing is
 lost. Connect it by USB and run the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) again
-(or `python tools/fm1_install.py skiff-2.1.1.fwsc`): it finishes the install. If the installer can't find it, plug
+(or `python tools/fm1_install.py skiff-2.2.fwsc`): it finishes the install. If the installer can't find it, plug
 the FM-1 straight into the computer: a USB hub or USB-sharing software can lose it when it switches to update mode.
 M-VAVE's own updater does not see the FM-1 in this state. (Since 1.3.2 the loader says UPDATE MODE on the screen;
 one an older Skiff left there keeps it black.)

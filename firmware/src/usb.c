@@ -35,9 +35,18 @@
 #ifndef FELUCCA_UAC_AS_FIRST
 #define FELUCCA_UAC_AS_FIRST 1
 #endif
+#ifndef FELUCCA_UAC_MIDI_LAST
+#define FELUCCA_UAC_MIDI_LAST 1  /* (2.2) the MIDI interface after the audio streaming one (descriptors, below) */
+#endif
 #if !FELUCCA_UAC
 #undef FELUCCA_UAC_48K
 #define FELUCCA_UAC_48K 0
+#undef FELUCCA_UAC_AS_FIRST
+#define FELUCCA_UAC_AS_FIRST 0
+#undef FELUCCA_UAC_MIDI_LAST
+#define FELUCCA_UAC_MIDI_LAST 0
+#endif
+#if FELUCCA_UAC_MIDI_LAST       /* (its collection lists the audio streaming interface first already) */
 #undef FELUCCA_UAC_AS_FIRST
 #define FELUCCA_UAC_AS_FIRST 0
 #endif
@@ -167,7 +176,12 @@ static volatile uint32_t so_w, so_r;
 
 /* MIDI rings: 4-byte USB-MIDI event packets */
 #define MQ 64u
-static uint32_t midi_in_q[MQ], midi_out_q[MQ];
+#ifdef FELUCCA_LOADER
+#define MQO MQ
+#else
+#define MQO 128u                 /* (2.2) MIDI OUT: two halves of a busy pattern's notes wait for their blocks to play */
+#endif
+static uint32_t midi_in_q[MQ], midi_out_q[MQO];
 static uint32_t midi_in_ms[MQ];
 static uint8_t midi_in_source[MQ];                    /* 1 USB, 2 TRS */
 static volatile uint32_t fm1_ms;                    /* also declared by core.h; parser-only host tests */
@@ -191,31 +205,122 @@ static int midi_enqueue(uint32_t pkt, uint32_t source)
     return 1;
 }
 
-static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
-{
-    if (usb.config && mo_w - mo_r < MQ) {
-        midi_out_q[mo_w % MQ] = pkt;
-        RING_PUBLISH();
-        mo_w++;
-    }
-#if BOARD_SMK37 && !defined(FELUCCA_LOADER)
-    {   /* (SMK-37 Pro) the same to the TRS jack's MIDI OUT (hal/smk_uart_tx.h): status, then one or two data bytes */
-        uint32_t st = (pkt >> 8) & 0xFFu;
-        smk_uart_tx_put(st);
-        smk_uart_tx_put((pkt >> 16) & 0x7Fu);
-        if ((st & 0xE0u) != 0xC0u)                  /* (Program Change, Channel Pressure: one) */
-            smk_uart_tx_put((pkt >> 24) & 0x7Fu);
-    }
+#ifndef FELUCCA_LOADER
+/* (2.2) MIDI OUT leaves when the audio it belongs to plays, not when it is rendered (a half's four blocks at once: up to
+ * ~3 ms early, and in a burst). An event is due at mo.tick, the TIMER4 tick its block starts to play at (audio.c, set
+ * each block); one from the main loop or TIMER5 (a knob's CC, TRS THRU) at mo.now, TIMER5's latest tick. ep1_tx sends
+ * the head events that are due, in order (TIMER5, 2 kHz, also nested in a render), so they keep the audio's spacing
+ * within the poll's 0.5 ms. Producers never overlap: the audio ISR (only a nested TIMER5, which produces nothing, can
+ * preempt it), TIMER5 outside a render, the main loop with IRQs off. (SMK-37) the TRS jack takes the same events (mo_trs,
+ * its own read index rt): a slot is free once both have passed it. Off the ISR's merged globals (the ISR's code keeps
+ * its layout) and out of .pool (the SMK's is near its guard) */
+static struct {
+    uint32_t due[MQO];
+    uint32_t tick, now;          /* the block being rendered plays at; TIMER5's tick */
+    uint32_t drops, flushes;     /* (diagnostics) the ring full; a packet nobody read, dropped */
+#if BOARD_SMK37
+    volatile uint32_t rt;        /* the TRS jack's read index */
 #endif
+    uint8_t wait;                /* polls the last packet has waited for the host */
+} mo __attribute__((section(".bss.mo")));
+
+/* (2.2) MENU > MIDI's settings the ISRs read, in the unit's settings (ui.c mset_io: favorites.factory; a build without
+ * the UI: none, every one at its default, 0): NOTES OUT and the switches in [15][17] (MO_*), REMOTE's channel in
+ * [15][5] bits 3..7, AUTO CHANNEL's in [1][1] bits 0..4 (0 OFF, 1..16; more: OFF). The tracks' channels: seq.c */
+static const uint8_t *const mset_io;
+#define MSET(r, b) (mset_io ? mset_io[32u * (r) + (b)] : 0u)
+enum { NO_ALL, NO_KEYS, NO_OFF };                  /* NOTES OUT ([15][17] bits 0..1; 3: ALL) */
+#define MO_CLOCK_OFF 4u                            /* CLOCK OUT OFF */
+#define MO_CC_ON 8u                                /* CC OUT ON */
+#define MO_THRU_ON 16u                             /* THRU ON */
+static uint32_t mset_ch(uint32_t v) { return v >= 1u && v <= 16u ? v : 0u; }   /* REMOTE, AUTO: 1..16, else OFF (0) */
+
+/* queue an event (a USB-MIDI packet) due at TIMER4 tick due: 0 when the ring is full (nothing changed). The FM-1 with
+ * no host: as sent (nobody hears it; what it pairs with stays exact) */
+static int mo_put(uint32_t pkt, uint32_t due)
+{
+    uint32_t used = mo_w - mo_r;
+#if BOARD_SMK37
+    uint32_t ut = mo_w - mo.rt;
+    used = !usb.config || ut > used ? ut : used;
+#else
+    if (!usb.config)
+        return 1;
+#endif
+    if (used >= MQO) {
+        mo.drops++;
+        return 0;
+    }
+    midi_out_q[mo_w % MQO] = pkt;
+    mo.due[mo_w % MQO] = due;
+    RING_PUBLISH();
+    mo_w++;
+    return 1;
 }
 
+/* the head events due by now into p (4 bytes each, max bytes at most), in order: the bytes taken */
+static uint32_t mo_take(uint8_t *p, uint32_t max, uint32_t now)
+{
+    uint32_t n = 0;
+    while (mo_r != mo_w && n + 4u <= max) {
+        uint32_t at = mo_r % MQO, pkt;
+        RING_PUBLISH();                                 /* (the slot read strictly between the index checks) */
+        if ((int32_t)(now - mo.due[at]) < 0)
+            break;
+        pkt = midi_out_q[at];
+        p[n] = (uint8_t)pkt;
+        p[n + 1u] = (uint8_t)(pkt >> 8);
+        p[n + 2u] = (uint8_t)(pkt >> 16);
+        p[n + 3u] = (uint8_t)(pkt >> 24);
+        n += 4u;
+        RING_PUBLISH();
+        mo_r++;
+    }
+    return n;
+}
+
+#if BOARD_SMK37
+/* (SMK-37 Pro) the due events to the TRS jack's MIDI OUT (hal/smk_uart_tx.h; TIMER5, before its tick): each event's
+ * own bytes (by its CIN: 3, 2 or 1), realtime ahead of the bytes queued (smk_uart_tx_rt). 31250 baud is about 3 bytes a
+ * ms: with fewer than 24 bytes left in the UART's ring a note-on is dropped (its note-off still goes) */
+static __attribute__((noinline)) void mo_trs(uint32_t now)
+{
+    while (mo.rt != mo_w) {
+        uint32_t at = mo.rt % MQO, pkt, nb, cin;
+        RING_PUBLISH();
+        if ((int32_t)(now - mo.due[at]) < 0)
+            break;
+        pkt = midi_out_q[at];
+        cin = pkt & 15u;
+        nb = (0x7AFFE7E0u >> (2u * cin)) & 3u;          /* a CIN's bytes: 2/3 system common, 8..E channel, F one */
+        if (nb == 1u && ((pkt >> 8) & 0xFFu) >= 0xF8u)
+            smk_uart_tx_rt((pkt >> 8) & 0xFFu);
+        else if (nb && !(cin == 9u && (pkt >> 24) && SMK_UT_TX_RING - (uint8_t)(smk_ut_w - smk_ut_r) < 24u)) {
+            smk_uart_tx_put((pkt >> 8) & 0xFFu);
+            if (nb > 1u)
+                smk_uart_tx_put((pkt >> 16) & 0x7Fu);
+            if (nb > 2u)
+                smk_uart_tx_put((pkt >> 24) & 0x7Fu);
+        }
+        RING_PUBLISH();
+        mo.rt++;
+    }
+}
+#endif
+#endif
+
 /* ------------------------------------------------------- descriptors --- */
-/* Two functions: audio + MIDI (0 audio control, 1 MIDI streaming, 2 audio streaming with FELUCCA_UAC)
+/* Two functions: audio + MIDI (0 audio control, 1 MIDI streaming, 2 audio streaming with FELUCCA_UAC; (2.2) with
+ * FELUCCA_UAC_MIDI_LAST, the default: 1 audio streaming, 2 MIDI streaming)
  * and, with FELUCCA_CDC, the CDC-ACM console (communication + data). The endpoints never move:
  * EP1 MIDI, EP2 CDC notify, EP3 CDC data, EP4 audio.
  * bcdDevice: 3.00 MIDI, +0.10 the audio input (+0.20 since 1.1: 44.1 and 48 kHz, FELUCCA_UAC_48K), +0.08 the
  * audio streaming interface first in the AC collection (Skiff 1.3, from Felucca 1.5.1: FELUCCA_UAC_AS_FIRST,
- * Felucca #67), +0.01 CDC (+0.02 per FELUCCA_USB_LAYOUT step, so a host never reuses what it learnt about another layout).
+ * Felucca #67), (2.2) +0.80 the MIDI interface last (FELUCCA_UAC_MIDI_LAST, from Felucca's felucca-bsp cd76d43 by
+ * Charles Vestal, bisected by darosh on macOS 15.8.1, fm1-loom #7; Skiff #59, PR #60 by DevinMcDonald: macOS 13-15 show
+ * no USB audio device while the MIDI streaming interface sits between the audio control and audio streaming ones,
+ * whatever the collection lists; MIDI stays listed: Linux's snd-usb-audio makes a MIDI port only for a listed one),
+ * +0.01 CDC (+0.02 per FELUCCA_USB_LAYOUT step, so a host never reuses what it learnt about another layout).
  * FELUCCA_USB_LAYOUT, how the CDC build presents itself (#67: macOS 13-15 attach Apple's CDC composite
  * driver to a misc / IAD device that has a CDC function, and their kernel audio driver then never
  * takes the audio interfaces; macOS 26 / 27 (usbaudiod, matched per interface) and iOS / iPadOS work):
@@ -257,7 +362,9 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
  * next look-up runs past the shortened list, the parser gives up before the audio streaming interface and no
  * audio device appears (MIDI still works). Listed last, MIDI is dropped at the end of the walk. The class spec
  * gives the order no meaning (Linux takes each listed interface on its own); FELUCCA_UAC_AS_FIRST=0: Skiff 1.0
- * .. 1.2's order (MIDI first). The interface numbers do not move */
+ * .. 1.2's order (MIDI first). The interface numbers do not move. (2.2) That alone did not do it on macOS 13-15:
+ * FELUCCA_UAC_MIDI_LAST moves the MIDI interface itself after the audio streaming one (the collection (a) + 1, (a) + 2
+ * is then audio streaming, MIDI) */
 #if FELUCCA_UAC_AS_FIRST
 #define AC_COLL(a) (a) + 2, (a) + 1
 #else
@@ -290,7 +397,11 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
     5, 0x25, 1, 1, 1,                                                                                \
     9, 5, 0x81, 2, 64, 0, 0, 0, 0,                                                                   \
     5, 0x25, 1, 1, 3,
-#define D_AUDIO(a) D_AC(a) D_MIDI((a) + 1) D_AS((a) + 2)   /* audio + MIDI from interface a */
+#if FELUCCA_UAC_MIDI_LAST                                  /* ((2.2) the collection: (a) + 1 audio streaming, then MIDI) */
+#define D_AUDIO(a) D_AC(a) D_AS((a) + 1) D_MIDI((a) + 2)   /* audio + MIDI from interface a */
+#else
+#define D_AUDIO(a) D_AC(a) D_MIDI((a) + 1) D_AS((a) + 2)
+#endif
 #define AUD_NIF (2 + FELUCCA_UAC)
 #define AUD_LEN (92 + (63 + FMT_LEN) * FELUCCA_UAC)
 #define D_CDC(c)                                                                                     \
@@ -306,7 +417,8 @@ static void midi_out_event(uint32_t pkt)            /* from the audio ISR */
     7, 5, 0x83, 2, 64, 0, 0,                               /* EP3 IN bulk */
 #define CDC_LEN 66                                         /* with its IAD */
 #define BCD_LO(cdc)                                                                                  \
-    (0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K) + 0x08 * FELUCCA_UAC_AS_FIRST + ((cdc) ? 0x01 + 2 * FELUCCA_USB_LAYOUT : 0))
+    (0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K) + 0x08 * FELUCCA_UAC_AS_FIRST + 0x80 * FELUCCA_UAC_MIDI_LAST +          \
+     ((cdc) ? 0x01 + 2 * FELUCCA_USB_LAYOUT : 0))
 #define D_DEV(bcdusb, cls, sub, proto, cdc)                                                          \
     18, 1, (bcdusb) & 0xFF, (bcdusb) >> 8, (cls), (sub), (proto), 64, 0x09, 0x12, FELUCCA_USB_PID & 0xFF, \
     FELUCCA_USB_PID >> 8, BCD_LO(cdc), 0x03, 1, 2, 0, 1
@@ -354,7 +466,7 @@ static uint8_t usb_cdc_on = FELUCCA_CDC_DEFAULT != 0;      /* the console is pre
 #define USB_CDC_ON 0
 #define AUD_IF 0u
 #endif
-#define UAC_AS_IF (AUD_IF + 2u)
+#define UAC_AS_IF (AUD_IF + 2u - FELUCCA_UAC_MIDI_LAST)        /* ((2.2) MIDI last: the audio streaming one is 1) */
 static const uint8_t STR0[4] = {4, 3, 0x09, 0x04};
 static const uint8_t STR1[] = {42, 3, 'H', 0, 0xFC, 0, 'g', 0, 'e', 0, 'l', 0, 't', 0, 'o', 0, 'n', 0, ' ', 0, 'I', 0,
                                'n', 0, 's', 0, 't', 0, 'r', 0, 'u', 0, 'm', 0, 'e', 0, 'n', 0, 't', 0, 's', 0};
@@ -632,6 +744,9 @@ static void ep0_service(void)
         if (s[2] > 1u)
             goto stall;
         usb.config = s[2];
+#ifndef FELUCCA_LOADER
+        mo_r = mo_w;                                    /* ((2.2) MIDI OUT: nothing stale for a new host) */
+#endif
         if (usb.config == 1u)
             ep1_config();
         else
@@ -828,11 +943,28 @@ static void midi_in_event(uint32_t pkt)                 /* one USB-MIDI event pa
     }
     if (cin == 0xFu && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) {
         midi_enqueue(0xFu | st << 8, 1u);
+#if BOARD_SMK37 && !defined(FELUCCA_LOADER)
+        if (MSET(15, 17) & MO_THRU_ON)                 /* ((2.2) THRU: USB IN to the TRS jack's MIDI OUT) */
+            smk_uart_tx_rt(st);
+#endif
         return;
     }
+#ifdef FELUCCA_LOADER
     if (cin >= 8u && cin <= 0xEu && (st >> 4) == cin && !((pkt >> 16) & 0x80u) &&
         ((cin == 0xCu || cin == 0xDu) || !(pkt & 0x80000000u))) {
+#else
+    if (((cin >= 8u && cin <= 0xEu && (st >> 4) == cin) || (cin == 3u && st == 0xF2u)) && !((pkt >> 16) & 0x80u) &&
+        ((cin == 0xCu || cin == 0xDu) || !(pkt & 0x80000000u))) {   /* ((2.2) and Song Position) */
+#endif
         midi_enqueue(pkt, 1u);
+#if BOARD_SMK37 && !defined(FELUCCA_LOADER)
+        if (MSET(15, 17) & MO_THRU_ON) {               /* (whole messages: TIMER5 is the jack's one writer) */
+            smk_uart_tx_put(st);
+            smk_uart_tx_put((pkt >> 16) & 0x7Fu);
+            if ((st & 0xE0u) != 0xC0u)
+                smk_uart_tx_put((pkt >> 24) & 0x7Fu);
+        }
+#endif
     }
 }
 
@@ -921,6 +1053,7 @@ static void ota_frame_done(void)
 }
 #endif
 
+#ifdef FELUCCA_LOADER
 static void ep1_tx(void)
 {
     uint32_t csr, n = 0;
@@ -968,6 +1101,54 @@ static void ep1_tx(void)
     sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
     usb.tx_pkts++;
 }
+#else
+/* (2.2) TIMER5: from usb_poll, and nested in a render as uac_service (main.c: INDEX set on every access, TIMER5 never
+ * preempts itself). The editor's SysEx first, never split by notes; then the MIDI OUT events that are due (mo_take).
+ * A packet the host has not taken in 20 ms (40 polls: no app has the port open) is dropped (FlushFIFO), and so on: an
+ * app opening it later gets what plays then, not a stale note-on whose note-off went nowhere */
+static void ep1_tx(void)
+{
+    uint32_t csr, n = 0, now = mo.now;
+#if FELUCCA_OTA
+    if (so_w == so_r && (mo_w == mo_r || (int32_t)(now - mo.due[mo_r % MQO]) < 0))
+        return;
+#else
+    if (mo_w == mo_r || (int32_t)(now - mo.due[mo_r % MQO]) < 0)
+        return;
+#endif
+    sie_wr(S_INDEX, 1);
+    csr = sie_rd(S_TXCSR1);
+    if (csr & 0x01u) {                                  /* previous packet still pending */
+        if (++mo.wait >= 40u) {
+            sie_wr(S_TXCSR1, 0x08);                     /* FlushFIFO */
+            mo.wait = 0;
+            mo.flushes++;
+        }
+        return;
+    }
+    mo.wait = 0;
+    if (csr & 0x80u)
+        sie_wr(S_TXCSR1, csr & ~0x80u);
+#if FELUCCA_OTA
+    while (so_r != so_w && n < 64u) {
+        uint32_t pkt = sx_out_q[so_r % SXQ];
+        ep1tx[n] = (uint8_t)pkt;
+        ep1tx[n + 1] = (uint8_t)(pkt >> 8);
+        ep1tx[n + 2] = (uint8_t)(pkt >> 16);
+        ep1tx[n + 3] = (uint8_t)(pkt >> 24);
+        n += 4u;
+        so_r++;
+    }
+    if (!sx_busy && so_r == so_w)
+#endif
+        n += mo_take(ep1tx + n, 64u - n, now);
+    if (!n)
+        return;
+    fm1_usb_ep_send(1, ep1tx, n);
+    sie_wr(S_TXCSR1, sie_rd(S_TXCSR1) | 0x01u);
+    usb.tx_pkts++;
+}
+#endif
 
 #if FELUCCA_CDC
 static void ep3_rx(void)                                /* leaves the packet (NAK) while the ring is full */

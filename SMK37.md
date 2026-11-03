@@ -14,7 +14,7 @@ keyboard; the Starrykey 37 Play is not supported yet.
    its Bluetooth pairings, which no download can replace. Skiff never writes them, but a backup is the way back if
    anything else goes wrong.
 3. **Install:** the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) (Chrome or Edge) finds the
-   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.1.1-smk37.fwsc` (`-elite`, `-mke` for those
+   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.2-smk37.fwsc` (`-elite`, `-mke` for those
    models, not tried on a keyboard yet). About two minutes.
 
 Keep it plugged in and switched on while it writes. If the cable or the power is cut anyway, the keyboard stays in
@@ -29,7 +29,7 @@ This needs a computer with Windows or Linux, Python 3, this repository's `tools/
 reads the whole 1 MiB through the chip's built-in boot mode:
 
 1. With the keyboard on M-VAVE's V016 (or on Skiff) and connected:
-   `python tools/fm1_install.py --uboot skiff-2.1.1-smk37.fwsc`. The keyboard starts Skiff's update loader without
+   `python tools/fm1_install.py --uboot skiff-2.2-smk37.fwsc`. The keyboard starts Skiff's update loader without
    writing the firmware, then switches to the chip's boot mode: the computer sees a USB disk named `WL82 UBOOT1.00`.
    **If Windows offers to format it, cancel.**
 2. In an **administrator** terminal (on Linux: with `sudo`, and `/dev/sgN` as the device), from jl-uboot-tool's folder,
@@ -144,8 +144,12 @@ loader 7,859 B (the limit: 7,936 B, below).
 - **Screen:** the SMK's pins and SPI group, with no backlight pin. SCREEN OFF only puts the panel to sleep.
 - **MIDI:** USB as on the FM-1. TRS MIDI IN is off and the build refuses it, because its pin PH8 is a key-matrix row on
   the SMK, so MENU > MIDI > CLOCK offers INT and USB only (a saved TRS loads as USB). The SMK's jack is MIDI OUT
-  (UART1 TX on PC7, 31250 baud). It sends what USB MIDI OUT sends, plus MIDI clock (Start, 24 pulses a beat, Stop)
-  while Skiff runs on its own clock. The driver isn't checked on a unit yet.
+  (UART1 TX on PC7, 31250 baud). It sends what USB MIDI OUT sends (2.2: the same events at the same moments, the clock
+  ahead of the notes waiting there), and so (2.2) MENU > MIDI > CLOCK OUT's clock too: Start, 24 pulses a beat (while
+  stopped as well), Stop, with Skiff on its own clock (CLOCK OUT OFF: none). (2.2) MENU > MIDI > THRU ON: what USB
+  brings in goes out of the jack (notes, controllers, the clock, Song Position). At 31250 baud the jack takes about
+  three bytes a millisecond: a burst bigger than its 128-byte buffer drops note-ons, never note-offs. The driver
+  isn't checked on a unit yet.
 - **Updates:** Skiff's own loader, with the SMK's LCD pins, so UPDATE MODE shows. It writes 0x4000..0x9CFFF only and
   drops update records only in 0x9D000..0xBFFFF. The firmware stages it at 0xBB000, and the record names the stock
   loader `ota-<model>_016`. An FM-1 package is refused on an SMK, and the other way round, before anything is erased.
