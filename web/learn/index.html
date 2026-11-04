@@ -8,7 +8,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Learn Skiff</title>
-<meta name="description" content="Learn Skiff, the six-track groovebox firmware for the M-VAVE FM-1: a manual in 20 chapters, each with a video showing every press on the unit.">
+<meta name="description" content="Learn Skiff, the six-track groovebox firmware for the M-VAVE FM-1: a manual in 21 chapters, each with a video showing every press on the unit.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%23111%22/%3E%3Crect x=%223%22 y=%229%22 width=%223%22 height=%224%22 fill=%22%23ff5a36%22/%3E%3Crect x=%227%22 y=%226%22 width=%223%22 height=%227%22 fill=%22%2322c3b4%22/%3E%3Crect x=%2211%22 y=%223%22 width=%223%22 height=%2210%22 fill=%22%23ffbf00%22/%3E%3C/svg%3E">
 <style>
 @font-face { font-family: "Barlow Condensed"; src: url("../fonts/BarlowCondensed-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
@@ -219,7 +219,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <nav class="links" aria-label="Skiff"><a href="../webapp/installer/">Install</a><a href="../webapp/editor/">Editor</a><a href="../try/">Try Skiff</a><a href="https://github.com/illuminus5/skiff">GitHub</a></nav>
     </div>
     <h1>Learn Skiff</h1>
-    <p class="lede">The manual for Skiff, the six-track groovebox firmware for the M-VAVE FM-1, in 20 chapters. Each chapter has a short
+    <p class="lede">The manual for Skiff, the six-track groovebox firmware for the M-VAVE FM-1, in 21 chapters. Each chapter has a short
       video that shows every press, hold and turn on the unit, made from the firmware itself. Play it and the steps below
       follow along. New to grooveboxes? Start at chapter 1 and read on. Know your way around? Jump to any chapter.
       No unit at hand? <a href="../try/">Try Skiff</a> runs the same firmware in your browser, and on a wide screen
@@ -614,9 +614,10 @@ footer p { max-width: 1240px; margin: 6px auto; }
   </ol>
 </section>
 
-<section class="chapter" id="keys" data-n="5" data-group="MAKE MUSIC" data-video="eoqGs8GDlpk">
+<section class="chapter" id="keys" data-n="5" data-group="MAKE MUSIC" data-video="QH70s7UudU4">
   <div class="ch-head"><span class="num">05</span><div><p class="group">MAKE MUSIC</p><h2>Keys, scales and the arp</h2></div></div>
-  <p class="meta"><b>You'll learn</b> to play the keys in a scale, play chords from one key, and run the arpeggiator.</p>
+  <p class="meta"><b>You'll learn</b> to play the keys in a scale, play chords from one key, play a tune on the black keys over them,
+    and run the arpeggiator.</p>
   <div class="video"></div>
   <ol class="steps">
     <li class="step" id="keys/play">
@@ -646,7 +647,8 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p><kbd>KNOB 3</kbd>, QUANTIZE. WHITE puts the scale on the white keys only: <kbd>C4</kbd> plays the root, each white key the next
         note of the scale, up and down, and the black keys are silent, so every note is in key. SNAP keeps every key and rounds it down to
         the scale; SEQ also bends the sequencer's notes to the scale as they play, and SEQ+T transposes them by TRANSP first.
-        <kbd>KNOB 4</kbd>, TRANSP, moves the keys by semitones.</p>
+        <kbd>KNOB 4</kbd>, TRANSP, moves the keys by semitones. SOLO, the last one, is for two hands: see
+        <a href="#keys/solo">The black keys</a>.</p>
     </li>
     <li class="step" id="keys/chord">
       <h3>Chords</h3>
@@ -658,6 +660,20 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>Voicing</h3>
       <p><kbd>KNOB 2</kbd>, VOICING, stacks the same notes another way: CLOSE, OPEN (the middle note an octave up), the inversions INV1
         and INV2, and +OCT, the root added an octave down.</p>
+    </li>
+    <li class="step" id="keys/solo">
+      <h3>The black keys</h3>
+      <p><kbd>SELECT</kbd> back to SCALE. <kbd>KNOB 3</kbd>, QUANTIZE, on to SOLO. The white keys stay as WHITE had them, chords too. The
+        black keys now walk the same scale one note at a time: <kbd>C♯4</kbd> plays the root, <kbd>F♯3</kbd>, <kbd>G♯3</kbd> and
+        <kbd>A♯3</kbd> the three scale notes below it, and the run goes up to <kbd>F♯5</kbd>, seven scale notes above. Every key is in
+        key. A Skiff before 2.1 opens a SOLO track as SEQ+T.</p>
+    </li>
+    <li class="step" id="keys/two-hands">
+      <h3>Two hands</h3>
+      <p>Hold a chord on a white key and play a tune on the black keys above it, both in the same scale. A black key never plays a
+        chord, in live recording and step entry too, and pressing one leaves the held chord sounding. REC keeps both as you played
+        them. If another track follows this one's chords, record the tune on a track of its own:
+        <a href="#chord-follow/tune">chapter 21</a>.</p>
     </li>
     <li class="step" id="keys/arp">
       <h3>The arp</h3>
@@ -681,6 +697,11 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>Swing and chance</h3>
       <p><kbd>SELECT</kbd> to ARP 2 once more: <kbd>KNOB 1</kbd>, SWING, delays every other note, here by 30 %, and <kbd>KNOB 2</kbd>,
         CHANCE, lets each note play or rest by chance. REC records the arp as it does the keys: <a href="#recording">chapter 7</a>.</p>
+    </li>
+    <li class="step" id="keys/over-arp">
+      <h3>A tune over the arp</h3>
+      <p>With the ARP on, the white keys' chords go into the arpeggio, and a black key sounds directly over it and is recorded so. With
+        HOLD on, both hands are free: here the latched arp plays on under a tune.</p>
     </li>
   </ol>
 </section>
@@ -981,6 +1002,82 @@ footer p { max-width: 1240px; margin: 6px auto; }
         at once. A hit on a note keeps it, one on an empty step plays the scale's root. <kbd>KNOB 1</kbd> HITS 5, <kbd>KNOB 3</kbd>
         ROTATE 2, and <kbd>OCT+</kbd>
         applies it (OCT− cancels). On a drum track it fills the selected lane.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="chapter" id="chord-follow" data-n="21" data-group="MAKE MUSIC" data-video="E7aYH2h27BE">
+  <div class="ch-head"><span class="num">21</span><div><p class="group">MAKE MUSIC</p><h2>Chord follow</h2></div></div>
+  <p class="meta"><b>You'll learn</b> to write a bass line or an arp once, in its own key, and let another track's chords move it:
+    FOLLOW, its three modes, which note of the chord counts, and chords played live.</p>
+  <div class="video"></div>
+  <ol class="steps">
+    <li class="step" id="chord-follow/as-written">
+      <h3>As written</h3>
+      <p><kbd>PLAY</kbd>. The beat from <a href="#first-beat">chapter 3</a> plays, with four chords on track 2, the pad, a bar each: A
+        minor, F, C and G. The bass on track 1 plays what was written, on A under all four. On your own unit, any chords on another
+        track will do: chapters <a href="#keys/chord">5</a> and <a href="#recording">7</a> play and record them.</p>
+    </li>
+    <li class="step" id="chord-follow/own-key">
+      <h3>Its own key</h3>
+      <p>The track that moves says what key it's written in. On track 1 hold <kbd>SEL</kbd> for its <a href="#g-layer">layer</a>, tap
+        <kbd>A3</kbd> for ROOT A, and turn <kbd>KNOB 2</kbd> to MIN. A line plays as written under the chord of its track's ROOT.</p>
+    </li>
+    <li class="step" id="chord-follow/follow">
+      <h3>Follow</h3>
+      <p>Tap <kbd>SEL</kbd> three times: SCALE, CHORD, then FOLLOW. <kbd>KNOB 1</kbd>, FOLLOW, is OFF or the track whose chords this one
+        follows, never itself. T2: the bass goes to F, C and G with the pad. Only this track is set; the chord track needs nothing.</p>
+    </li>
+    <li class="step" id="chord-follow/page">
+      <h3>The page</h3>
+      <p>The page shows the chord, its notes on a keyboard, the note it goes by lit, and what this track does with it: T2 KEY -4 is four
+        semitones down under F. KEY moves every note by the distance from the track's ROOT to that note, the nearest way: up to six
+        semitones up, five down.</p>
+    </li>
+    <li class="step" id="chord-follow/off-on">
+      <h3>Off and on</h3>
+      <p><kbd>KNOB 1</kbd> back to OFF: the bass plays as written. T2 again: it follows. The steps never change: what you record or enter
+        on a following track stays what you played, and moves with the chords when it plays back. STOP clears the chords too: the page
+        says T2: NO CHORD YET, and the track plays as written until its chord track plays again.</p>
+    </li>
+    <li class="step" id="chord-follow/scale">
+      <h3>Scale</h3>
+      <p>KEY keeps the line's shape, so notes can leave the key: under F the bass's C is A♭. <kbd>KNOB 2</kbd>, MODE SCALE, moves the notes
+        along the track's own SCALE by as many scale steps instead (T2 SCALE -2), and every note stays in A minor. On CHR, SCALE moves
+        as KEY does.</p>
+    </li>
+    <li class="step" id="chord-follow/note">
+      <h3>Which note</h3>
+      <p><kbd>KNOB 3</kbd>, NOTE, is which note of the chord counts, for KEY and SCALE: its ROOT, worked out from its notes, inversions too
+        (F for A C F); LOW, its lowest (A there); HIGH, its highest; or LAST, the one started last. Here HIGH, then LOW: the page lights
+        the note it goes by, and the bass walks A A G G.</p>
+    </li>
+    <li class="step" id="chord-follow/fit">
+      <h3>Fit</h3>
+      <p><kbd>ALGORITHM</kbd> to track 3: this page now shows its own FOLLOW, OFF. <kbd>KNOB 1</kbd>: T2. <kbd>KNOB 2</kbd>, MODE FIT: every
+        note moves to the nearest note of the chord itself (a tie goes down), so NOTE dims. Keys follow as steps do: whatever you play
+        lands on the chord.</p>
+    </li>
+    <li class="step" id="chord-follow/arp">
+      <h3>An arp</h3>
+      <p>Every note a following track sounds moves as it starts: its steps, its keys, MIDI IN and its ARP. <kbd>ARP</kbd>, <kbd>KNOB 1</kbd>
+        MODE UP, <kbd>SEL</kbd> back to FOLLOW, and hold three keys: the arp moves through the chords on its own. A note already sounding,
+        or tied on, keeps its pitch; on a step where the chord changes, the chord comes first.</p>
+    </li>
+    <li class="step" id="chord-follow/live">
+      <h3>Lead from the keys</h3>
+      <p>A track's chord is the notes of its latest step, or the keys and MIDI notes it holds: a key pressed with none held starts a new
+        chord, the ones pressed while it is held join it, and it stays until the next one. Hold <kbd>GLO</kbd> and tap <kbd>G♯3</kbd> to
+        mute the pad; a muted track would still lead, so on track 1 <kbd>KNOB 1</kbd> goes on to T5. <kbd>ALGORITHM</kbd> to track 5, the
+        piano set as in <a href="#keys">chapter 5</a>. <kbd>SEL</kbd>, <kbd>SELECT</kbd> back to CHORD, and <kbd>OCT−</kbd> for a lower
+        hand: each white key plays a chord of A minor, and the bass goes with it.</p>
+    </li>
+    <li class="step" id="chord-follow/tune">
+      <h3>A tune above it</h3>
+      <p>On QUANTIZE SOLO (<a href="#keys/solo">chapter 5</a>) the black keys are a tune, not the chord: the following tracks stay on the
+        white key's chord while your other hand plays. That holds for live keys only: recorded, a tune is steps like any others, and
+        every step with notes is the chord track's chord. So record a tune on a track of its own. Drum kits neither follow nor lead,
+        MIDI OUT sends the keys as pressed, and a Skiff before 2.1 ignores FOLLOW: the tracks play as written.</p>
     </li>
   </ol>
 </section>
@@ -2059,6 +2156,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
     <dt id="g-selection">Selection</dt><dd>What the knobs edit on NOTES and FEEL: the cursor's step, or a range of steps (SHIFT + <kbd>PRESETS</kbd>). With REC off a key picks one of its notes. SHIFT + OCT− and OCT+ copy and paste it, SHIFT + EDIT deletes it.</dd>
     <dt id="g-pattern">Pattern</dt><dd>A track's notes exactly as they play: its steps, each note's own length, LENGTH, DIV, SWING, GATE, direction, automation and locks. Kept by itself; 64 of them in a pool every project shares.</dd>
     <dt id="g-list">List and entry</dt><dd>Each track has a list of 16 entries, A–P. An entry names a pattern and how many times it plays (REPS). The lists are the song, and PERFORM's keys.</dd>
+    <dt id="g-follow">Chord follow</dt><dd>A track on FOLLOW plays in another track's chords. SEL's third page: <a href="#chord-follow">chapter 21</a>.</dd>
     <dt id="g-chain">Chain</dt><dd>Entries on CHAIN (SONG's <kbd>KNOB 3</kbd> below 1x) go on into the next: the track plays and edits them as one long pattern.</dd>
     <dt id="g-lock">Lock</dt><dd>A step's own value for a control: hold the step and turn a knob.</dd>
     <dt id="g-take">Take</dt><dd>SHIFT + SAVE keeps the loop you just played as the track's pattern, whether or not REC was on.</dd>
@@ -2108,7 +2206,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <tr data-ctrl="PRESETS"><th scope="row"><kbd>PRESETS</kbd></th><td>The track's sound. On NOTES and FEEL: the step cursor (SHIFT + PRESETS: a range); on PATTERN: the direction. In lists: the row.</td><td class="in"></td></tr>
       <tr data-ctrl="KNOB1"><th scope="row"><kbd>KNOB 1</kbd>–<kbd>KNOB 4</kbd></th><td>The four cards across the top of the page.</td><td class="in"></td></tr>
       <tr data-ctrl="FX"><th scope="row"><kbd>FX</kbd></th><td>Tap: the track's effects, SLICER and DUCK. Hold: the FX layer.</td><td class="in"></td></tr>
-      <tr data-ctrl="SEL"><th scope="row"><kbd>SEL</kbd></th><td>Tap: SCALE and CHORD. Hold: a key sets the root.</td><td class="in"></td></tr>
+      <tr data-ctrl="SEL"><th scope="row"><kbd>SEL</kbd></th><td>Tap: SCALE, CHORD and FOLLOW. Hold: a key sets the root.</td><td class="in"></td></tr>
       <tr data-ctrl="ENV"><th scope="row"><kbd>ENV</kbd></th><td>The envelopes, ENV and ENV 2.</td><td class="in"></td></tr>
       <tr data-ctrl="LFO"><th scope="row"><kbd>LFO</kbd></th><td>Tap: LFO, LFO 2 and MOD, where the LFO and the envelope go. Hold: MOMENTARY.</td><td class="in"></td></tr>
       <tr data-ctrl="EDIT"><th scope="row"><kbd>EDIT</kbd></th><td>Tap: the engine's pages and the voices; on NOTES with REC armed, it clears the cursor step. Hold: the engines on the white keys. SHIFT + EDIT on NOTES and FEEL: delete the selection.</td><td class="in"></td></tr>

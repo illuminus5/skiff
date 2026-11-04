@@ -1,6 +1,6 @@
 // Learn Skiff: each step's time in its chapter's video and the controls it uses, the chapters' video lengths. Written by
 // the video project's export (learn.mjs) from the firmware captures; edit the page's prose, not this file.
-const LEARN = {"chapters": {"first-beat":{"dur":146.5,"poster":true},"find-your-way":{"dur":126.87,"poster":true},"sounds":{"dur":132.83,"poster":true},"keys":{"dur":123.9,"poster":true},"steps":{"dur":166,"poster":true},"recording":{"dur":118,"poster":true},"modulation":{"dur":131.9,"poster":true},"variation":{"dur":161.7,"poster":true},"engines":{"dur":139,"poster":true},"fm6-lab":{"dur":200.5,"poster":true},"track-fx":{"dur":125.5,"poster":true},"mixer":{"dur":145.8,"poster":true},"song":{"dur":134,"poster":true},"perform":{"dur":108,"poster":true},"fx-layer":{"dur":138.5,"poster":true},"projects":{"dur":84.5,"poster":true},"settings":{"dur":123.5,"poster":true},"midi-editor":{"dur":105.2,"poster":true},"install":{"dur":131,"poster":true},"web-editor":{"dur":167.5,"poster":true}}, "steps": {
+const LEARN = {"chapters": {"first-beat":{"dur":146.5,"poster":true},"find-your-way":{"dur":126.87,"poster":true},"sounds":{"dur":132.83,"poster":true},"keys":{"dur":154.5,"poster":true},"steps":{"dur":166,"poster":true},"recording":{"dur":118,"poster":true},"modulation":{"dur":131.9,"poster":true},"variation":{"dur":161.7,"poster":true},"engines":{"dur":139,"poster":true},"fm6-lab":{"dur":200.5,"poster":true},"track-fx":{"dur":125.5,"poster":true},"mixer":{"dur":145.8,"poster":true},"song":{"dur":134,"poster":true},"perform":{"dur":108,"poster":true},"fx-layer":{"dur":138.5,"poster":true},"projects":{"dur":84.5,"poster":true},"settings":{"dur":123.5,"poster":true},"midi-editor":{"dur":105.2,"poster":true},"install":{"dur":131,"poster":true},"web-editor":{"dur":167.5,"poster":true},"chord-follow":{"dur":156.7,"poster":true}}, "steps": {
   "first-beat/new-project": {"t":4,"ctrl":{"KEY4":"press","KEY7":"press","KEY11":"press","KEY14":"press","KEY16":"press"}},
   "first-beat/drum-track": {"t":12.5,"ctrl":{"ALGORITHM":"turn","KEY7":"press","KEY13":"press","KEY9":"press"}},
   "first-beat/grid": {"t":21,"ctrl":{"SEQ":"press","KEY1":"press","KEY3":"press","KEY8":"press"}},
@@ -47,10 +47,13 @@ const LEARN = {"chapters": {"first-beat":{"dur":146.5,"poster":true},"find-your-
   "keys/quantize": {"t":38.5,"ctrl":{"KNOB3":"turn","KEY7":"press","KEY9":"press","KEY11":"press","KEY12":"press","KEY14":"press","KEY16":"press","KEY18":"press","KEY19":"press"}},
   "keys/chord": {"t":49,"ctrl":{"SEL":"press","KNOB1":"turn","KEY7":"press","KEY16":"press","KEY18":"press"}},
   "keys/voicing": {"t":59,"ctrl":{"KNOB2":"turn","KEY7":"press","KEY16":"press","KEY18":"press"}},
-  "keys/arp": {"t":67.5,"ctrl":{"ARP":"press","KNOB1":"turn","KEY7":"hold"}},
-  "keys/hold": {"t":75.4,"ctrl":{"ARP":"press","KNOB3":"turn","KEY7":"press","KEY16":"press"}},
-  "keys/octaves": {"t":85.4,"ctrl":{"SELECT":"turn","KNOB3":"turn","KNOB4":"turn"}},
-  "keys/loose": {"t":96.4,"ctrl":{"SELECT":"turn","KNOB1":"turn","KNOB2":"turn"}},
+  "keys/solo": {"t":67.5,"ctrl":{"SELECT":"turn","KNOB3":"turn","KEY8":"hold","KEY10":"press","KEY13":"press","KEY15":"press","KEY17":"press","KEY20":"press","KEY22":"press","KEY25":"press"}},
+  "keys/two-hands": {"t":78,"ctrl":{"KEY7":"hold","KEY17":"hold","KEY22":"hold","KEY25":"hold","KEY4":"hold","KEY20":"hold","KEY6":"hold","KEY15":"hold","KEY13":"hold","KEY10":"press","KEY8":"hold"}},
+  "keys/arp": {"t":89.5,"ctrl":{"ARP":"press","KNOB1":"turn","KEY7":"hold"}},
+  "keys/hold": {"t":97.4,"ctrl":{"ARP":"press","KNOB3":"turn","KEY7":"press","KEY16":"press"}},
+  "keys/octaves": {"t":107.4,"ctrl":{"SELECT":"turn","KNOB3":"turn","KNOB4":"turn"}},
+  "keys/loose": {"t":118.4,"ctrl":{"SELECT":"turn","KNOB1":"turn","KNOB2":"turn"}},
+  "keys/over-arp": {"t":128.5,"ctrl":{"KEY25":"hold","KEY22":"press","KEY20":"hold","KEY17":"hold","KEY15":"hold","KEY13":"hold","KEY10":"hold","KEY8":"hold"}},
   "steps/step-page": {"t":4,"ctrl":{"PLAY":"press","SEQ":"press","PRESETS":"turn"}},
   "steps/note": {"t":14,"ctrl":{"KNOB1":"turn","KNOB2":"turn"}},
   "steps/tie": {"t":23,"ctrl":{"PRESETS":"turn","KNOB3":"turn"}},
@@ -244,5 +247,16 @@ const LEARN = {"chapters": {"first-beat":{"dur":146.5,"poster":true},"find-your-
   "web-editor/samples": {"t":101.5,"ctrl":{}},
   "web-editor/upload": {"t":112.5,"ctrl":{}},
   "web-editor/sample": {"t":121.5,"ctrl":{"ALGORITHM":"turn","EDIT":"press","KNOB1":"turn","PLAY":"press","KEY16":"press","KEY19":"press","KEY23":"hold","KEY21":"press","KEY18":"press","KEY26":"press","KEY14":"hold"}},
-  "web-editor/settings": {"t":138.5,"ctrl":{}}
+  "web-editor/settings": {"t":138.5,"ctrl":{}},
+  "chord-follow/as-written": {"t":4,"ctrl":{"PLAY":"press"}},
+  "chord-follow/own-key": {"t":17,"ctrl":{"SEL":"hold","KEY4":"press","KNOB2":"turn"}},
+  "chord-follow/follow": {"t":25,"ctrl":{"SEL":"press","KNOB1":"turn"}},
+  "chord-follow/page": {"t":36.5,"ctrl":{}},
+  "chord-follow/off-on": {"t":44.5,"ctrl":{"KNOB1":"turn"}},
+  "chord-follow/scale": {"t":57,"ctrl":{"KNOB2":"turn"}},
+  "chord-follow/note": {"t":70,"ctrl":{"KNOB3":"turn"}},
+  "chord-follow/fit": {"t":88,"ctrl":{"ALGORITHM":"turn","KNOB1":"turn","KNOB2":"turn","KEY7":"press","KEY8":"press","KEY9":"press","KEY10":"press","KEY11":"press","KEY12":"press","KEY13":"press","KEY14":"press"}},
+  "chord-follow/arp": {"t":100.5,"ctrl":{"ARP":"press","KNOB1":"turn","SEL":"press","KEY7":"hold","KEY11":"hold","KEY14":"hold"}},
+  "chord-follow/live": {"t":115,"ctrl":{"GLO":"hold","KEY3":"press","ALGORITHM":"turn","KNOB1":"turn","SEL":"press","SELECT":"turn","OCT-":"press","KEY7":"hold","KEY4":"hold","KEY11":"hold"}},
+  "chord-follow/tune": {"t":128.6,"ctrl":{"KEY7":"hold","KEY17":"hold","KEY22":"hold","KEY25":"hold","KEY4":"hold","KEY20":"hold","KEY6":"hold","KEY15":"hold","KEY13":"hold","KEY10":"press","KEY8":"hold"}}
 }};
