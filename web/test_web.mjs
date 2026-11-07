@@ -35,7 +35,7 @@ const FW_ROOT = process.env.FELUCCA_ROOT || join(HERE, "..");
 const html = readFileSync(join(HERE, "editor.html"), "utf8");
 const proto = html.slice(html.indexOf("/*PROTO-BEGIN*/"), html.indexOf("/*PROTO-END*/"));
 const E = vm.runInNewContext(proto + `
-;({ frame, unframe, parse, songReply, req, Link, parseWav, resample, normalize, takeSample, kitZones, LANES, portPairs, apcPorts, apcAction, apcLeds, APC, autoTrim, zoomView, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
+;({ frame, unframe, parse, songReply, req, Link, parseWav, resample, normalize, takeSample, kitZones, LANES, portPairs, apcPorts, apcAction, apcLeds, apcNear, APC, autoTrim, zoomView, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
    UP, bank, capturePatch, auditionPatch, lightRefuses, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, parseNotes, parseHits, hitsText, gridFromSteps, LANE_NOTE, LANE_OF, readDevicePreferences, devicePresetRows, TC_NAMES, engineOrder, ENGINE_ORDER, aliasOf, fmtValue, FM6, enumShown, F,
    FM4, fromDigital, fromPerc, DRUM_KIT_E, DX_KIT_DEF, DX_KITS, DRUMX_PKIT,
@@ -1106,16 +1106,19 @@ async function editorLists() {
   const A = E.APC, none = { pat: 0 }, ent = (m) => Array.from({ length: 16 }, (_, e) => m[e] || none);
   const list = { tracks: [{ cur: 0, next: 2, ent: ent({ 0: { pat: 1 }, 1: { pat: 2 }, 2: { pat: 3 }, 3: { pat: 65 }, 8: { pat: 4 } }) }] };
   const perf = { last: 1, scenes: 3, tracks: [{ muted: true, staged: 0 }, { muted: false, staged: 2 }, { muted: false, staged: 0 }] };
-  let m = E.apcLeds(list, perf, 0, true);
+  const t1 = E.apcNear("#ff5a36");
+  ok(t1 === 4 && E.apcNear(" #22C3B4 ") === 90 && E.apcNear("#00ff00") === 21 && E.apcNear("#000000") === 0 && E.apcNear("oops") === A.WHITE,
+     "apc: an editor colour as the palette's nearest (Akai's table: 4 #FF4C4C, 21 #00FF00)");
+  let m = E.apcLeds(list, perf, 0, true, [t1]);
   const led = (n) => m.get(n).join();
-  ok(led(56) === `${A.FULL},${A.GREEN}` && led(48) === `${A.DIM},${A.BLUE}` && led(40) === `${A.BLINK},${A.GREEN}` && led(32) === `${A.DIM},${A.ORANGE}` && led(24) === `${A.FULL},0`,
-     "apc: on green, kept dim, next blinking, a REST orange, empty dark");
+  ok(led(56) === `${A.FULL},${A.GREEN}` && led(48) === `${A.KEPT},4` && led(40) === `${A.BLINK},${A.GREEN}` && led(32) === `${A.REST},4` && led(24) === `${A.FULL},0`,
+     "apc: on green, kept 50 % of its track's colour, next blinking, a REST 25 %, empty dark");
   ok(led(57) === `${A.FULL},0`, "apc: a track the reply hasn't: dark");
-  ok(led(62) === `${A.DIM},${A.YELLOW}` && led(54) === `${A.FULL},${A.YELLOW}` && led(46) === `${A.FULL},0`, "apc: a scene kept dim, the last bright, none dark");
+  ok(led(62) === `${A.KEPT},${A.WHITE}` && led(54) === `${A.FULL},${A.GREEN}` && led(46) === `${A.FULL},0`, "apc: a scene kept white at 50 %, the last green, none dark");
   ok(m.get(A.MUTE)[1] === 1 && m.get(A.MUTE + 1)[1] === 2 && m.get(A.MUTE + 2)[1] === 0 && m.get(A.MUTE + 5)[1] === 0, "apc: muted lit, staged flashing");
   ok(m.get(A.PAGE)[1] === 1 && !m.get(A.PAGE + 1)[1] && m.get(A.PLAY)[1] === 1, "apc: the page and PLAY lit");
   m = E.apcLeds(list, perf, 1, false);
-  ok(led(56) === `${A.DIM},${A.BLUE}` && m.get(A.PAGE + 1)[1] === 1 && !m.get(A.PLAY)[1], "apc: page I..P shows I..P");
+  ok(led(56) === `${A.KEPT},${A.WHITE}` && m.get(A.PAGE + 1)[1] === 1 && !m.get(A.PLAY)[1], "apc: page I..P shows I..P");
   m = E.apcLeds(null, null, 0, false);
   ok(m.size === 64 + 6 + 2 + 1 && [...m.values()].every((x) => x[1] === 0), "apc: no device: every LED dark");
 }

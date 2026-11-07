@@ -1096,8 +1096,24 @@ function portPairs(access) {
    and drum modes ("Notes"). LEDs: a note-on, the status's channel a pad's brightness or blink, the velocity its colour;
    a button's velocity 1 on, 2 flashing */
 const APC_PORT = /apc mini mk2/i;
-const APC = { MUTE: 100, PAGE: 112, PLAY: 119, FADER: 48, FULL: 0x96, DIM: 0x92, BLINK: 0x9E, BTN: 0x90,
-  GREEN: 87, BLUE: 41, ORANGE: 61, YELLOW: 74 };
+const APC = { MUTE: 100, PAGE: 112, PLAY: 119, FADER: 48, FULL: 0x96, KEPT: 0x92, REST: 0x91, BLINK: 0x9E, BTN: 0x90,
+  GREEN: 87, WHITE: 3 };   /* (statuses: 100 %, 50 %, 25 %, blinking 1/4; velocities: the palette's) */
+/* the velocities' colours (Akai's APC mini mk2 protocol v1.0). Its SysEx colours aren't used: even values reportedly
+   turn a pad off */
+const APC_PALETTE = "0000001e1e1e7f7f7fffffffff4c4cff0000590000190000ffbd6cff5400591d00271b00ffff4cffff0059590019190088ff4c54ff001d5900142b004cff4c00ff000059000019004cff5e00ff1900590d0019024cff8800ff5500591d001f124cffb700ff990059350019124cc3ff00a9ff0041520010194c88ff0055ff001d590008194c4cff0000ff000059000019874cff5400ff1900640f0030ff4cffff00ff590059190019ff4c87ff005459001d220013ff150099350079510043640003390000573500547f0000ff00454f2500cc7f7f7f202020ff0000bdff2dafed0664ff09108b0000ff8700a9ff002aff3f00ff7a00ffb21a7d402100ff4a0088e10672ff1500ff003bff2659ff7138ffcc5b8aff3151c6877fe9d31dffff005dff7f00b9b00090ff00835d07392b00144c100d503815152a16205a693c1ca8000ade513dd86a1cffe1269ee12f67b50f1e1e30dcff6b80ffbd9a99ff8e66ff404040757575e0ffffa000003500001ad000074200b9b0003f3100b35f004b1502";
+/* the velocity nearest a colour as an editor's token has it (not #rrggbb: white) */
+function apcNear(s) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(s).trim());
+  if (!m) return APC.WHITE;
+  const part = (x, i) => parseInt(x.slice(i, i + 2), 16);
+  let best = APC.WHITE, least = Infinity;
+  for (let v = 0; v < 128; v++) {
+    let d = 0;
+    for (let i = 0; i < 6; i += 2) d += (part(m[1], i) - part(APC_PALETTE, v * 6 + i)) ** 2;
+    if (d < least) { least = d; best = v; }
+  }
+  return best;
+}
 function apcPorts(access) {
   const free = (p) => p.state !== "disconnected" && APC_PORT.test(p.name || "") && !/notes/i.test(p.name);
   const i = [...access.inputs.values()].find(free), o = i && [...access.outputs.values()].find((x) => free(x) && x.name === i.name);
@@ -1116,20 +1132,21 @@ function apcAction([st, d1, d2], page) {
   if (d1 === APC.PAGE || d1 === APC.PAGE + 1) return { do: "page", page: d1 - APC.PAGE };
   return d1 === APC.PLAY ? { do: "play" } : null;
 }
-/* every LED as the song says: note -> [status, velocity]. An entry on: green, the next one blinking, the others dim
-   (a REST orange), an empty one dark. A scene kept: dim, the last one bright. list, perf: LIST's and PERFORM's replies, or none */
-function apcLeds(list, perf, page, playing) {
+/* every LED as the song says: note -> [status, velocity]. Playing is green: an entry on, the next one blinking, the
+   scene last recalled or stored. A track's others in its colour at 50 % (a REST 25 %), a scene's white, an empty one
+   dark. list, perf: LIST's and PERFORM's replies, or none; tracks: T1..T6's colours as velocities (apcNear) */
+function apcLeds(list, perf, page, playing, tracks = []) {
   const m = new Map(), off = [APC.FULL, 0];
   for (let n = 0; n < 64; n++) {
     const c = n % 8, row = 7 - (n >> 3), x = c < 6 && list && list.tracks[c], e = row + 8 * page, en = x && x.ent[e];
     let led = off;
     if (c >= 6) {
       const s = row + 8 * (c - 6);
-      if (perf && perf.scenes >> s & 1) led = [perf.last === s ? APC.FULL : APC.DIM, APC.YELLOW];
+      if (perf && perf.scenes >> s & 1) led = perf.last === s ? [APC.FULL, APC.GREEN] : [APC.KEPT, APC.WHITE];
     } else if (en) {
       if (x.next === e) led = [APC.BLINK, APC.GREEN];
       else if (x.cur === e) led = [APC.FULL, APC.GREEN];
-      else if (en.pat) led = [APC.DIM, en.pat === PAT_REST ? APC.ORANGE : APC.BLUE];
+      else if (en.pat) led = [en.pat === PAT_REST ? APC.REST : APC.KEPT, tracks[c] ?? APC.WHITE];
     }
     m.set(n, led);
   }
@@ -3875,9 +3892,10 @@ const apc = { input: null, output: null, page: 0, shown: new Map() };
 const transportPlaying = (s) => (s.pending ? s.pending !== 2 : s.playing || s.counting);
 function apcShow() {
   if (!apc.output) return;
-  const s = dev && dev.song, tr = dev && dev.transport;
+  const s = dev && dev.song, tr = dev && dev.transport, css = getComputedStyle(document.documentElement);
+  const tracks = [1, 2, 3, 4, 5, 6].map((k) => apcNear(css.getPropertyValue(`--t${k}`)));   /* (they follow the THEME) */
   try {
-    for (const [n, [st, v]] of apcLeds(s && s.list, s && s.perf, apc.page, tr && transportPlaying(tr))) {
+    for (const [n, [st, v]] of apcLeds(s && s.list, s && s.perf, apc.page, tr && transportPlaying(tr), tracks)) {
       if (apc.shown.get(n) === (st << 8 | v)) continue;
       apc.output.send([st, n, v]);
       apc.shown.set(n, st << 8 | v);
