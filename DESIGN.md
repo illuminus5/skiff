@@ -501,6 +501,9 @@ track's Sound tab); PLAY, STOP and REC in the header; the projects' names (SAVE 
 track's list (SET, COPY, PLAY, REPS, CLEAR), SONG, LAUNCH, the scenes, the staged mutes, the pattern pool (CLEAR an
 unused one). Each acts through the device's own code and the device says so on its screen; what can't be undone is
 asked first, as on the device. Nothing of these is pushed: the editor reads what it shows again about once a second.
+An **APC mini mk2** on the computer plays the Song tab (`apcAction`, `apcLeds`): its pads and buttons call what the tab's
+own controls call, the faders send each track's CC7, and its LEDs show what is read back, not what was pressed, the song
+read every 400 ms while it is there. No firmware of its own and no setting: it works while it is plugged in.
 
 **Screen grid:** Felucca's, so every page inherits the restyle (`firmware/src/ui.c`); BLOCKS' footer is one line, so its panel is 16 px taller (`foot_less`, `graph_h`):
 
