@@ -304,7 +304,8 @@ them. MENU › DISPLAY › PLAYHEAD LINE leaves HOME's playhead a line, without 
 
 The [Skiff Editor](https://illuminus5.github.io/skiff/webapp/editor/) (`web/editor.html`, Chrome or Edge over USB MIDI)
 edits a connected FM-1 live: the sounds and their presets, the steps, the mixer, the Song tab (each track's list, the
-scenes, the pattern pool), the projects and their names, the DRUM-X kit and the MENU settings, with PLAY, STOP and REC
+scenes, the pattern pool; an Akai APC mini mk2 plugged into the computer launches them, its LEDs following the FM-1),
+the projects and their names, the DRUM-X kit and the MENU settings, with PLAY, STOP and REC
 at the top. It looks like the unit and follows its THEME, and sets THEME › CUSTOM's colours (Settings › Device
 display). It also keeps a library of sounds on the computer, imports
 FM6 patches from `.syx` files and saves complete backups. Its Samples tab fills the user sample slots from WAV files
