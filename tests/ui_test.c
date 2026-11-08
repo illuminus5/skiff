@@ -664,8 +664,10 @@ static int test_rec(void)
     frame();
     fm1_in.notes = 0;
     frame();
-    bad += check("#133 STEP, not armed: the key only plays (nothing written, the cursor stays)",
-                 !trk[0].step[0].n && ui.cursor == 0);
+    bad += check("#133 STEP, not armed: ((2.2) playing too) the empty cursor step written, the cursor on",
+                 trk[0].step[0].n == 1 && ui.cursor == 1);
+    step_clear(&trk[0].step[0]);
+    cursor_set(0);
     song.rec = 1;
     song.playing = 0;
     fm1_in.notes = host_notes = 1u << 7;
@@ -4072,8 +4074,8 @@ static int pr_columns_match(const track_t *t, uint32_t *nbars)
     }
     return ok;
 }
-/* 1.2, Discussion #133: step recording on SEQ > STEP. Not armed, the keys only play ((2.2) stopped, an empty cursor
- * step they write as armed);
+/* 1.2, Discussion #133: step recording on SEQ > STEP. Not armed, the keys only play ((2.2) an empty cursor step they
+ * write as armed, playing too);
  * REC there arms step recording without starting the transport; armed and stopped a key (keys held together: a
  * chord) writes the cursor step and letting go moves the cursor on one step, wrapping inside LEN; PLAY records live
  * (at the play head, not the cursor). The DRUM grid keeps its own keys (white keys = steps, REC starts PLAY) */
@@ -4101,8 +4103,11 @@ static int test_step_rec(void)
     song.playing = 1;
     key_down(7); frame(); key_up(7); frame();
     song.playing = 0;
-    bad += check("#133 STEP, not armed, playing: nothing written either", !memcmp(before, t->step, sizeof before) &&
-                 ui.cursor == 3u);
+    bad += check("#133 STEP, not armed, playing: ((2.2) the empty cursor step written as stopped)",
+                 t->step[3].n == 1u && ui.cursor == 4u);
+    memcpy(t->step, before, sizeof before);
+    cursor_set(3);
+    frame();
     song.rec = 2u;                                                    /* T2 armed, T1 selected */
     key_down(7); frame(); key_up(7); frame();
     bad += check("#133 another track armed: the selected track's keys as not armed ((2.2) its empty step written)",
@@ -8224,7 +8229,7 @@ static int test_u1(void)
     ok &= !ui.msg_t;                                     /* (now and then: not every key) */
     bad += check("U1: NOTES's keys not armed, a step with a note: they write nothing, \"[REC] REPLACE STEP\" once a while", ok);
 
-    {   /* (2.2) not armed, stopped: an empty cursor step the keys write, as step entry; one undo a step */
+    {   /* (2.2) not armed: an empty cursor step the keys write, as step entry, stopped or playing; one undo a step */
         uint32_t n0, k7;
         ui_power_on();
         my_steps(TSEL);
@@ -8243,10 +8248,18 @@ static int test_u1(void)
         hold(B_SAVE);
         ok &= step_on(&TSEL->step[1]) && !TSEL->step[2].n;   /* (the last step written undone, the first kept) */
         bad += check("2.2: NOTES's keys not armed, stopped: an empty cursor step is written, the cursor on; one undo a step", ok);
-        ui.cursor = 4;
+        cursor_set(4);
         press(B_PLAY);
+        events_block(CTL);
+        ok = song.playing;
+        fm1_in.notes = host_notes = 1u << 7; frame();
+        ok &= ui.entry_open && TSEL->step[4].note[0] == k7;
+        fm1_in.notes = host_notes = 0; frame();
+        ok &= !ui.entry_open && ui.cursor == 5u && TSEL->step[3].note[0] == 43u;
+        cursor_set(3);
         fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = host_notes = 0; frame();
-        bad += check("  playing, not armed: the keys write nothing", !TSEL->step[4].n && !ui.entry_open);
+        ok &= TSEL->step[3].note[0] == 43u && ui.cursor == 3u;   /* (a step with notes: kept, playing too) */
+        bad += check("  playing, not armed: the same at the cursor (not the playhead), a step with notes kept", ok);
         stop_transport();
     }
 

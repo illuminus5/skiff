@@ -1445,7 +1445,7 @@ static void shift_map(smap_t *m)
     m[4] = !ui.home && act_cols() ? (smap_t){"OCT+", "DO IT", 1} : (smap_t){"OCT- +", "OCTAVE", 0};
     m[5] = (smap_t){"PLAY", song.playing ? "STOP" : "START", 0};   /* (what it would do now) */
     if (step_page(g) && !drum) {                     /* ((2.0) NOTES: the keys pick, with REC write; (2.2) an empty
-                                                     * step they write, REC or not) */
+                                                     * step they write, REC or not, playing too) */
         m[3] = (smap_t){"KEYS", draw_on(0) ? "WRITE" : "PICK", 1};
         m[4] = (smap_t){"KEYS + REC", "REPLACE", 1};
         m[5] = (smap_t){"EDIT + REC", "CLEAR", 1};

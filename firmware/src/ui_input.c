@@ -1836,14 +1836,14 @@ static void entry_open(track_t *t, uint32_t i)
         keep |= (uint64_t)1 << j;                      /* what the keys write here isn't held by a TIE after it) */
     ed_close(t, w, len, keep);
 }
-/* (2.2) not armed, stopped, on the roll: the keys write the cursor step when it is empty (nothing starts there, a TIE
- * holding no note too), as step entry does; a step with notes they only play (REC armed replaces it) */
+/* (2.2) not armed, on the roll, stopped or playing: the keys write the cursor step when it is empty (nothing starts
+ * there, a TIE holding no note too), as step entry does (playing: the cursor stays where it is, the step plays from the
+ * next time the playhead reaches it); a step with notes they only play (REC armed replaces it, stopped) */
 static const char STEP_DRAW[] = "STEP WRITE";
 static int draw_on(int open)                            /* open: an entry going on (its step no longer empty) */
 {
     const track_t *t = TSEL;
-    return roll_on() && !song.playing && !seq_counting() && transport_req != 1u &&
-           ui.cursor < (uint32_t)t->p[P_SLEN] &&
+    return roll_on() && ui.cursor < (uint32_t)t->p[P_SLEN] &&
            (open || step_empty(&t->step[ui.cursor]) || tie_alone(t, ui.cursor));
 }
 static void seq_entry(uint32_t pressed);
@@ -2613,7 +2613,7 @@ static void ui_input(void)
             seq_entry(notes);                           /* (the entry goes on: more keys, then let go) */
         } else if (live_rec_sel() || !armed) {          /* armed and playing: the keys record live, not
                                                          * into the cursor step too; not armed (1.2, #133) on a
-                                                         * step with notes, or playing: they play and write nothing */
+                                                         * step with notes: they play and write nothing */
             ui.entry_open = 0;
             if (!armed && notes && !ui.msg_t && (!wr_hint_ms || fm1_ms - wr_hint_ms > 10000u)) {
                 ui_message("[REC] REPLACE STEP");       /* (Skiff U1) .. so say how they write, now and then */
