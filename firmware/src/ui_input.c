@@ -1836,6 +1836,26 @@ static void entry_open(track_t *t, uint32_t i)
         keep |= (uint64_t)1 << j;                      /* what the keys write here isn't held by a TIE after it) */
     ed_close(t, w, len, keep);
 }
+/* (2.2) not armed, stopped, on the roll: the keys write the cursor step when it is empty (nothing starts there, a TIE
+ * holding no note too), as step entry does; a step with notes they only play (REC armed replaces it) */
+static const char STEP_DRAW[] = "STEP WRITE";
+static int draw_on(int open)                            /* open: an entry going on (its step no longer empty) */
+{
+    const track_t *t = TSEL;
+    return roll_on() && !song.playing && !seq_counting() && transport_req != 1u &&
+           ui.cursor < (uint32_t)t->p[P_SLEN] &&
+           (open || step_empty(&t->step[ui.cursor]) || tie_alone(t, ui.cursor));
+}
+static void seq_entry(uint32_t pressed);
+static void seq_draw(uint32_t pressed)
+{
+    tl_undo_take(TSEL, STEP_DRAW);
+    seq_entry(pressed);
+    if (!ui.entry_open) {                               /* (only silent keys: no entry, no undo) */
+        undo_top = (uint8_t)((undo_top + UNDO_N - 1u) % UNDO_N);
+        undo_n--;
+    }
+}
 /* SEQ step entry = step recording (1.2, Discussion #133: only with the track armed and the transport stopped), acid
  * style: the keys pressed together (POLY: up to 4 notes, MONO: the last one) become the cursor step; releasing all
  * keys moves on past it ((2.0, #31) PRESETS meanwhile its LENGTH, its ties: past them; wrapping inside LEN). With CHRD
@@ -2581,17 +2601,22 @@ static void ui_input(void)
     if (song.grid) {
         grid_keys(notes);
     } else if (song.seq_mode && step_page(cur_page()->graph)) {   /* NOTES (not FEEL: its knobs only) */
-        static uint32_t wr_hint_ms;                     /* (Skiff U1) "REC: WRITE STEPS" said last (0: never) */
+        static uint32_t wr_hint_ms;                     /* (Skiff U1) "[REC] REPLACE STEP" said last (0: never) */
         int armed = (song.rec >> song.sel) & 1u;
-        if (live_rec_sel() || !armed) {                 /* armed and playing: the keys record live, not
-                                                         * into the cursor step too; not armed (1.2, #133): they
-                                                         * play and write nothing, (2.0) a note of the selection's
-                                                         * they pick (sel_keys) */
+        if (!armed && notes && !ui.entry_open && sel_keys(notes)) {   /* (2.0) not armed: a note of the selection's
+                                                         * they pick */
+            ui.force = 1;
+        } else if (!armed && !ui.entry_open && notes && draw_on(0)) {   /* (2.2) not armed, an empty cursor step:
+                                                         * the keys write it, as step entry, one undo a step */
+            seq_draw(notes);
+        } else if (!armed && ui.entry_open && draw_on(1)) {
+            seq_entry(notes);                           /* (the entry goes on: more keys, then let go) */
+        } else if (live_rec_sel() || !armed) {          /* armed and playing: the keys record live, not
+                                                         * into the cursor step too; not armed (1.2, #133) on a
+                                                         * step with notes, or playing: they play and write nothing */
             ui.entry_open = 0;
-            if (!armed && notes && sel_keys(notes))
-                ui.force = 1;
-            else if (!armed && notes && !ui.msg_t && (!wr_hint_ms || fm1_ms - wr_hint_ms > 10000u)) {
-                ui_message("[REC] WRITE STEPS");        /* (Skiff U1) .. so say how they write, now and then */
+            if (!armed && notes && !ui.msg_t && (!wr_hint_ms || fm1_ms - wr_hint_ms > 10000u)) {
+                ui_message("[REC] REPLACE STEP");       /* (Skiff U1) .. so say how they write, now and then */
                 wr_hint_ms = fm1_ms | 1u;
             }
         } else

@@ -4072,7 +4072,8 @@ static int pr_columns_match(const track_t *t, uint32_t *nbars)
     }
     return ok;
 }
-/* 1.2, Discussion #133: step recording on SEQ > STEP. Not armed, the keys only play (being on SEQ writes nothing);
+/* 1.2, Discussion #133: step recording on SEQ > STEP. Not armed, the keys only play ((2.2) stopped, an empty cursor
+ * step they write as armed);
  * REC there arms step recording without starting the transport; armed and stopped a key (keys held together: a
  * chord) writes the cursor step and letting go moves the cursor on one step, wrapping inside LEN; PLAY records live
  * (at the play head, not the cursor). The DRUM grid keeps its own keys (white keys = steps, REC starts PLAY) */
@@ -4092,8 +4093,11 @@ static int test_step_rec(void)
     key_down(7); frame();
     ok = kb_chn[7] != 0u;                                             /* it sounds */
     key_up(7); frame();
-    ok &= !memcmp(before, t->step, sizeof before) && ui.cursor == 3u && !song.rec && !transport_req;
-    bad += check("#133 STEP, not armed, stopped: a key sounds, writes nothing, the cursor stays", ok);
+    ok &= t->step[3].n == 1u && t->step[3].note[0] == kb_map(t, 7) && ui.cursor == 4u && !song.rec && !transport_req;
+    bad += check("#133 STEP, not armed, stopped: a key sounds; (2.2) an empty step it writes, the cursor on", ok);
+    memcpy(t->step, before, sizeof before);
+    cursor_set(3);
+    frame();
     song.playing = 1;
     key_down(7); frame(); key_up(7); frame();
     song.playing = 0;
@@ -4101,8 +4105,11 @@ static int test_step_rec(void)
                  ui.cursor == 3u);
     song.rec = 2u;                                                    /* T2 armed, T1 selected */
     key_down(7); frame(); key_up(7); frame();
-    bad += check("#133 another track armed: the selected track's STEP writes nothing",
-                 !memcmp(before, t->step, sizeof before) && ui.cursor == 3u);
+    bad += check("#133 another track armed: the selected track's keys as not armed ((2.2) its empty step written)",
+                 t->step[3].n == 1u && ui.cursor == 4u);
+    memcpy(t->step, before, sizeof before);
+    cursor_set(3);
+    frame();
     song.rec = 0;
     press(B_REC);
     bad += check("#133 REC on STEP arms step recording: stopped, KEYS WRITE STEPS",
@@ -4143,8 +4150,11 @@ static int test_step_rec(void)
     press(B_REC);                                                     /* disarm: the keys only play again */
     memcpy(before, t->step, sizeof before);
     key_down(7); frame(); key_up(7); frame();
-    bad += check("#133 REC again disarms: the keys only play, nothing written",
-                 !song.rec && !memcmp(before, t->step, sizeof before) && ui.cursor == 4u);
+    ok = !song.rec && t->step[4].n == 1u && ui.cursor == 5u;          /* ((2.2) an empty step: written) */
+    memcpy(before, t->step, sizeof before);
+    key_down(7); frame(); key_up(7); frame();
+    bad += check("#133 REC again disarms: a step with notes the keys only play, nothing written ((2.2) an empty one written)",
+                 ok && !memcmp(before, t->step, sizeof before) && ui.cursor == 5u);
     /* the DRUM grid as before: white keys are the steps (armed or not), REC from stop starts PLAY */
     ui_power_on();
     t = TSEL;
@@ -8204,14 +8214,41 @@ static int test_u1(void)
     bad += check("U1: EDIT's step clear is undone by SAVE held; two in a run are one undo", ok);
 
     ui_power_on();
+    my_steps(TSEL);
     go_page(GR_ROLL);
-    ui.msg_t = 0;
+    ui.cursor = 0; ui.msg_t = 0;
     fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = 0; frame();
-    ok = msg_is("[REC] WRITE STEPS");
+    ok = msg_is("[REC] REPLACE STEP") && TSEL->step[0].note[0] == 40u && ui.cursor == 0u;
     ui.msg_t = 0;
     fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = 0; frame();
     ok &= !ui.msg_t;                                     /* (now and then: not every key) */
-    bad += check("U1: NOTES's keys not armed: \"[REC] WRITE STEPS\" once a while", ok);
+    bad += check("U1: NOTES's keys not armed, a step with a note: they write nothing, \"[REC] REPLACE STEP\" once a while", ok);
+
+    {   /* (2.2) not armed, stopped: an empty cursor step the keys write, as step entry; one undo a step */
+        uint32_t n0, k7;
+        ui_power_on();
+        my_steps(TSEL);
+        go_page(GR_ROLL);
+        ui.cursor = 1;
+        k7 = kb_map(TSEL, 7);
+        n0 = undo_n;
+        fm1_in.notes = host_notes = 1u << 7; frame();
+        ok = ui.entry_open && TSEL->step[1].n == 1u && TSEL->step[1].note[0] == k7 && step_on(&TSEL->step[1]);
+        fm1_in.notes = host_notes = 0; frame();
+        ok &= !ui.entry_open && ui.cursor == 2u && undo_n == n0 + 1u && !song.rec;
+        fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = host_notes = 0; frame();
+        ok &= TSEL->step[2].note[0] == k7 && ui.cursor == 3u && undo_n == n0 + 2u;
+        fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = host_notes = 0; frame();
+        ok &= TSEL->step[3].note[0] == 43u && ui.cursor == 3u;   /* (a step with a note: kept) */
+        hold(B_SAVE);
+        ok &= step_on(&TSEL->step[1]) && !TSEL->step[2].n;   /* (the last step written undone, the first kept) */
+        bad += check("2.2: NOTES's keys not armed, stopped: an empty cursor step is written, the cursor on; one undo a step", ok);
+        ui.cursor = 4;
+        press(B_PLAY);
+        fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = host_notes = 0; frame();
+        bad += check("  playing, not armed: the keys write nothing", !TSEL->step[4].n && !ui.entry_open);
+        stop_transport();
+    }
 
     ui_power_on();
     btn_down(B_ARP); frames(560);
@@ -8458,7 +8495,8 @@ static int test_u5(void)
     go_page(GR_ROLL); frame();
     btn_down(B_HOME); frames(400);
     shift_map(m);
-    ok &= ui.shift && str_eq(m[0].job, "STEP") && m[0].kind == 1u && str_eq(m[3].job, "PICK") &&
+    ok &= ui.shift && str_eq(m[0].job, "STEP") && m[0].kind == 1u &&
+          str_eq(m[3].job, draw_on(0) ? "WRITE" : "PICK") && str_eq(m[4].job, "REPLACE") &&
           str_eq(m[6].job, "RANGE") && m[6].kind == 2u && str_eq(m[7].job, "COPY") && str_eq(m[8].job, "PASTE");
     press(B_SAVE);                                      /* SHIFT + SAVE: TAKE; the map goes */
     ok &= !ui.shift;
