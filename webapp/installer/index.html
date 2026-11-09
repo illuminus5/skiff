@@ -574,7 +574,8 @@ class Updater {
     for (const input of this.access.inputs.values()) {
       this.seen.add(`${input.name || "?"}${input.state === "disconnected" ? " (disconnected)" : ""}`);
       if (input.state === "disconnected") continue;
-      if (!/fm-1|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi/i.test(input.name || "")) continue;   // never probe other gear
+      // never probe other gear ((2.5, #83) "FMini-1 Update": macOS's name for the SMK-37's update loader)
+      if (!/fm-1|fmini|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi/i.test(input.name || "")) continue;
       const output = outs.find((o) => o.name === input.name && o.state !== "disconnected");
       if (!output) continue;
       try { await input.open(); await output.open(); } catch (_) { continue; }
@@ -1097,7 +1098,7 @@ applyLang();
 const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textContent = t(k) + arg; };
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
 const log = (t) => { $("log").textContent += t + "\n"; };
-const meta = {"version": "2.2", "product": "FM-1_722", "pkg": "../../firmware/skiff-2.2.fwsc", "packages": [{"product": "FM-1_722", "pkg": "../../firmware/skiff-2.2.fwsc"}, {"product": "SMK-37 Pro_722", "pkg": "../../firmware/skiff-2.2-smk37.fwsc"}, {"product": "SMK-37 Elite_722", "pkg": "../../firmware/skiff-2.2-smk37-elite.fwsc"}, {"product": "MKE-P37_722", "pkg": "../../firmware/skiff-2.2-smk37-mke.fwsc"}]};
+const meta = {"version": "2.5", "product": "FM-1_725", "pkg": "../../firmware/skiff-2.5.fwsc", "packages": [{"product": "FM-1_725", "pkg": "../../firmware/skiff-2.5.fwsc"}, {"product": "SMK-37 Pro_725", "pkg": "../../firmware/skiff-2.5-smk37.fwsc"}, {"product": "SMK-37 Elite_725", "pkg": "../../firmware/skiff-2.5-smk37-elite.fwsc"}, {"product": "MKE-P37_725", "pkg": "../../firmware/skiff-2.5-smk37-mke.fwsc"}]};
 // one package per model ({ product, pkg }); a site made before the SMK builds carries only product + pkg
 const packages = meta.packages || [{ product: meta.product, pkg: meta.pkg }];
 const images = new Map();             // product -> logical image, loaded on first use
