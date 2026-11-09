@@ -9,6 +9,10 @@
  *    DIST_TONE moves nothing at 0); DRIVE 0 passes the signal unchanged whatever the TYPE;
  * 4. (2.0, D 2A) HARD FOLD FUZZ are INSERT's shapers of the name (ins_shape) in DIST's own low cut, DC blocker, tone and
  *    make-up, bit for bit; CRUSH is BITS as it was.
+ * 5. (2.5.1) CRUSH loud: a track whose notes add up far past one voice's full scale (a four-note chord at full scale,
+ *    peaks past 130,000) is the same in 64-bit arithmetic, bit for bit. CRUSH shapes nothing under full scale, and its
+ *    low-pass multiplied in 32 bits (mulq15): past ~65,600 the product wrapped, a jump of half full scale (LOFI PIANO's
+ *    chords cracked at every attack).
  * Built and run by tests/run_tests.sh. */
 #define main hostsim_main
 #include "hostsim.c"
@@ -103,6 +107,24 @@ static void old_bits(track_t *t, int32_t *b, uint32_t n, uint32_t ity)
         t->dist_lp1 += mulq15(h - t->dist_lp1, k);
         t->dist_lp2 += mulq15(t->dist_lp1 - t->dist_lp2, k);
         b[i] = mulq15(t->dist_lp2, mk);
+    }
+}
+/* (2.5.1) CRUSH as old_bits, its low-pass and make-up in 64 bits: what it means at any level */
+static void ref_crush64(track_t *t, int32_t *b, uint32_t n, uint32_t ity)
+{
+    int32_t d = t->p[P_DIST], k = clamp(32700 - d * 40 + t->p[P_DTONE] * 150, 2000, 32700), mk = 32000 - d * 20;
+    uint32_t s = (uint32_t)d / 11u, hm = (1u << ((uint32_t)d >> 5)) - 1u;
+    int32_t h = 0, r = s ? 1 << (s - 1u) : 0;
+    (void)ity;
+    for (uint32_t i = 0; i < n; i++) {
+        int32_t x = b[i];
+        t->dist_hp += (x - t->dist_hp + 64) >> 7;
+        x = clamp(x - t->dist_hp, -230000, 230000);
+        if (!(i & hm))
+            h = ((x + r) >> s) << s;
+        t->dist_lp1 += (int32_t)(((int64_t)(h - t->dist_lp1) * k) >> 15);
+        t->dist_lp2 += (int32_t)(((int64_t)(t->dist_lp1 - t->dist_lp2) * k) >> 15);
+        b[i] = (int32_t)(((int64_t)t->dist_lp2 * mk) >> 15);
     }
 }
 /* (2.0) HARD FOLD FUZZ: INSERT's shaper ity at DIST's drive, in DIST's low cut, DC blocker, tone and make-up */
@@ -214,6 +236,24 @@ int main(void)
         okt &= hi > lo;
     }
     bad += check("TONE: +63 brighter than -64, every TYPE", okt);
+    {   /* (2.5.1) a four-note chord at full scale (F3 A3 C4 E4: the sum peaks past 130,000) through CRUSH */
+        static const double HZ[4] = {174.614, 220.0, 261.626, 329.628};
+        int32_t pk = 0, step = 0;
+        for (i = 0; i < N; i++) {
+            double s = 0;
+            for (k = 0; k < 4u; k++)
+                s += sin(2.0 * M_PI * HZ[k] * i / 44100.0);
+            in[i] = (int32_t)(32767.0 * s);
+            pk = abs(in[i]) > pk ? abs(in[i]) : pk;
+        }
+        for (k = 0, okd = 1; k < 3u; k++)
+            okd &= same_as(DT_CRUSH, DRV[k], 0, ref_crush64, 0);
+        run(DT_CRUSH, 40, 0);
+        for (i = 1; i < N; i++)
+            step = abs(out[i] - out[i - 1]) > step ? abs(out[i] - out[i - 1]) : step;
+        printf("drive:   CRUSH 40, a chord peaking at %d: the largest step from one sample to the next %d\n", pk, step);
+        bad += check("(2.5.1) CRUSH, a chord far past full scale: as in 64 bits, bit for bit (DRIVE 40, 80, 127)", okd);
+    }
     printf(bad ? "DRIVE TEST FAILED\n" : "drive tests passed\n");
     return bad != 0;
 }

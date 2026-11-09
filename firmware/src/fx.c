@@ -170,9 +170,13 @@ static __attribute__((noinline)) AUDIO_RAM void dist_crush(track_t *t, int32_t *
         x = clamp(x - t->dist_hp, -230000, 230000);
         if (!(i & hm))
             h = ins_shape(IT_CRUSH, x, s);              /* (rounded: no offset) */
-        t->dist_lp1 += mulq15(h - t->dist_lp1, k);
-        t->dist_lp2 += mulq15(t->dist_lp1 - t->dist_lp2, k);
-        b[i] = mulq15(t->dist_lp2, mk);
+        t->dist_lp1 += mulq16(h - t->dist_lp1, (uint32_t)k << 1);   /* ((2.5.1) mulq16: CRUSH's h is the track's whole sum,
+                                                         * nothing shapes it under full scale as SOFT HARD FOLD FUZZ do; past
+                                                         * ~65,600 (a four-note chord's attack) mulq15's 32-bit product
+                                                         * wrapped, a jump of half full scale: a crack. The same samples
+                                                         * below that: mulq16 of 2k is mulq15 of k, exactly) */
+        t->dist_lp2 += mulq16(t->dist_lp1 - t->dist_lp2, (uint32_t)k << 1);
+        b[i] = mulq16(t->dist_lp2, (uint32_t)mk << 1);
     }
 }
 

@@ -59,7 +59,7 @@ rev_room 218
 rev_spring 126
 dist_hard 41
 dist_fold 47
-dist_crush 32
+dist_crush 44
 dist_fuzz 59
 rev_hall 1994
 rev_side_mix 8
