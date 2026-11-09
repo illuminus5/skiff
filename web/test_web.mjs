@@ -35,7 +35,7 @@ const FW_ROOT = process.env.FELUCCA_ROOT || join(HERE, "..");
 const html = readFileSync(join(HERE, "editor.html"), "utf8");
 const proto = html.slice(html.indexOf("/*PROTO-BEGIN*/"), html.indexOf("/*PROTO-END*/"));
 const E = vm.runInNewContext(proto + `
-;({ frame, unframe, parse, songReply, req, Link, parseWav, resample, normalize, takeSample, kitZones, LANES, portPairs, autoTrim, zoomView, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
+;({ frame, unframe, parse, songReply, req, Link, parseWav, resample, normalize, takeSample, kitZones, LANES, portPairs, apcPorts, apcAction, apcLeds, apcNear, APC, autoTrim, zoomView, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
    UP, bank, capturePatch, auditionPatch, lightRefuses, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, parseNotes, parseHits, hitsText, gridFromSteps, LANE_NOTE, LANE_OF, readDevicePreferences, devicePresetRows, TC_NAMES, engineOrder, ENGINE_ORDER, aliasOf, fmtValue, FM6, enumShown, F,
    FM4, fromDigital, fromPerc, DRUM_KIT_E, DX_KIT_DEF, DX_KITS, DRUMX_PKIT,
@@ -1104,6 +1104,42 @@ async function editorLists() {
   const o = attachMock({ noSong: true });
   ok(E.parse[C.INFO](await o.rq(E.req.info())).skiff === 3, "song: firmware without them (57 01 03): no Song tab");
   o.done();
+}
+
+/* The APC mini mk2 on the Song tab: its ports, what its controls ask for, its LEDs from the song's replies */
+{
+  const port = (name, state = "connected") => ({ name, state, id: name });
+  const access = (names) => ({ inputs: new Map(names.map((n) => [n, port(n)])), outputs: new Map(names.map((n) => [n, port(n)])) });
+  const mk2 = access(["APC mini mk2 Notes", "APC mini mk2 Control", "X0X FM-1"]);
+  ok(E.apcPorts(mk2)[0].name === "APC mini mk2 Control" && E.apcPorts(mk2)[1].name === "APC mini mk2 Control", "apc: its Control port, not Notes");
+  ok(!E.apcPorts(access(["X0X FM-1"])) && E.portPairs(mk2).length === 1 && E.portPairs(mk2)[0][0].name === "X0X FM-1",
+     "apc: none without it; never taken for the unit");
+  const act = (st, n, v, page = 0) => JSON.stringify(E.apcAction([st, n, v], page));
+  ok(act(0x90, 56, 127) === '{"do":"entry","k":0,"e":0}' && act(0x90, 5, 127) === '{"do":"entry","k":5,"e":7}', "apc: top left T1 A; bottom of column 6 T6 H");
+  ok(act(0x90, 49, 127, 1) === '{"do":"entry","k":1,"e":9}', "apc: page I..P: T2's second row is J");
+  ok(act(0x90, 62, 127) === '{"do":"scene","s":0}' && act(0x90, 7, 127) === '{"do":"scene","s":15}', "apc: columns 7, 8: scenes 1 and 16");
+  ok(act(0x90, 105, 127) === '{"do":"mute","k":5}' && act(0x90, 106, 127) === "null", "apc: bottom button 6 T6's MUTE; the seventh nothing");
+  ok(act(0x90, 113, 127) === '{"do":"page","page":1}' && act(0x90, 119, 127) === '{"do":"play"}' && act(0x90, 118, 127) === "null", "apc: the side buttons: page, PLAY");
+  ok(act(0xB0, 50, 99) === '{"do":"level","k":2,"v":99}' && act(0xB0, 54, 99) === "null", "apc: fader 3 T3's LEVEL; fader 7 nothing");
+  ok(act(0x80, 56, 0) === "null" && act(0x90, 56, 0) === "null", "apc: let go: nothing");
+  const A = E.APC, none = { pat: 0 }, ent = (m) => Array.from({ length: 16 }, (_, e) => m[e] || none);
+  const list = { tracks: [{ cur: 0, next: 2, ent: ent({ 0: { pat: 1 }, 1: { pat: 2 }, 2: { pat: 3 }, 3: { pat: 65 }, 8: { pat: 4 } }) }] };
+  const perf = { last: 1, scenes: 3, tracks: [{ muted: true, staged: 0 }, { muted: false, staged: 2 }, { muted: false, staged: 0 }] };
+  const t1 = E.apcNear("#ff5a36");
+  ok(t1 === 4 && E.apcNear(" #22C3B4 ") === 90 && E.apcNear("#00ff00") === 21 && E.apcNear("#000000") === 0 && E.apcNear("oops") === A.WHITE,
+     "apc: an editor colour as the palette's nearest (Akai's table: 4 #FF4C4C, 21 #00FF00)");
+  let m = E.apcLeds(list, perf, 0, true, [t1]);
+  const led = (n) => m.get(n).join();
+  ok(led(56) === `${A.FULL},${A.GREEN}` && led(48) === `${A.KEPT},4` && led(40) === `${A.BLINK},${A.GREEN}` && led(32) === `${A.REST},4` && led(24) === `${A.FULL},0`,
+     "apc: on green, kept 50 % of its track's colour, next blinking, a REST 25 %, empty dark");
+  ok(led(57) === `${A.FULL},0`, "apc: a track the reply hasn't: dark");
+  ok(led(62) === `${A.KEPT},${A.WHITE}` && led(54) === `${A.FULL},${A.GREEN}` && led(46) === `${A.FULL},0`, "apc: a scene kept white at 50 %, the last green, none dark");
+  ok(m.get(A.MUTE)[1] === 1 && m.get(A.MUTE + 1)[1] === 2 && m.get(A.MUTE + 2)[1] === 0 && m.get(A.MUTE + 5)[1] === 0, "apc: muted lit, staged flashing");
+  ok(m.get(A.PAGE)[1] === 1 && !m.get(A.PAGE + 1)[1] && m.get(A.PLAY)[1] === 1, "apc: the page and PLAY lit");
+  m = E.apcLeds(list, perf, 1, false);
+  ok(led(56) === `${A.KEPT},${A.WHITE}` && m.get(A.PAGE + 1)[1] === 1 && !m.get(A.PLAY)[1], "apc: page I..P shows I..P");
+  m = E.apcLeds(null, null, 0, false);
+  ok(m.size === 64 + 6 + 2 + 1 && [...m.values()].every((x) => x[1] === 0), "apc: no device: every LED dark");
 }
 
 /* (2.0, INFO 58 01 01) LIST2 (SONG ONCE, the chains as kept), LIST's 5 0 CHAIN, 6 2 ONCE, 7 NEW, 8 COPY+ (a chain: all
