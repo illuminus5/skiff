@@ -32,6 +32,7 @@ static const uint8_t ED_MENU[][2] = {
 #endif
     {MI_PHEAD, 19},                                    /* (Skiff #27) PLAYHEAD, a row of DISPLAY */
     {MI_RETURN, 20},                                   /* (2.0, D 2A) RETURN, a row of CONTROL */
+    {MI_KEEPS, 21},                                    /* (2.5) KEEP SENDS, a row of CONTROL */
 };
 #define ED_MENU_N NELEM(ED_MENU)
 

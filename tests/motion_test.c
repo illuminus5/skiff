@@ -80,6 +80,7 @@ static int compact_project(void)
     project_capture(&before);
     proj_power_on(&before, PROJ_NT); before.sum = proj_sum(&before);   /* ((Skiff phase 6) SKF1 holds four tracks: the rest
                                                                         * come back as at power-on) */
+    before.g[G_DMODE] = DM_MONO; before.sum = proj_sum(&before);        /* ((2.5) and 27 globals: the delay MONO */
     bad += check("SKF1 fits the retained and flash extent", sizeof(proj_slot) == 4u * 3840u && proj_pack(&packed, &before));
     bad += check("SKF1 round trip preserves signed values/FM params/probability/motion", proj_import(&after, &packed, sizeof packed) &&
         !memcmp(&before, &after, sizeof before));
@@ -545,6 +546,7 @@ static int lock_project(void)
     motion_set_lock(t, 2, P_REV, 101); motion_set_lock(t, 7, P_E4, 77);
     project_capture(&before);
     proj_power_on(&before, PROJ_NT); before.sum = proj_sum(&before);   /* ((Skiff phase 6) four tracks in SKF1) */
+    before.g[G_DMODE] = DM_MONO; before.sum = proj_sum(&before);        /* ((2.5) and 27 globals: the delay MONO */
     ok = proj_pack(&a, &before) && proj_import(&after, &a, sizeof a) && !memcmp(&before, &after, sizeof before);
     bad += check("FUN9 round trip keeps the locks (bit 7 of the id byte), their values and steps", ok &&
         (after.motion.event[1].id == P_REV && after.motion.event[1].lock) && after.motion.event[2].value == 77);
@@ -1003,6 +1005,19 @@ static int takes(void)
     for (i = 0; i < 8u; i++) lock_next(t);
     take_commit(0);
     bad += check("takes:   before a whole pass: PLAY ONE LOOP FIRST; a pass with nothing played: NOTHING PLAYED, no change",
+                 ok && str_eq(ui.msg, "NOTHING PLAYED") && !t->step[0].n);
+    seq_stop();
+
+    t = tk_track();                                    /* (2.5) a pass played over pattern A, then B comes in */
+    seq_start(); seq_tick(t, CTL);
+    input_on(t, 60, 100); input_off(t, 60);
+    for (i = 0; i < 8u; i++) lock_next(t);            /* pass 2 starts .. */
+    take_p0[0] = (uint16_t)(take_pass[0] - 1u);        /* .. with another pattern (as launch.c launch_swap marks it) */
+    take_commit(0);
+    ok = str_eq(ui.msg, "PLAY ONE LOOP FIRST") && !t->step[0].n;
+    for (i = 0; i < 8u; i++) lock_next(t);            /* a whole pass of the new one (nothing played): its own */
+    take_commit(0);
+    bad += check("takes:   (2.5) the last pass was the pattern before's: PLAY ONE LOOP FIRST, nothing put in this one",
                  ok && str_eq(ui.msg, "NOTHING PLAYED") && !t->step[0].n);
     seq_stop();
 

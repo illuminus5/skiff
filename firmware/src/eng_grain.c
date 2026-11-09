@@ -432,7 +432,7 @@ static void grain_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
     lp = 4000 + ((clamp((p[P_E7] << 8) + m->cutoff, 0, 127 << 8) * 28767) >> 15);
     for (i = 0; i < n; i++) {
         y += mulq15(clamp(acc[i], -65535, 65535) - y, lp);
-        out[i] += voice_amp(y, m, i) << 1;
+        out[i] += voice_amp2(y, m, i);
     }
     v->s[2] = y;
 }

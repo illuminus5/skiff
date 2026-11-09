@@ -25,8 +25,16 @@ static int head_mark(char *b)
     if (ui.home || pg->fam != FAM_SEQ)
         return 0;
     if (pg->graph == GR_SONG) {
-        if (song.playing && lists.song)
-            str_cpy(b, lists.song == SONG_ONCE ? "SONG ONCE" : "SONG ON", 16);
+        if (song.playing && lists.song) {          /* ((2.5, the user's 2B) BAR n OF N: where the song is) */
+            uint32_t at, n = song_at(&t, &at);
+            if (n) {
+                str_cpy(b, "BAR ", 16);
+                fmt_int(b + 4, (int32_t)(at / 192u) + 1);
+                str_cpy(b + str_len(b), " OF ", 16u - str_len(b));
+                fmt_int(b + str_len(b), (int32_t)((n + 191u) / 192u));
+            } else
+                str_cpy(b, lists.song == SONG_ONCE ? "SONG ONCE" : "SONG ON", 16);
+        }
         return b[0] != 0;
     }
     if (id == PAT_NONE)
@@ -73,12 +81,18 @@ static int head_mark_short(char *b)
         }
     return 0;
 }
+/* the title at the header's right: SHIFT's map; (2.5) a FREE TAKE's picker; HOME: the project's name (pn); the page's */
+static const char *head_title(const char *pn)
+{
+    return ui.shift ? "SHIFT" : fr.on ? "FREE TAKE" : ui.home ? pn : page_head();
+}
 static void draw_head_blocks(void)
 {
     const track_t *t = TSEL;
     uint32_t rec = (song.rec >> song.sel) & 1u ? 2u : song.rec != 0u, id, sig;
     int msg = ui.msg_t || ui.layer;
     char pos[12] = "1.1", b[8], pn[16], mk[16];      /* (stopped: PLAY starts from the top) */
+    uint32_t s_k, s_at, s_n = lists.song && song.playing ? song_at(&s_k, &s_at) : 0u;   /* ((2.5, 2B) the song strip) */
     int32_t x, lx;
     uint16_t ic;
     int mark = head_mark(mk);                        /* ((Skiff phase 5) SONG ON, the pattern edited) */
@@ -99,8 +113,9 @@ static void draw_head_blocks(void)
           (uint32_t)layer_locked() * 3u + (ui.layer == LAYER_PERF ? launch_mode() * 131u : 0u)) + (ui.bpm_t != 0) * 31u +
           (uint32_t)(song.octave + 8) * 11u +
           (uint32_t)batt_shown() * 7777u + 0xB10C5u +
-          str_hash(9u + (uint32_t)ui.home, ui.shift ? "SHIFT" : ui.home ? pn : page_head()) +   /* (the title) */
-          (mark ? str_hash(3u + song.sel, mk) : 0u) + project_mark() * 104729u;
+          str_hash(9u + (uint32_t)ui.home, head_title(pn)) +   /* (the title) */
+          (mark ? str_hash(3u + song.sel, mk) : 0u) + project_mark() * 104729u +
+          (s_n ? s_n * 31u + 240u * s_at / s_n * 7919u + s_k : 0u);
     ui.roll_bpm = song.g[G_BPM];                      /* (no rolling digits: none left to finish in another style) */
     ui.roll[ROLL_BPM].from[0] = 0;
     if (!ui.force && sig == ui.head_sig)
@@ -158,7 +173,7 @@ static void draw_head_blocks(void)
         int32_t r = HEAD_BAT_X - 4;                     /* project's name); the battery after it, at every level (#5), */
         char h[16];                                     /* the octave or the song row before it while they matter */
         draw_battery(HEAD_BAT_X);
-        str_cpy(h, ui.shift ? "SHIFT" : ui.home ? pn : page_head(), sizeof h);   /* ((U5) SHIFT's map) */
+        str_cpy(h, head_title(pn), sizeof h);   /* ((U5) SHIFT's map) */
         x = r;
         if (h[0]) {
             GFX_HOOK_ALIGN(0, 0, 0, H_HEAD, AL_V, "header text on its middle");
@@ -185,6 +200,14 @@ static void draw_head_blocks(void)
         }
         if (song.octave)
             head_group(x, lx + 8);                     /* (#70) stay clear of the BPM */
+    }
+    if (s_n) {                                        /* ((2.5, the user's 2B) a song playing: the strip, where it is; */
+        uint32_t e, x;                                /* a notch at each of its track's entries' ends */
+        cv_rect(0, H_HEAD - 3, 240, 3, T_LINE);
+        cv_rect(0, H_HEAD - 3, (int32_t)(240u * s_at / s_n), 3, T_THEME);
+        for (e = 0; e + 1u < NENT; e++)
+            if (ent_len48(s_k, e) && (x = 240u * ent_at48(s_k, e + 1u) / s_n) > 0u && x < 240u)
+                cv_rect((int32_t)x - 1, H_HEAD - 3, 2, 3, T_BG);
     }
     cv_blit(0, Y_HEAD);
 }
@@ -354,13 +377,16 @@ static void draw_confirm_blocks(void)
         [CF_CLEAR_MOTION] = "CLEAR", [CF_ERASE_USER] = "ERASE",
         [CF_ERASE_BANK] = "CLEAR", [CF_CLEAR_ENTRY] = "CLEAR", [CF_LOAD_PROJ] = "LOAD",
         [CF_STORE_SCENE] = "OVERWRITE", [CF_RESET_SET] = "RESET",
-        [CF_ERASE_PROJ] = "DELETE", [CF_NEW_PROJ] = "NEW", [CF_EMPTY_BANK] = "EMPTY", [CF_CLEAR_UNUSED] = "CLEAR"};
+        [CF_ERASE_PROJ] = "DELETE", [CF_NEW_PROJ] = "NEW", [CF_EMPTY_BANK] = "EMPTY", [CF_CLEAR_UNUSED] = "CLEAR",
+        [CF_CLEAR_SONG] = "CLEAR", [CF_CLEAR_TRKS] = "CLEAR"};   /* ((2.5, 3A) SAVE > PROJECT's KNOB 3) */
     static const uint8_t KEY[2] = {KC_OCTDN, KC_OCTUP};
     char a[24], b[40];
     const aafont_t *tf = &AF_M;
     uint32_t k = ui.confirm, i;
-    int undoable = k == CF_CLEAR_SEQ || k == CF_INIT_SOUND || k == CF_CLEAR_MOTION;
-    const char *hint = undoable ? "hold SAVE: undo" : "can't be undone";   /* ((Skiff U4) the undo hint's words, in
+    int undoable = k == CF_CLEAR_SEQ || k == CF_INIT_SOUND || k == CF_CLEAR_MOTION || k == CF_CLEAR_SONG ||
+                   k == CF_CLEAR_TRKS;              /* ((2.5) CLEAR TRACKS: not undone, its patterns kept: MID too) */
+    const char *hint = k == CF_CLEAR_TRKS ? "the sounds stay" : undoable ? "hold SAVE: undo" : "can't be undone";   /* ((Skiff
+                                                       * U4) the undo hint's words, in
                                                        * the explanations' sentence case) */
     confirm_text(a, b);
     if (k == CF_CLEAR_SEQ && !b[0]) {                 /* what goes: the steps, the notes among them */

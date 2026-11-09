@@ -134,7 +134,13 @@ static void con_memr(const char *p)
     }
 }
 
-#if FELUCCA_FLASH
+/* (2.5) the FM-1's console is short: status (what a hardware test reads), memr, crash, uboot; FELUCCA_CON_FULL=1 (the
+ * SMK-37's, room in its slot) adds dbg, inp, params, flr and status's USB / MIDI / UART / battery lines: 2.5's features
+ * left no room for them in the FM-1's dev build. A release has no console at all (FELUCCA_CDC=0) */
+#ifndef FELUCCA_CON_FULL
+#define FELUCCA_CON_FULL BOARD_SMK37
+#endif
+#if FELUCCA_FLASH && FELUCCA_CON_FULL
 static void con_flr(const char *p)                  /* flash read over SPI (no XIP decryption) */
 {
     static uint8_t b[256];
@@ -172,7 +178,7 @@ static void con_flr(const char *p)                  /* flash read over SPI (no X
 }
 #endif
 
-#if FELUCCA_UAC
+#if FELUCCA_UAC && FELUCCA_CON_FULL
 static void con_uac(void)                              /* USB audio input: stream state and glitches */
 {
     uint32_t p = uac.pkts, base = uac.r48 ? 48u : 44u;
@@ -227,8 +233,11 @@ static void con_status(void)
         con_kv("sfc_mhz", (int32_t)(CLK_MHZ() / 2u / (fm1_sfc_baud() + 1u)));   /* the flash (XIP): HSB (SYS / 2) / (n + 1) */
     }
     con_kv("voices_given_up", (int32_t)voice_kills);
+    con_kv("voices_restarted", (int32_t)voice_steals);   /* ((2.5) a track's own voice taken for its next note) */
     con_kv("track", (int32_t)song.sel + 1);
+#if FELUCCA_CON_FULL
     con_kv("batt_raw", song.batt_raw);
+#endif
     con_puts("engine ");
     con_puts(e->name);
     con_puts("\r\n");
@@ -238,6 +247,7 @@ static void con_status(void)
     con_kv("bpm", song.g[G_BPM]);
     con_kv("playing", song.playing);
     con_kv("boots", (int32_t)felucca_dbg.boots);
+#if FELUCCA_CON_FULL
     con_kv("usb_resets", (int32_t)usb.resets);
     con_kv("usb_sof", (int32_t)usb.sof_seen);
     con_kv("usb_suspends", (int32_t)usb.suspends);
@@ -256,11 +266,13 @@ static void con_status(void)
     con_kv("uart_rx_msgs", (int32_t)um.msgs);
     con_kv("uart_rx_drops", (int32_t)um.drops);
 #endif
+#endif
 #if FELUCCA_FLASH
     con_kv("flash", flash_ok);
 #endif
 }
 
+#if FELUCCA_CON_FULL
 static void con_dbg(void)
 {
     const uint32_t *w = (const uint32_t *)&felucca_dbg;
@@ -343,6 +355,7 @@ static void con_inp(void)
     }
 #endif
 }
+#endif
 
 static void con_crash(void)
 {
@@ -361,6 +374,7 @@ static void con_crash(void)
     con_kv("early", (int32_t)fm1_crash.early);
 }
 
+#if FELUCCA_CON_FULL
 static void con_params(void)
 {
     uint32_t i;
@@ -371,6 +385,7 @@ static void con_params(void)
         con_puts(i % 8u == 7u || i + 1u == P_COUNT ? "\r\n" : " ");
     }
 }
+#endif
 
 #if BOARD_SMK37
 /* (SMK-37 Pro bring-up, after genkigenki's layer) what the inputs read (smk_input.h), the store's owner tag and the
@@ -446,18 +461,25 @@ static void con_padtest(void)
 
 static void con_exec(const char *p)
 {
+#if FELUCCA_CON_FULL
     if (con_word(&p, "help") || con_word(&p, "?"))
         con_puts("status  dbg  inp  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+#else
+    if (con_word(&p, "help") || con_word(&p, "?"))
+        con_puts("status  crash  memr ADDR [LEN]  uboot yes\r\n");
+#endif
     else if (con_word(&p, "status"))
         con_status();
-    else if (con_word(&p, "dbg"))
-        con_dbg();
     else if (con_word(&p, "crash"))
         con_crash();
+#if FELUCCA_CON_FULL
+    else if (con_word(&p, "dbg"))
+        con_dbg();
     else if (con_word(&p, "inp"))
         con_inp();
     else if (con_word(&p, "params"))
         con_params();
+#endif
 #if BOARD_SMK37
     else if (con_word(&p, "smk"))
         con_smk();
@@ -468,7 +490,7 @@ static void con_exec(const char *p)
 #endif
     else if (con_word(&p, "memr"))
         con_memr(p);
-#if FELUCCA_FLASH
+#if FELUCCA_FLASH && FELUCCA_CON_FULL
     else if (con_word(&p, "flr"))
         con_flr(p);
 #endif

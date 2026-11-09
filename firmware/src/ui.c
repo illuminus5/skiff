@@ -51,6 +51,9 @@ static int keep_poll(void);
 static uint32_t keep_waiting(void);
 static int pat_load(track_t *t, uint32_t id);
 static int pool_used(uint32_t id);
+static uint32_t ent_len48(uint32_t k, uint32_t e);   /* ((2.5, 2B) bank.c: a song's bars) */
+static uint32_t ent_at48(uint32_t k, uint32_t e);
+static uint32_t song_at(uint32_t *k, uint32_t *at);
 static uint32_t pool_alloc(void);
 static uint32_t pool_alloc_after(uint32_t orig);   /* ((2.0, #34) a copy's number: bank.c) */
 static uint32_t bank_cur(uint32_t k);
@@ -65,6 +68,7 @@ static void pool_clear_unused(void);
 static void bank_poll(void);                   /* (Skiff) live switching (bank.c, launch.c) */
 static void song_poll(void);                   /* (Skiff phase 5) the song: each track's list in turn (bank.c) */
 static void song_top(void);
+static void song_from(void);                   /* ((2.5) SHIFT + PLAY on SONG: from its entry, bank.c) */
 static void song_oct(void);                    /* .. SEQ > SONG's OCT+ OCT- and its dialog (bank.c) */
 static void song_back(void);
 static void song_clear(uint32_t e);
@@ -133,11 +137,18 @@ static void theme_apply(void)                  /* settings.palette, and over it 
 /* (Skiff #27) MENU > DISPLAY > PLAYHEAD LINE: HOME's selected lane without its THEME's figure at the playhead (NEON's
  * car, QUARK's collision, CRYPT's torch), the line only. A settings byte ([15][15]), 0 = the figure */
 #define ui_ph_line (favorites.factory[15][15])
-/* (Skiff 1.3) MENU > SYSTEM > CPU 2 CORES (BETA): the second core from the next power-on (main.c, hal/fm1_cpu1.h), bit 0
+/* (Skiff 1.3) MENU > SYSTEM > CPU 2 CORES: the second core from the next power-on (main.c, hal/fm1_cpu1.h), bit 0
  * of a settings byte ([15][5]); clear: one core, as 1.2. It clears itself when core 1 misreads or stops answering
- * (main.c) */
+ * (main.c). (2.5) CPU2_DEFAULT: the FM-1 starts on 2 CORES (RESET SETTINGS, and every unit once: cpu2_move), so its 16
+ * voices are there out of the box; the SMK-37 stays on 1 CORE until its second core is tried on the unit; the browser
+ * has none */
 #define CPU2_BYTE (favorites.factory[15][5])
 #define CPU2_SET (CPU2_BYTE & 1u)
+#if FELUCCA_CPU2 && !BOARD_SMK37 && !defined(FELUCCA_WEB)
+#define CPU2_DEFAULT 1u
+#else
+#define CPU2_DEFAULT 0u
+#endif
 #define PREVIEW_SET ((CPU2_BYTE >> 1) & 1u)            /* ((1.3) MENU > STEP PREVIEW ON) */
 /* (2.0, D 2A) MENU > CONTROL > RETURN: how MOMENTARY's values, the FX layer's macros and PERFORM's throws come back once
  * let go (mom_poll; throw.c thr_beats): SNAP, over 1 BEAT, over 1 BAR. A settings byte ([15][16]: zero, the default
@@ -183,9 +194,14 @@ static const uint8_t *const mch_io = &ui_mch(0);
  * (3), THRU ON (4) (SKS1's midi, its rsv17 before: 0 in every older setting, the defaults); REMOTE's channel in CPU2_BYTE's bits 3..7;
  * AUTO CHANNEL's in [1][1] bits 0..4 (DIGITAL's row: its stars byte 0 only, MIDI LEARN 2..31) */
 #define MIDI_BYTE (favorites.factory[15][17])
+#define PREF_KEEP_SENDS (32u << 16)              /* ((2.5) MENU > CONTROL > KEEP SENDS ON: [15][17] bit 5, free (not MIDI's: */
+static const uint8_t *const ks_io = &MIDI_BYTE;   /* a settings byte the MENU's flags reach); params.c param_kept) */
 #define AUTO_BYTE (favorites.factory[ENGI_DIGITAL][1])
 static const uint8_t *const mset_io = &favorites.factory[0][0];
 static const uint8_t *const rmt_btn = panel.btn;     /* ((2.2) REMOTE: a label's button, midi_control.c) */
+static volatile int16_t *const rmt_enc_q = rmt_steps;   /* ((2.5) .. its encoders' turns by role: panel.c panel_enc */
+_Static_assert(EN_SELECT == 0 && EN_ALGO == 1 && EN_PRESET == 2 && EN_K1 == 3 && EN_K4 == 6,   /* takes them) */
+               "midi_control.c midi_event: REMOTE's encoder CCs by role");
 static const uint8_t UNIT_G[3] = {G_CLOCK, G_ROUTE, G_TUNE};
 static uint8_t unit_g_adopt __attribute__((section(".pool")));   /* the first boot: a load takes them (main.c) */
 static uint32_t unit_g_t __attribute__((section(".pool")));      /* fm1_ms | 1 of a change not saved yet */
@@ -351,10 +367,11 @@ static struct {
 enum { CF_NONE, CF_CLEAR_SEQ, CF_OVR_PROJ, CF_OVR_USER,
        CF_INIT_SOUND, CF_CLEAR_MOTION, CF_ERASE_USER,
        CF_ERASE_BANK, CF_CLEAR_ENTRY, CF_LOAD_PROJ, CF_STORE_SCENE, CF_RESET_SET, CF_ERASE_PROJ, CF_NEW_PROJ,
-       CF_EMPTY_BANK, CF_CLEAR_UNUSED, CF_COUNT };   /* ui.confirm: TOOLS' clears; SAVE over a used
-                                   * slot; USER ERASE; (Skiff phase 5) SAVE > PATTERNS: CLEAR an unused pattern; SONG:
+       CF_EMPTY_BANK, CF_CLEAR_UNUSED, CF_CLEAR_SONG, CF_CLEAR_TRKS, CF_COUNT };   /* ui.confirm: TOOLS' clears; SAVE
+                                   * over a used slot; USER ERASE; (Skiff phase 5) SAVE > PATTERNS: CLEAR an unused pattern; SONG:
                                    * CLEAR the entry; (Skiff U1) PROJECT LOAD over the session; ((2.0, #46) SAVE >
-                                   * PATTERNS: EMPTY a pattern, CLEAR every unused one) */
+                                   * PATTERNS: EMPTY a pattern, CLEAR every unused one; (2.5, 3A) SAVE > PROJECT's KNOB 3:
+                                   * CLEAR SONG, CLEAR TRACKS) */
 /* (2.0, #46) SAVE > PATTERNS' KNOB 4, ACTION: CLEAR (an unused pattern, as before), EMPTY (its steps and automation, the
  * pattern and its entries kept), CLEAR UNUSED (every pattern nothing uses) */
 enum { BA_CLEAR, BA_EMPTY, BA_UNUSED, BA_N };
@@ -530,7 +547,8 @@ static int sheet_rows(const sheet_t *sh, int32_t d)
  *   LK_TALL  HOME and the value pages (EDIT ENV LFO MOD FX SLICER SCL CHORD ARP VOICE PATTERN STEP's knobs, MIXER,
  *            GLOBAL, SYSTEM, TOOLS, MOTION): tall cards (a K1..K4 keycap, the icon, the label in M, the value in L,
  *            in M or S when L is too wide or lacks a glyph, the unit under it, the gauge), the panel a strip: HOME's
- *            scope, ENV's ADSR, LFO's wave, PATTERN's 64 steps, MIXER's four tracks (name, state, meter) small; the
+ *            six sounds ((2.5, #97, 8C); the scope on a HOME tap), ENV's ADSR, LFO's wave, PATTERN's 64 steps,
+ *            MIXER's four tracks (name, state, meter) small; the
  *            page's title and number in L on the others (their charts cannot be read that small);
  *   LK_LABEL the list and graph pages (PRESETS, USER, PROJECT, PATTERNS, SONG, the piano roll and the drum grid,
  *            CHANCE, SLICES) and the quick layers' maps: the layout as it is, the card labels in M;
@@ -687,10 +705,22 @@ static void clock_wait_poll(void)                /* ((2.2) when the audio ISR gi
     if (song.g[G_CLOCK])
         ui_way(song.g[G_CLOCK] == 1 ? "WAITING FOR USB CLOCK" : "WAITING FOR TRS CLOCK", "MENU > MIDI > CLOCK");
 }
-/* after the session came back (main.c, autosave_boot): the unit's into song.g; the first boot the other way */
+/* (2.5) every FM-1 on 2 CORES once (main.c, before the second core is started): with one core the 8 voices are all the
+ * tracks' (a pad's 4-note chords lose their tails to the next chord and the beat). Kept with ui_set_rev 3 (unit_g_boot),
+ * so MENU > CPU 1 CORE afterwards stays; a core 1 that fails sets 1 CORE back as before (main.c) */
+#if FELUCCA_CPU2
+static void cpu2_move(void)
+{
+    if (CPU2_DEFAULT && ui_set_rev < 3u)
+        CPU2_BYTE |= 1u;
+}
+#endif
+
+/* after the session came back (main.c, autosave_boot): the unit's into song.g; the first boot the other way. Then the
+ * boot's one-time changes saved: ui_set_rev 2 (these), (2.5) 3 (cpu2_move's) */
 static void unit_g_boot(void)
 {
-    uint32_t i;
+    uint32_t i, save = unit_g_adopt;
     for (i = 0; i < 3u; i++)
         if (unit_g_adopt)
             ui_unit_g(i) = (uint8_t)song.g[UNIT_G[i]];
@@ -699,8 +729,13 @@ static void unit_g_boot(void)
     if (unit_g_adopt) {
         unit_g_adopt = 0;
         ui_set_rev = 2;
-        settings_save();
     }
+    if (CPU2_DEFAULT && ui_set_rev < 3u) {
+        ui_set_rev = 3;
+        save = 1;
+    }
+    if (save)
+        settings_save();
 }
 
 static uint32_t page_first(uint32_t fam)
@@ -776,6 +811,7 @@ static void transport_stop_now(void)
     fm1_irq_off();
     seq_stop();
     transport_req = 0;
+    sl_on = 0;                                    /* ((2.5) no SONG entry's start left waiting: seq.c seq_go) */
     fm1_irq_on();
 }
 
@@ -998,6 +1034,16 @@ static struct {
 } nsel __attribute__((section(".pool")));
 static uint32_t sel_lo(void) { return nsel.a1 && nsel.a1 - 1u < ui.cursor ? nsel.a1 - 1u : ui.cursor; }
 static uint32_t sel_hi(void) { return nsel.a1 && nsel.a1 - 1u > ui.cursor ? nsel.a1 - 1u : ui.cursor; }
+/* (2.5, the user's 4A) a note or a hit starts in the selection (the cursor's step, or SHIFT + PRESETS' steps): what
+ * SHIFT + EDIT deletes (ui_input.c sel_delete); NOTES' footer says so */
+static int sel_note(const track_t *t)
+{
+    uint32_t i, len = (uint32_t)t->p[P_SLEN], hi = sel_hi();
+    for (i = sel_lo(); i <= hi && i < len && i < NSTEP; i++)
+        if (step_on(&t->step[i]))
+            return 1;
+    return 0;
+}
 static int sel_voice(uint32_t i, uint32_t k) { return !nsel.picked || ((nsel.vp[i % NSTEP] >> k) & 1u); }
 static void sel_drop(void)
 {
@@ -1342,7 +1388,9 @@ static int seq_is_empty(const track_t *t)
  * takes the copy too (UNDO_MOT: SAVE held puts the track's motion back, the sound and the steps stay; motion_undo_take).
  * A sound load keeps the track's motion on the parameters every engine has (load_end, motion.c motion_sound_loaded);
  * a pattern load drops it all (the steps it was on are gone) */
-enum { UNDO_SOUND = 1, UNDO_PAT = 2, UNDO_MOT = 4, UNDO_KIT = 8 };   /* (UNDO_KIT, Skiff phase 7: INIT on DRUM-X,
+enum { UNDO_SOUND = 1, UNDO_PAT = 2, UNDO_MOT = 4, UNDO_KIT = 8, UNDO_LISTS = 16 };   /* ((2.5, 3A) UNDO_LISTS: CLEAR
+                                                                     * SONG's, the song's lists in the copy's steps;
+                                                                     * UNDO_KIT, Skiff phase 7: INIT on DRUM-X,
                                                                      * the project's kit: sound_init) */
 typedef struct {
     uint8_t trk;                 /* track + 1, 0 = nothing to undo */
@@ -1365,7 +1413,7 @@ typedef struct {
  * are undone (each then holds the track as it was after it: its redo). A copy is one swap, so undo and redo are the
  * same act (undo_step). A new copy drops the undone ones (a new edit ends the redo); the oldest goes when all UNDO_N
  * are used. `undo` is the newest: loads in a row share it as before */
-#define UNDO_N 8u
+#define UNDO_N 6u                        /* (2.5: 8 before; their 3.3 KiB of .ramx went to the stopped take's log) */
 #define UNDO_WIN 180u                    /* the undo window, frames (~2.7 s): OCT- back, OCT+ redo (undo_step) */
 static undo_t undo_ring[UNDO_N] __attribute__((section(".ramx")));
 static uint8_t undo_n, undo_top, undo_back;
@@ -1427,6 +1475,7 @@ static struct {
     uint8_t scene[PROJ_SCENES];
 } lists __attribute__((section(".pool")));
 static uint8_t trk_pid[NTRK] __attribute__((section(".pool")));   /* (.pool: off the ISR's merged globals) */
+_Static_assert(sizeof lists <= sizeof ((undo_t *)0)->step, "(2.5) an undo copy holds the song's lists (UNDO_LISTS)");
 static uint32_t ent_pat(uint32_t k, uint32_t e)        /* entry e of track k: its pattern id, PAT_NONE: empty (a REST) */
 {
     uint32_t v = lists.ent[k % NTRK][e % NENT][0];
@@ -1733,6 +1782,16 @@ static int undo_swap(undo_t *c)
     track_t *t = &trk[(c->trk - 1u) % NTRK];
     uint32_t i;
     motion_store_t current_motion;
+    if (c->what & UNDO_LISTS) {                   /* ((2.5, 3A) CLEAR SONG's: the lists back; the tracks as they are) */
+        uint8_t l[sizeof lists];
+        fm1_irq_off();
+        memcpy(l, &lists, sizeof lists);
+        memcpy(&lists, c->step, sizeof lists);
+        memcpy(c->step, l, sizeof lists);
+        fm1_irq_on();
+        c->keep = 0;
+        return 1;
+    }
     if ((c->what & (UNDO_PAT | UNDO_MOT)) && c->pid != trk_pid[trk_index(t)]) {
         undo_other_pattern(c->pid);
         return 0;
@@ -1933,6 +1992,9 @@ static void fm4_load_preset(track_t *t, uint32_t k)
         if (!param_kept(i))
             p[i] = TP[i].def;
     fm4_preset_values(p, k);
+    for (i = P_CHOR; i <= P_REV; i++)                 /* ((2.5) KEEP SENDS ON: the track's sends, not the preset's */
+        if (param_kept(i))                            /* (fm4_convert.c comes before params.c in the host builds) */
+            p[i] = t->p[i];
     fm4_apply(t, p);
     load_end(t);
 }
@@ -1958,7 +2020,8 @@ static void preset_fill(int16_t *p, const engine_t *e, uint32_t pi)
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];
         for (i = 0; i < 4u; i++)
-            p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
+            if (!param_kept(P_DIST + i))              /* ((2.5) KEEP SENDS ON: CHORUS DELAY REVERB the track's) */
+                p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
         for (i = 0; i < NELEM(pr->more) && pr->more[i].id; i++)   /* ((Skiff) its LFO, GLIDE, ..: core.h) */
             p[pr->more[i].id] = pr->more[i].v;
     }
@@ -2415,6 +2478,14 @@ static const char *bank_act_name(void)
     }
     return b;
 }
+/* (2.5, the user's 3A) SAVE > PROJECT's KNOB 3, what OCT+ does: LOAD (a used slot), NEW, CLEAR SONG, CLEAR TRACKS;
+ * an empty slot's list starts at NEW. ui.act2: the step past the first while KNOB 3's picked (ui_input.c) */
+enum { PK3_LOAD, PK3_NEW, PK3_SONG, PK3_TRKS };
+static uint32_t proj_k3(void)
+{
+    uint32_t a = (ui.act == 3u ? ui.act2 : 0u) + (project_used((uint32_t)song.g[G_SLOT] - 1u) ? 0u : 1u);
+    return a <= PK3_TRKS ? a : PK3_TRKS;
+}
 static const char *act_name(uint32_t c)          /* column c's action (the footer hint) */
 {
     static const char *const UP_GO[3] = {"LOAD", "ERASE", "SAVE"};
@@ -2425,8 +2496,10 @@ static const char *act_name(uint32_t c)          /* column c's action (the foote
         return c == 2u && ui.act2 ? "NAME" : UP_GO[(c + 2u) % 3u];
     if (cur_page()->graph == GR_SLOTS && c == 1u)
         return ui.act == 2u && ui.act2 ? "NAME" : "DELETE";   /* ((1.2.1, #6) DELETE, one step further NAME) */
-    if (cur_page()->graph == GR_SLOTS && id == G_LOAD && !project_used((uint32_t)song.g[G_SLOT] - 1u))
-        return "NEW";                            /* ((1.2.1, #6) an empty slot) */
+    if (cur_page()->graph == GR_SLOTS && id == G_LOAD) {   /* ((2.5, 3A) KNOB 3: LOAD, NEW ((1.2.1, #6) an empty */
+        static const char *const K3[4] = {"LOAD", "NEW", "CLEAR SONG", "CLEAR TRACKS"};   /* slot's), CLEAR SONG, */
+        return K3[proj_k3()];                                                         /* CLEAR TRACKS */
+    }
     if (cur_page()->graph == GR_BANK)
         return bank_act_name();
     if (cur_page()->graph == GR_SLICES)

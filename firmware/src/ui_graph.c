@@ -274,10 +274,44 @@ static void graph_lfo(const track_t *t, uint16_t c)
 static int32_t bar_x(uint32_t i) { return 12 + (int32_t)(i % 16u) * 13 + (int32_t)(i % 16u / 4u) * 4; }
 
 /* PATTERN page: the 64 steps as 4 rows of 16 bars (an accent: the accent colour, a tie: a lower bar,
- * empty: a stub), the cursor and the playhead under them */
+ * empty: a stub), the cursor and the playhead under them ((2.5) a FREE TAKE's picker: no cursor, no DIR) */
+static void knob_arc(int32_t x, int32_t y, int32_t r, const uint8_t *cov, const uint8_t *ang, int32_t lo, int32_t hi,
+                     uint16_t tr, uint16_t vc, uint16_t bg);
+/* (2.5) the PRESETS knob, 20 px, top left (x, y): its ring's track MID, the arc to the value (pos of n) c, a pointer
+ * to it TEXT, as a knob's notch; bg what is under it */
+static void pr_knob(int32_t x, int32_t y, int32_t pos, int32_t n, uint16_t c, uint16_t bg)
+{
+    static const int8_t PT[7][2] = {{-5, 5}, {-7, 0}, {-5, -5}, {0, -7}, {5, -5}, {7, 0}, {5, 5}};   /* -135 .. 135 */
+    int32_t a = n > 1 ? -384 + pos * 768 / (n - 1) : 0, k = (a + 384 + 64) / 128;   /* (KA_END 384: 135 degrees) */
+    int32_t cx = x + KNOB_SMALL_R, cy = y + KNOB_SMALL_R;
+    knob_arc(x, y, KNOB_SMALL_R, KNOB_SMALL_COV, KNOB_SMALL_ANG, -384, a, T_MID, c, bg);
+    cv_line(cx, cy, cx + PT[k][0], cy + PT[k][1], T_TEXT);
+}
+/* (2.5, the user's 5B) a setting PRESETS turns on this page, as a card of its own in the panel, its top right at
+ * (xr, y), 84 x 40: PRESETS (the SMK-37's K4) and its knob, the value (pos of n) in c, the job DIM; one line (lo:
+ * 22 px, 112 wide, where 40 don't fit): PRESETS, the value, the knob */
+#define PR_CARD_W 84
+#define PR_CARD_H 40
+#define PR_LINE_W 112
+#define PR_LINE_H 22
+static void pr_card(int32_t xr, int32_t y, const char *job, const char *val, int32_t pos, int32_t n, uint16_t c, int lo)
+{
+    int32_t x0 = xr - (lo ? PR_LINE_W : PR_CARD_W), x;
+    cv_rrect(x0, y, lo ? PR_LINE_W : PR_CARD_W, lo ? PR_LINE_H : PR_CARD_H, 2, T_RAISE, T_SURF);
+    if (lo) {
+        x = cv_text(x0 + 5, y + 15 - AF_S.asc, &AF_S, kc_name(KC_PRESETS), T_MID) + 5;
+        cv_text(x, y + 18 - AF_M.asc, &AF_M, val, c);
+        pr_knob(xr - 2 * KNOB_SMALL_R - 3, y + 1, pos, n, c, T_RAISE);
+        return;
+    }
+    cv_text(x0 + 5, y + 13 - AF_S.asc, &AF_S, kc_name(KC_PRESETS), T_MID);
+    pr_knob(xr - 2 * KNOB_SMALL_R - 4, y + 3, pos, n, c, T_RAISE);
+    cv_text(x0 + 5, y + 35 - AF_M.asc, &AF_M, val, c);
+    cv_text_r(xr - 4, y + 35 - AF_S.asc, &AF_S, job, T_DIM, T_RAISE);
+}
 static void graph_steps(const track_t *t, uint16_t c)
 {
-    uint32_t i, len = (uint32_t)t->p[P_SLEN];
+    uint32_t i, len = (uint32_t)t->p[P_SLEN], cur = fr.on ? NSTEP : ui.cursor;
     int32_t sm = graph_ht < 100;                     /* MENU > LARGE's strip: rows 14 px apart, bars 10 px */
     int32_t bh = sm ? 10 : 14, pitch = sm ? 14 : 24, y0 = sm ? 2 : 4;
     for (i = 0; i < NSTEP; i++) {
@@ -310,18 +344,23 @@ static void graph_steps(const track_t *t, uint16_t c)
             cv_rrect(x, y + bh - 6, 9, 6, 1, T_MID, T_SURF);
         else
             cv_rrect(x, y + bh - 3, 9, 3, 1, T_RAISE, T_SURF);
-        if (i == ui.cursor && ux.neon)               /* ((Skiff S1) NEON: the cursor a laser, glowing) */
+        if (i == cur && ux.neon)                     /* ((Skiff S1) NEON: the cursor a laser, glowing) */
             cv_rect(x - 1, y + bh + 1 - sm, 11, 4, ux_mix(T_ACCENT, T_SURF, 60));
-        if (i == ui.cursor)
+        if (i == cur)
             cv_rect(x, y + bh + 2 - sm, 9, 2, T_ACCENT);
         else if (song.playing && i == t->seq_idx)
             cv_rect(x, y + bh + 2 - sm, 9, 2, ux.crypt ? CR_GOLD : T_TEXT);
     }
-    if (!sm) {                                       /* ((Skiff 2.0) the track's DIR, PRESETS': under the 100 px scale,
-                                                      * right, as the roll's scale */
-        char d[12] = "DIR ";
-        str_cpy(d + 4, N_DIR[(uint32_t)t->p[P_DIR] % NELEM(N_DIR)], 8);
-        cv_text_r(228, 102, &AF_S, d, T_MID, T_SURF);
+    if (!sm && !fr.on) {                             /* ((Skiff 2.0) the track's DIR, PRESETS': (2.5, 5B) its card, under
+                                                      * the rows, right (a short pattern: where the rows' fourth is) */
+        int32_t y = y0 + (int32_t)((len + 15u) / 16u) * pitch - (pitch - bh) + 5, bot = (int32_t)graph_h() - cv_oy - 2;
+        uint32_t d = (uint32_t)t->p[P_DIR] % NELEM(N_DIR);   /* (bot: the panel's foot, on this scale) */
+        int lo = y + PR_CARD_H > bot;
+        if (y < 66)
+            y = 66;
+        if (y > bot - (lo ? PR_LINE_H : PR_CARD_H))
+            y = bot - (lo ? PR_LINE_H : PR_CARD_H);
+        pr_card(228, y, "DIR", N_DIR[d], (int32_t)d, (int32_t)NELEM(N_DIR), c, lo);
     }
 }
 
@@ -716,6 +755,51 @@ static void graph_scale(const track_t *t, uint16_t c)
  * root's ACCENT, the others RAISE. OFF or a kit: what to do instead */
 static void panel_note(const char *a, const char *b, const char *c);
 static void panel_alert(uint32_t id, const char *a);
+/* (2.5, the user's 7B) CHORD with STRUM on (a POLY track): the chord's name, then its notes in time: a row a note (low at
+ * the bottom, named), its bar from when the strum plays it (0 .. 120 ms across), the root's ACCENT; the stroke a line
+ * through their starts in the order played; NEON tubes, QUARK a particle and its trail, CRYPT # rows, the stroke in
+ * blood. Top right "DOWN 40 ms" ("ALT: DOWN, THEN UP": the downstroke drawn) */
+static void graph_strum(const track_t *t, uint16_t c, const uint8_t *nn, uint32_t n, int32_t r, uint16_t mask)
+{
+    int32_t i, pitch, th, sx[CHORD_MAX], sy[CHORD_MAX], ms = clamp(t->p[P_STRUM], 0, 100), dir = clamp(t->p[P_SDIR], 0, 2);
+    char b[24];
+    chord_name(b, (uint32_t)r, mask);
+    cv_text_on(14, 8, &AF_M, b, T_TEXT, T_SURF);
+    if (dir == 2)
+        str_cpy(b, "ALT: DOWN, THEN UP", sizeof b);
+    else {
+        str_cpy(b, dir ? "UP " : "DOWN ", 8);
+        fmt_int(b + str_len(b), ms);
+        str_cpy(b + str_len(b), " ms", 4);
+    }
+    cv_text_r(226, 8 + AF_M.asc - AF_S.asc, &AF_S, b, T_MID, T_SURF);
+    pitch = n > 1u ? 64 / ((int32_t)n - 1) : 0;      /* (rows centred 104 .. 40: the panel shows y up to 118) */
+    pitch = pitch > 20 ? 20 : pitch;
+    th = pitch >= 14 ? 10 : pitch - 4 < 4 ? 4 : pitch - 4;
+    cv_rect(43, 30, 1, 82, T_LINE);                  /* (when the chord is played: 0 ms) */
+    for (i = 0; i < (int32_t)n; i++) {
+        int32_t o = dir == 1 ? (int32_t)n - 1 - i : i, d = n > 1u ? ms * o / ((int32_t)n - 1) : 0;
+        int32_t y = 104 - i * pitch - th / 2, xs = 44 + d * 182 / 120, x;
+        uint16_t col = (uint32_t)nn[i] % 12u == (uint32_t)r % 12u ? T_ACCENT : c;
+        char nb[8];
+        note_name(nb, nn[i]);
+        cv_text(12, y + th - 1 - AF_S.asc, &AF_S, nb, T_MID);
+        if (ux.crypt)
+            for (x = xs; x + 6 <= 226; x += 7)
+                cr_ch(x, y + th, &AF_S, '#', col);
+        else if (ux.neon)
+            ne_tube(xs, y, 226 - xs, th, col, T_SURF);
+        else if (ux.quark) {
+            cv_rect(xs + 6, y + th / 2, 226 - xs - 6, 1, ux_mix(col, T_SURF, 45));
+            qk_disc(xs + 4, y + th / 2, 4, col);
+        } else
+            cv_rrect(xs, y, 226 - xs, th, 3, col, T_SURF);
+        sx[o] = xs;
+        sy[o] = y + th / 2;
+    }
+    for (i = 1; i < (int32_t)n; i++)                 /* (the stroke, in the order played) */
+        cv_line_t(sx[i - 1], sy[i - 1], sx[i], sy[i], ux.crypt ? CR_BLOOD : ux.neon ? T_ACCENT : T_TEXT, 1);
+}
 static void graph_chord(const track_t *t, uint16_t c)
 {
     static const uint8_t BLACK[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};
@@ -745,6 +829,10 @@ static void graph_chord(const track_t *t, uint16_t c)
     }
     if (trk_vmode(t) != V_POLY && !t->p[P_AMODE])
         cap = "ROOT ONLY";                              /* MONO / LEGATO / UNISON ((2.0.3) the ARP takes it whole) */
+    else if (t->p[P_STRUM] && trk_vmode(t) == V_POLY) {   /* ((2.5) STRUM on: the notes in time) */
+        graph_strum(t, c, nn, n, r, mask);
+        return;
+    }
     chord_name(b, (uint32_t)r, mask);
     cv_text_on(14, 8, &AF_M, b, T_TEXT, T_SURF);
     GFX_HOOK_ALIGN(0, 0, 0, 8 + AF_M.asc, AL_B, "chord caption on the name's baseline");
@@ -1558,6 +1646,38 @@ static void graph_title(void)
 }
 
 #include "ui_home.c"                                  /* Skiff: HOME's four tracks (graph_tracks, home_sig) */
+/* (2.5, #97, the user's 8C) MENU > LARGE on HOME: the strip under the tall cards names the six tracks' sounds, two
+ * columns of three, the selected one a band of its colour (the themes' lanes as HOME's: CRYPT's stone, NEON's sign,
+ * QUARK's beam); HOME tapped: the scope, as before */
+static void graph_names(void)
+{
+    uint32_t k;
+    int32_t rh = ((int32_t)graph_h() - 8) / 3;
+    char name[20], d[2] = {0, 0};
+    cv_rect(0, 0, 240, (int32_t)graph_h(), T_BG);
+    for (k = 0; k < NTRK; k++) {
+        const track_t *t = &trk[k];
+        int sel = k == song.sel, ib = sel && !ux.quark;
+        int32_t x = 3 + (int32_t)(k / 3u) * 118, y = 2 + (int32_t)(k % 3u) * (rh + 2);
+        uint16_t col = t->p[P_MUTE] ? T_DIM : T_TRK(k), lane = sel ? (ux.quark ? ux_mix(col, T_BG, 80) : col) :
+                                                                ux.quark ? T_BG : T_SURF;
+        if (ux.crypt && !sel)
+            cr_stone(x, y, 116, rh, lane);
+        else if (ux.neon && sel) {
+            uint16_t st[2] = {col, ux_mix(col, NE_VIOLET, 70)};
+            ne_hgrad(x, y, 116, rh, st, 2);
+        } else
+            cv_rect(x, y, 116, rh, lane);
+        if (ux.quark && sel) {
+            cv_rect(x, y, 116, 1, col);
+            cv_rect(x, y + rh - 1, 116, 1, col);
+        }
+        d[0] = (char)('1' + k);
+        cv_text_on(x + 6, y + CAP_IN(M, rh), &AF_M, d, ib ? T_INK : col, lane);
+        sound_name(t, name);
+        cv_free_text(x + 22, y + CAP_IN(M, rh), &AF_M, name[0] ? name : "--", ib ? T_INK : T_TEXT, lane, 116 - 26);
+    }
+}
 
 /* (Skiff U5) an EDIT page of ANALOG (its own graphs: ui_pgraph.c graph_osc, graph_flt) */
 static int analog_page(const page_t *pg, const track_t *t)
@@ -1570,8 +1690,9 @@ static uint32_t graph_signature(void)
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
     uint32_t h = 2166136261u, i;
-    if (ui.home)                                     /* scope: redraw every other frame; Skiff's tracks: on a change */
-        return ui.home_scope || strip_kind() == SK_SCOPE ? h ^ (ui.frame / 2u) : home_sig();
+    if (ui.home)                                     /* scope: redraw every other frame; Skiff's tracks ((2.5, 8C) and
+                                                      * LARGE's names): on a change */
+        return ui.home_scope ? h ^ (ui.frame / 2u) : home_sig();
     h ^= (uint32_t)pg->graph * 131u + TSEL->eng_req + song.sel * 7777u + ui.page * 1291u;
     if (strip_kind() == SK_TITLE)                    /* MENU > LARGE: the page's title (its engine, its number) */
         return h ^ 0x5A17u;
@@ -1630,7 +1751,9 @@ static uint32_t graph_signature(void)
         h ^= (ui.hot_t ? ui.hot_col + 1u : 0u) * 65537u;
     if (pg->graph == GR_LFO)                         /* (Skiff) the LFO as it runs: a px of its 2 s (lfo_view_at) */
         h ^= (t->lfo_t / (LFO_WIN / 216u) + 1u) * 2654435761u;
-    if (pg->scope == SC_GLOBAL)                      /* (Skiff U5) GLO's buses and GLOBAL draw the song's settings */
+    if (pg->scope == SC_GLOBAL || pg->graph == GR_FXDLY || pg->graph == GR_FXREV)   /* (Skiff U5) GLO's buses and GLOBAL
+                                                      * draw the song's settings; (2.5) FX > DELAY, REVERB too (a track's
+                                                      * page: PRESETS' MODE card, the echoes, the tail) */
         for (i = 0; i < G_COUNT; i++)
             h = (h ^ (uint16_t)song.g[i]) * 16777619u;
     if (pg->graph == GR_VOICE2) {                    /* (Skiff U5) the voices sounding, the next one */
@@ -2409,58 +2532,71 @@ static void draw_tracks(void)
         cv_blit(0, graph_y() + graph_h() + 1u);
     }
 }
-/* (Skiff Q6) QUARK: the scope as the 1.2 tour video's event display, live: each note a track plays is a collision at
- * the vertex, three particles flying out of it in the track's colour and curling in the field (two events a track at a
- * time; ANIM OFF: they appear whole), then fading; round the beam pipe's rings the calorimeter, eight towers a track,
- * as loud as it is (muted: dark); the vertex gold, brighter just after a hit */
+/* the scope's own state (.pool: not among the globals the audio ISR reaches): the tracks' levels, 0..1000, falling
+ * (QUARK's towers, CRYPT's creatures, SKIFF's sea); (2.5, QUARK) each voice's note as last seen (its age's low bits)
+ * and when (fm1_ms's) */
 static struct {
-    uint32_t t0[NTRK][2], seed[NTRK][2], last;      /* each event's fm1_ms and shape (0: none); the last draw's fm1_ms */
-    int16_t lv[NTRK];                               /* the towers' levels, 0..1000, falling */
-    uint8_t seen[NTRK], nx[NTRK];                   /* trk.hits as last seen; the event a new hit takes */
-} qkd __attribute__((section(".pool")));            /* (.pool: not among the globals the audio ISR reaches) */
+    uint32_t last;                                  /* the last draw's fm1_ms */
+    int16_t lv[NTRK];
+    uint16_t id[NTRK][NVOICE], t0[NTRK][NVOICE];
+} scd __attribute__((section(".pool")));
+static void scope_levels(void)
+{
+    uint32_t now = fm1_ms, k;
+    int32_t fall = (int32_t)(now - scd.last > 500u ? 500u : now - scd.last) * 2;   /* (all the way down in 0.5 s) */
+    scd.last = now;
+    for (k = 0; k < NTRK; k++) {
+        track_t *t = &trk[k];
+        int32_t lv = t->p[P_MUTE] ? 0 : meter_px(t->peak) * 1000 / (TS_MH - 2);
+        t->peak = 0;                                 /* (a max-hold, as the MIXER reads it) */
+        scd.lv[k] = (int16_t)(lv > scd.lv[k] - fall ? lv : scd.lv[k] - fall);
+    }
+}
+
+/* (Skiff Q6) QUARK: the scope as the 1.2 tour video's event display, live: each note a track plays is a collision at
+ * the vertex, three particles flying out of it in the track's colour and curling in the field (ANIM OFF: they appear
+ * whole); (2.5) they live as long as the note sounds: lit while it plays, fading with its envelope as it is released
+ * (a hit's as its track's level falls), gone with its voice. Round the beam pipe's rings the calorimeter, eight towers
+ * a track, as loud as it is (muted: dark); the vertex gold, brighter just after a hit */
 static void qk_detector(int32_t cx, int32_t cy)
 {
-    int32_t R = cy - 3, k, j, fall;
+    int32_t R = cy - 3, k, j;
     uint32_t now = fm1_ms, newest = 1000u;
-    fall = (int32_t)(now - qkd.last > 500u ? 500u : now - qkd.last) * 2;   /* (towers: all the way down in 0.5 s) */
-    qkd.last = now;
     qk_disc(cx, cy, R * 58 / 100, ux_mix(T_THEME, T_SURF, 93));   /* (the glow round the beam) */
     qk_ellipse(cx, cy, R * 19 / 100, R * 19 / 100, 0, ux_mix(T_THEME, T_SURF, 78), 24);
     qk_dotring(cx, cy, R * 37 / 100, 40, ux_mix(T_THEME, T_SURF, 66));
     qk_ellipse(cx, cy, R * 58 / 100, R * 58 / 100, 0, ux_mix(T_THEME, T_SURF, 70), 48);
     qk_dotring(cx, cy, R * 76 / 100, 72, ux_mix(T_THEME, T_SURF, 50));
-    for (k = 0; k < NTRK; k++) {
-        track_t *t = &trk[k];
-        int32_t lv = t->p[P_MUTE] ? 0 : meter_px(t->peak) * 1000 / (TS_MH - 2);
-        t->peak = 0;                                 /* (a max-hold, as the MIXER reads it) */
-        qkd.lv[k] = (int16_t)(lv > qkd.lv[k] - fall ? lv : qkd.lv[k] - fall);
-        if (t->hits != qkd.seen[k]) {                /* struck: a new event, in place of its older one */
-            j = qkd.nx[k];
-            qkd.nx[k] ^= 1u;
-            qkd.seen[k] = t->hits;
-            qkd.t0[k][j] = now;
-            qkd.seed[k][j] = ((uint32_t)t->hits * 2654435761u ^ (uint32_t)k * 0x9E3779B9u) | 1u;
-        }
-    }
     for (k = 0; k < 48; k++) {                       /* the calorimeter: the six tracks' towers in turn */
         uint32_t ph = (uint32_t)k * (0xFFFFFFFFu / 48u), r = (uint32_t)k * 2654435761u >> 24;   /* (r: its own reach) */
-        int32_t lv = qkd.lv[k % NTRK], r0 = R * 78 / 100, h = 1 + lv * (R * 22 / 100) * (600 + (int32_t)r * 400 / 255) / 1000000;
+        int32_t lv = scd.lv[k % NTRK], r0 = R * 78 / 100, h = 1 + lv * (R * 22 / 100) * (600 + (int32_t)r * 400 / 255) / 1000000;
         int32_t co = QK_COS(ph), si = QK_SIN(ph);
         cv_line_t(cx + r0 * co / 32767, cy + r0 * si / 32767, cx + (r0 + h) * co / 32767, cy + (r0 + h) * si / 32767,
                   ux_mix(T_TRK(k % NTRK), T_SURF, 65 - lv * 65 / 1000), 2);
     }
     for (k = 0; k < NTRK; k++)
-        for (j = 0; j < 2; j++) {
-            uint32_t age = now - qkd.t0[k][j], seed = qkd.seed[k][j], u, i;
-            int32_t g, fade;
-            uint16_t col;
-            if (!seed || age >= 1100u)
+        for (j = 0; j < (int32_t)NVOICE; j++) {      /* a sounding voice an event (UNISON's, MONO's: its first) */
+            const track_t *t = &trk[k];
+            const voice_t *v = &t->v[j];
+            uint32_t age, seed = (v->age * 2654435761u ^ (uint32_t)k * 0x9E3779B9u) | 1u, u, i;
+            int32_t g, fade = 100 - scd.lv[k] / 8;  /* (the track's level: a hit fades as it rings out; the voice's */
+            uint16_t col;                           /* envelope, 0 dB .. -54 dB: a note as it is released) */
+            if (!v->active || v->stage == 4u || (j && trk_vmode(t) != V_POLY))
                 continue;
+            if (scd.id[k][j] != (uint16_t)v->age) {  /* a new note on it: flying out from now */
+                scd.id[k][j] = (uint16_t)v->age;
+                scd.t0[k][j] = (uint16_t)now;
+            }
+            age = (uint16_t)(now - scd.t0[k][j]);
+            if (age > 250u)                          /* (out: kept there, a long note's never wraps round) */
+                scd.t0[k][j] = (uint16_t)(now - 250u);
             newest = age < newest ? age : newest;
+            g = 100 - meter_px(v->env >> 9) * 15 / 4;
+            if ((fade = g > fade ? g : fade) >= 95)
+                continue;
             u = age >= 250u ? 0u : 1000u - age * 4u;       /* (flying out over 250 ms, slowing) */
             g = ui_prefs & PREF_ANIM_OFF ? 1000 : 1000 - (int32_t)(u * u / 1000u);
-            fade = age < 450u ? 0 : (int32_t)(age - 450u) * 100 / 650;
-            col = ux_mix(T_TRK(k), T_SURF, fade);
+            col = ux_mix(T_TRK(k), T_SURF, fade < 0 ? 0 : fade);
             for (i = 0; i < 3u; i++) {               /* three particles, each its own way */
                 uint32_t dir, e;
                 int32_t len, rc, curl, n;
@@ -2480,6 +2616,57 @@ static void qk_detector(int32_t cx, int32_t cy)
     qk_disc(cx, cy, newest < 150u ? 3 : 2, T_ACCENT);
 }
 
+/* (2.5) CRYPT: the scope as six creatures in a row, a track's each, always the same (ui_crypt.c cr_creature), on the
+ * floor, its number under it */
+static void cr_creatures(void)
+{
+    static const uint8_t *const ART[NTRK] = {SPR_CR_SKULL, SPR_CR_GHOST, SPR_CR_CANDLE, SPR_CR_WITCH, SPR_CR_MONK,
+                                             SPR_CR_DEMON};
+    uint32_t k;
+    for (k = 0; k < NTRK; k++) {
+        int32_t x = 9 + (int32_t)k * 37, muted = trk[k].p[P_MUTE] != 0;
+        char d[2] = {(char)('1' + k), 0};
+        cr_creature(x, (int32_t)cv_h - 22 - ART[k][1] * 6, ART[k], scd.lv[k], T_TRK(k), muted,
+                    (ui.frame / 2u + k) * 2654435761u);
+        GFX_HOOK_ALIGN(x, (int32_t)cv_h - 19, x + 35, (int32_t)cv_h - 7, AL_HV, "scope creature's number under it");
+        cv_text_in(x, (int32_t)cv_h - 19 + CAP_IN(S, 12), 35, &AF_S, d, muted ? T_DIM : T_TRK(k), T_SURF);
+    }
+}
+
+/* (2.5) SKIFF: the scope as the logo (design/logo/make_logo.py): a sea of steps, each column lit to the swell, the
+ * tracks' colours in bands (track 1 at the left), the swell as high as the tracks there are loud, rolling on (a muted
+ * or silent track's band no colour, calm); the skiff riding the crest, across and round again */
+#define SEA_N 18                                      /* columns (three a track), every SEA_P px, a cell SEA_P - 2 */
+#define SEA_P 12
+#define SEA_Z 3                                       /* the boat's pixel */
+static void sk_sea(void)
+{
+    static const uint16_t BOAT[4] = {0x0001, 0x7FFE, 0x3FFC, 0x1FF8};   /* (the logo's: 15 x 4, the bow at the right) */
+    int32_t x0 = 120 - SEA_N * SEA_P / 2 + 1, foot = (int32_t)cv_h - 8, rows = 8, i, r, hb = 1;
+    int32_t bx = x0 - 15 * SEA_Z + (int32_t)(fm1_ms / 24u % (uint32_t)(SEA_N * SEA_P + 15 * SEA_Z));   /* (its stern) */
+    uint32_t ph = fm1_ms * 2863311u;                 /* (the swell: 8 columns a wave, one wave on every 1.5 s) */
+    uint16_t grey = ux_mix(T_SURF, T_TEXT, 30), off = ux_mix(T_SURF, T_TEXT, 8);
+    for (i = 0; i < SEA_N; i++) {
+        uint32_t k = (uint32_t)i / 3u, n = k + (uint32_t)i % 3u - 1u;   /* (the band beside, on the column's side) */
+        int32_t lv = scd.lv[k], x = x0 + i * SEA_P, h;
+        uint16_t on = lv > 30 ? T_TRK(k) : grey;
+        lv = (2 * lv + scd.lv[n < NTRK ? n : k]) / 3;   /* (between the bands' middles: a third of the way and two) */
+        h = 1 + (lv * rows * (32767 + QK_SIN(ph - (uint32_t)i * 0x20000000u)) >> 26);   /* (~ / 1000 / 65534) */
+        for (r = 0; r < rows; r++) {                 /* (a cell its corners cut, as the logo's rounded ones) */
+            int32_t y = foot - (r + 1) * SEA_P + 2;
+            uint16_t c = r < h ? on : off;
+            cv_rect(x + 1, y, SEA_P - 4, SEA_P - 2, c);
+            cv_rect(x, y + 1, SEA_P - 2, SEA_P - 4, c);
+        }
+        if (x + SEA_P - 2 > bx && x < bx + 15 * SEA_Z && h > hb)   /* (the boat on the highest crest under it) */
+            hb = h;
+    }
+    for (r = 0; r < 4; r++)
+        for (i = 0; i < 15; i++)
+            if (BOAT[r] >> (14 - i) & 1u && bx + i * SEA_Z >= x0 && bx + i * SEA_Z < x0 + SEA_N * SEA_P - 2)
+                cv_rect(bx + i * SEA_Z, foot - hb * SEA_P - 4 * SEA_Z + 1 + r * SEA_Z, SEA_Z, SEA_Z, T_TEXT);
+}
+
 /* oscilloscope of the output, triggered on a rising zero crossing: a RAISE centre line, the trace 2 px (in silence
  * a flat line on it; MENU > SCREEN OFF keeps it from staying on the panel for hours) */
 static void graph_scope(uint16_t c)
@@ -2487,8 +2674,14 @@ static void graph_scope(uint16_t c)
     static int16_t snap[SCOPE_N];
     uint32_t w = scope_w, i, trig = 0;
     int32_t cy = (int32_t)cv_h / 2, py = cy, x, peak = 1500, a = cv_h >= H_GRAPH ? 46 : cy - 6;   /* (LARGE: the strip) */
-    if (ux.quark && cv_h >= H_GRAPH) {
-        qk_detector(120, cy);
+    if (cv_h >= H_GRAPH && (ux.quark || ux.crypt || ux.skiff)) {   /* (2.5) the tracks' levels: their themes' own */
+        scope_levels();
+        if (ux.quark)
+            qk_detector(120, cy);
+        else if (ux.crypt)
+            cr_creatures();
+        else
+            sk_sea();
         return;
     }
     for (i = 0; i < SCOPE_N; i++) {
@@ -2503,13 +2696,10 @@ static void graph_scope(uint16_t c)
             trig = i;
             break;
         }
-    if (ux.crypt) {                                  /* (Skiff N8) CRYPT: the sound burns: fire up from the foot as tall
-                                                      * as the wave there (ember, amber, gold, its tips flame), flickering;
-                                                      * behind it a skull, its eyes as bright as the sound is loud */
-        int32_t foot = (int32_t)cv_h - 3, top = 6, k, loud = peak > 24000 ? 100 : peak * 100 / 24000;
-        if (cv_h >= H_GRAPH)
-            cr_spritez(120 - 13, 10, SPR_SKULL, ux_mix(T_DIM, T_SURF, 35),
-                       loud < 50 ? ux_mix(T_SURF, CR_EMBER, loud * 2) : ux_mix(CR_EMBER, CR_FLAME, (loud - 50) * 2), 3);
+    if (ux.crypt) {                                  /* (Skiff N8) CRYPT, MENU > LARGE's strip: the sound burns: fire up
+                                                      * from the foot as tall as the wave there (ember, amber, gold, its
+                                                      * tips flame), flickering */
+        int32_t foot = (int32_t)cv_h - 3, top = 6, k;
         for (x = 0; x < PANEL_W; x += 2) {
             int32_t s = snap[trig + (uint32_t)x], v = (s < 0 ? -s : s) * (foot - top) / peak;
             v += (int32_t)((((uint32_t)x * 7u + ui.frame * 13u) >> 1) % 5u) - 2;   /* (the flicker) */
@@ -2557,13 +2747,14 @@ static void draw_graph(void)
     uint32_t sig;
     int32_t pad = graph_pad();                       /* (Skiff) BLOCKS: the panel 16 px taller (ui.c foot_less): ADSR and
                                                       * LFO grow into it, the fixed layouts sit centred, pad lower */
-    if (!ui.home && pg->graph == GR_TRK) {
+    if (!ui.home && pg->graph == GR_TRK && !fr.on) {
         draw_tracks();
         return;
     }
     if (!ui.home && (pg->scope == SC_ENGINE || pg->graph == GR_SMIX) && ENGINES[t->eng_req % NENGINES] == &ENG_SAMPLE)
         sample_wave_tick(t);
-    sig = graph_signature() + (ui.take_t ? take_box.gen * 2654435761u + 0x7A6Bu : 0u);   /* (Skiff: the TAKE box) */
+    sig = fr.on ? steps_hash(t) + (uint32_t)t->p[P_SLEN] * 7u + (song.playing ? t->seq_idx + 1u : 0u) * 977u + 0xF7EEu
+                : graph_signature() + (ui.take_t ? take_box.gen * 2654435761u + 0x7A6Bu : 0u);   /* (Skiff: the TAKE box) */
     if (!ui.force && sig == ui.graph_sig)
         return;
     ui.graph_sig = sig;
@@ -2577,11 +2768,14 @@ static void draw_graph(void)
         qk_corners(3, 0, 234, (int32_t)graph_h(), T_DIM, 7);
     cv_bg = T_SURF;                                  /* (text drawn with cv_text lands on it) */
     cv_oy = GOY + pad;                               /* graphs on a 100 px scale */
-    if (strip_kind() != SK_NONE) {                   /* MENU > LARGE: the strip */
-        uint32_t k = strip_kind();
+    if (fr.on && strip_kind() == SK_NONE) {
+        graph_steps(t, c);                           /* ((2.5) a FREE TAKE's picker: the track's steps, as PATTERN's) */
+    } else if (strip_kind() != SK_NONE) {            /* MENU > LARGE: the strip */
+        uint32_t k = fr.on ? SK_STEPS : strip_kind();
         cv_oy = k == SK_ADSR || k == SK_LFO ? 3 : k == SK_SCOPE ? 0 : pad;
         graph_ht = (int32_t)graph_h() - 6;
-        if (k == SK_SCOPE) graph_scope(c);
+        if (k == SK_SCOPE && !ui.home_scope) graph_names();   /* ((2.5, #97, 8C) HOME: the six sounds) */
+        else if (k == SK_SCOPE) graph_scope(c);
         else if (k == SK_ADSR) graph_adsr(t, c);
         else if (k == SK_LFO) graph_lfo(t, c);
         else if (k == SK_STEPS) graph_steps(t, c);
@@ -2693,10 +2887,12 @@ static void draw_graph(void)
             graph_insert(t, c);
             break;
         case GR_DELAY:
+        case GR_FXDLY:                               /* ((2.5) FX > DELAY: GLO's, the track's send in it) */
             cv_oy = 0;
             graph_delay(c);
             break;
         case GR_REVERB:
+        case GR_FXREV:
             cv_oy = 0;
             graph_reverb(c);
             break;

@@ -54,6 +54,7 @@ static struct {
     uint32_t top;                                  /* the newest sequence (a save: + 1) */
     uint8_t next;                                  /* the sector a save tries first (round: wear) */
     uint8_t len[BK_POOL];                          /* each pattern's LEN, 0 = empty (the page) */
+    uint8_t div[BK_POOL];                          /* ((2.5, 2B) .. its DIV (N_DIV): a song's bars, song_at) */
     uint32_t gen;                                  /* any change (the page redraws) */
 } bk;
 static uint8_t bk_buf[BK_LEN] __attribute__((section(".pool")));   /* a chunk read, changed and written */
@@ -135,6 +136,7 @@ static void bk_lens(uint32_t c)                    /* chunk c's patterns (in bk_
         const uint8_t *p = bk_buf + r * BK_REC;
         int32_t len = (int32_t)p[2] - 64;
         bk.len[c % BK_CHUNKS * BK_PER + r] = (uint8_t)(!bk_ver(p[0]) ? 0 : len < 1 ? 1 : len > (int32_t)NSTEP ? NSTEP : len);
+        bk.div[c % BK_CHUNKS * BK_PER + r] = (uint8_t)(p[3] >= 64u && p[3] < 74u ? p[3] - 64u : 2u);
     }
 }
 
@@ -471,6 +473,59 @@ static uint32_t pool_len(uint32_t id)               /* pattern id's LEN, 0 empty
 }
 static int bank_used(uint32_t k, uint32_t e) { uint32_t id = ent_pat(k, e); return id != PAT_NONE && pool_used(id); }
 static int ent_on(uint32_t k, uint32_t e) { return bank_used(k, e) || ent_rest(k, e); }   /* (#28) a pattern or a REST */
+static uint32_t pool_div(uint32_t id)               /* ((2.5, 2B) pattern id's DIV (N_DIV), as pool_len) */
+{
+    uint32_t i = pend_at(id), d = i == PEND_N ? bk.div[id % BK_POOL] : (uint32_t)pend_rec[i][3] - 64u;
+    return d < 10u ? d : 2u;
+}
+/* (2.5, the user's 2B) a song you can follow, in 48ths of a quarter (voice.c DIV_48; a bar: 192): entry e of track k,
+ * one repeat: its pattern's LEN steps of its DIV. A REST, or an empty entry inside the list (song_poll's rest), keeps
+ * the track's LEN and DIV (stage_entry): the length of the pattern before it, round from the list's end for one first
+ * (the song comes round to it); an empty entry before or after the list: 0 (#97: a rest is not a bar) */
+static uint32_t ent_len48(uint32_t k, uint32_t e)
+{
+    uint32_t f, l, j;
+    k %= NTRK;
+    for (f = 0; f < NENT && !ent_on(k, f); f++)
+        ;
+    for (l = NENT; l > f && !ent_on(k, l - 1u); l--)
+        ;
+    if (e < f || e >= l)
+        return 0u;
+    for (j = e + NENT; j > e; j--)                  /* (e itself first: its own pattern, else the ones before it) */
+        if (bank_used(k, (j % NENT)))
+            return pool_len(ent_pat(k, j % NENT)) * DIV_48[pool_div(ent_pat(k, j % NENT))];
+    return 192u;                                    /* (rests only: a bar) */
+}
+static uint32_t ent_at48(uint32_t k, uint32_t e)    /* .. where entry e starts: the entries before it, their REPS */
+{
+    uint32_t j, s = 0;
+    for (j = 0; j < e && j < NENT; j++)
+        s += ent_len48(k, j) * ent_reps(k, j);
+    return s;
+}
+/* .. the song: the longest list's (*k its track), 0 none; *at where that track is in it: the entries before the one it
+ * is on, the passes made there (take.c take_p0: its first counts 1), the steps into this pass (a song looped: on) */
+static uint32_t song_at(uint32_t *k, uint32_t *at)
+{
+    uint32_t j, n, best = 0, kb = 0, u, p;
+    const track_t *t;
+    for (j = 0; j < NTRK; j++)
+        if ((n = ent_at48(j, NENT)) > best) {
+            best = n;
+            kb = j;
+        }
+    *k = kb;
+    *at = 0;
+    if (!best)
+        return 0;
+    t = &trk[kb];
+    u = DIV_48[(uint32_t)t->p[P_SDIV] % 10u];
+    p = (uint16_t)(take_pass[kb] - take_p0[kb]);
+    *at = (ent_at48(kb, lists.cur[kb] % NENT) + (p ? p - 1u : 0u) * (uint32_t)t->p[P_SLEN] * u +
+           (t->seq_cnt ? t->seq_cnt - 1u : 0u) * u) % best;
+    return best;
+}
 /* (2.0, #44, the user's pick 3A and the join sheet's A) a chain: track k's entries on CHAIN (REPS_CHAIN) into the
  * next, each a pattern or a REST: one pattern wherever the track plays them (song_poll, bank_switch), edited as one
  * (chain_cursor). Entry e chains into e + 1 */
@@ -1939,6 +1994,44 @@ static int song_clear_at(uint32_t k, uint32_t e)
     return rc;
 }
 static void song_clear(uint32_t e) { (void)song_clear_at(song.sel % NTRK, e); }
+/* (2.5) SHIFT + PLAY on SONG: the song from the selected track's entry, playing or stopped. Its start in the song
+ * (ent_at48) puts each track with a list on the entry its list is on then, its passes made and the step part-way
+ * (seq.c seq_locate_at), a track without one that far into its pattern (as an SPP). ponytail: a list shorter than
+ * that loops (SONG ONCE's end too); a chain's REPS count per part, as the song's bars (ent_at48) */
+static void song_from(void)
+{
+    uint32_t k = song.sel % NTRK, e = sg.entry % NENT, at = ent_at48(k, e), j, f, s, n, tot;
+    char b[8];
+    song_tag(b, k, e);
+    if (!ent_on(k, e)) {
+        ui_say(b, " EMPTY");
+        return;
+    }
+    if (song.g[G_CLOCK]) {
+        ui_message("CLOCK EXTERNAL");
+        return;
+    }
+    transport_stop_now();
+    for (j = 0; j < NTRK; j++)
+        launch_q[j].armed = 0;
+    bank_poll();                                   /* (a swap made: kept first, as song_rewind) */
+    for (j = 0; j < NTRK; j++) {
+        sl_at[j] = at;
+        if (!(tot = ent_at48(j, NENT)))
+            continue;
+        for (f = 0, s = 0, n = at % tot; n >= s + ent_len48(j, f) * ent_reps(j, f); f++)
+            s += ent_len48(j, f) * ent_reps(j, f);
+        (void)ent_go(j, f);
+        sl_at[j] = n - s;
+    }
+    song_end = 0;
+    fm1_irq_off();
+    sl_pos = at / 12u;
+    sl_on = 1;
+    transport_req = 1;
+    fm1_irq_on();
+    ui_say("FROM ", b);
+}
 
 /* ---- the editor's backup (editor_backup.c): each chunk an object, ids 16..31 ---- */
 /* chunk c, read into bk_buf: *len BK_LEN, 0 when every pattern in it is empty (or never saved) */

@@ -459,6 +459,28 @@ static int test_remote_auto(void)
     midi_enqueue(0x0Bu | 0xBFu << 8 | 112u << 16 | 127u << 24, 1);
     blk(1);
     ok = (fm1_in.virt >> panel.btn[B_PLAY]) & 1u;
+    {   /* ((2.5) its encoders, relative (two's complement): CC 87 SELECT, 85 ALGORITHM, 86 PRESETS, 116..119 KNOB 1..4,
+         * by role (panel.c EN_*); role r turned r + 1 clicks right; then KNOB 1 one back (127), KNOB 2 64 (nothing),
+         * KNOB 3 63 back (65); panel_enc takes them as the panel's */
+        static const uint8_t CC[NE] = {87, 85, 86, 116, 117, 118, 119};
+        static const int8_t WANT[NE] = {1, 2, 3, 4 - 1, 5, 6 - 63, 7};
+        uint32_t r, enc_ok = 1;
+        for (r = 0; r < NE; r++)
+            (void)panel_enc(r);
+        for (r = 0; r < NE; r++)
+            midi_enqueue(0x0Bu | 0xBFu << 8 | (uint32_t)CC[r] << 16 | (r + 1u) << 24, 1);
+        midi_enqueue(0x0Bu | 0xBFu << 8 | 116u << 16 | 127u << 24, 1);
+        midi_enqueue(0x0Bu | 0xBFu << 8 | 117u << 16 | 64u << 24, 1);
+        midi_enqueue(0x0Bu | 0xBFu << 8 | 118u << 16 | 65u << 24, 1);
+        blk(1);
+        for (r = 0; r < NE; r++)
+            enc_ok &= panel_enc(r) == WANT[r];
+        midi_enqueue(0x0Bu | 0xB0u << 8 | 116u << 16 | 3u << 24, 1);   /* (CH 1: not REMOTE's) */
+        blk(1);
+        enc_ok &= panel_enc(EN_K1) == 0;
+        bad += check("(2.5) REMOTE's encoders: CC 116..119 KNOB 1..4, 85 ALGORITHM, 86 PRESETS, 87 SELECT, relative (127 one "
+                     "back, 64 nothing); another channel's: none", enc_ok);
+    }
     CPU2_BYTE &= 7u;                                  /* REMOTE OFF: what it held, let go */
     blk(1);
     bad += check("  CC112 holds PLAY; REMOTE turned OFF lets it go", ok && !fm1_in.virt);

@@ -757,6 +757,18 @@ static int test_shift(void)
             ok += str_eq(m[i].key, "K4") + str_eq(m[i].key, "K3") + str_eq(m[i].key, "+ BT") + str_eq(m[i].key, "PLAY");
         bad += check("SMK SHIFT's map: the SMK's printed names (K4, K3, + BT; PLAY as PLAY: the SMK prints a play sign)", ok == 4);
     }
+    {   /* ((2.5) the hints too: GLO > DELAY's corner and footer, PATTERN's, MENU's, [ARP] PERFORM's (gfx.c kc_name) */
+        char b[32];
+        kh_plain(b, sizeof b, KC_PRESETS, "MODE");
+        ok = str_eq(b, "K4: MODE");
+        kh_plain(b, sizeof b, KC_ALGO, "TAB");
+        ok &= str_eq(b, "K3: TAB");
+        kh_plain(b, sizeof b, KC_SELECT, "LAUNCH");
+        ok &= str_eq(b, "K2: LAUNCH");
+        kc_words(b, sizeof b, "[PRESETS] STEP", 1);
+        ok &= str_eq(b, "K4: STEP");
+        bad += check("SMK key hints name the knobs as printed: K4: MODE, K3: TAB, K2: LAUNCH (were PRESETS, ALGO, SELECT)", ok);
+    }
     fm1_in.buttons |= 1u << panel.btn[B_SAVE];
     host_pressed |= 1u << panel.btn[B_SAVE];
     frame();

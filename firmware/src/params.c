@@ -30,6 +30,7 @@ _Static_assert(sizeof N_DKSRC / sizeof N_DKSRC[0] == NTRK + 1u, "DUCK's BY: OFF 
 /* (2.1) chord follow (follow.c): P_FOLLOW names the track as DUCK's BY does; P_FMODE FM_*, P_FNOTE FN_* (append-only) */
 static const char *const N_FMODE[] = {"KEY", "SCALE", "FIT"};
 static const char *const N_FNOTE[] = {"ROOT", "LOW", "HIGH", "LAST"};
+static const char *const N_SDIR[] = {"DOWN", "UP", "ALT"};   /* (2.5) STRUM's DIR (voice.c strum_flush; append-only) */
 static const char *const N_DTYPE[] = {"SOFT", "HARD", "FOLD", "CRUSH", "FUZZ"};   /* (Skiff phase 9) P_DTYPE: DT_* (fx.c) */
 #define TRK_STR_(n) #n
 #define TRK_STR(n) TRK_STR_(n)
@@ -38,7 +39,8 @@ static const char *const N_ORDER[] = {"NOTE", "PLAYED"};
 static const char *const N_LSYNC[] = {"OFF", "4BAR", "2BAR", "1/1", "1/2", "1/4", "1/8", "8T", "1/16", "16T", "1/32"};
 static const char *const N_LTRIG[] = {"NOTE", "FREE"};
 static const char *const N_LPOL[] = {"BI", "UNI"};
-static const char *const N_ITYPE[] = {"OFF", "SOFT", "HARD", "FOLD", "FUZZ", "CRUSH", "PHASR", "FLANG", "CHOR"};
+static const char *const N_ITYPE[] = {"OFF", "SOFT", "HARD", "FOLD", "FUZZ", "CRUSH", "PHASR", "FLANG", "CHOR",
+                                      "FILTR"};   /* ((2.5, the user's 6B) appended: stored) */
 /* the INSERT's CRUSH: BITS 1..16 and RATE (the held sample's rate, fx.c INS_HOLD) over the range in 16 even parts */
 /* (Skiff 1.3, from Felucca 1.5's #175) ENV SYNC (voice.c esync_coef): ATK DEC REL as note values of the tempo, shortest
  * first. 0..127 split evenly over these 25 (param_format's F_INT name list); ESYNC_UNITS: each in 1/384 of a bar of 4/4
@@ -71,6 +73,7 @@ static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", 
 static const char *const N_DASH[] = {"--"};
 static const char *const N_RTYPE[] = {"ROOM", "SPRING", "HALL"};   /* G_RTYPE: the reverb bus's model (fx.c) */
 static const char *const N_CMODE[] = {"CHORUS", "FLANGER", "PHASER"};   /* (Skiff phase 9) G_CMODE (fx.c cho_mode) */
+static const char *const N_DMODE[] = {"MONO", "STEREO", "PING"};        /* (2.5) G_DMODE: DM_MONO .. DM_PING (fx.c) */
 static const char *const N_GO[] = {"--", "GO"};
 static const char *const N_SLCR[] = {"OFF", "GATE", "STUT"};             /* SL_OFF .. SL_STUT (slicer.c) */
 static const char *const N_SLDIV[] = {"1/8", "1/16", "1/32", "8T", "16T", "32T"};   /* SL_DEN */
@@ -196,6 +199,8 @@ static const param_desc_t TP[P_COUNT] = {
     [P_FOLLOW] = PE("FOLLOW", N_DKSRC, 0),         /* (2.1) chord follow (follow.c): OFF, as before */
     [P_FMODE] = PE("MODE", N_FMODE, 0),
     [P_FNOTE] = PE("NOTE", N_FNOTE, 0),
+    [P_STRUM] = {"STRUM", 0, 0, 100, 0, F_INT, U_MS},   /* (2.5, the user's 7B) ms, 0 OFF: the chord at once */
+    [P_SDIR] = PE("DIR", N_SDIR, 0),
 };
 
 static const param_desc_t GP[G_COUNT] = {
@@ -229,22 +234,28 @@ static const param_desc_t GP[G_COUNT] = {
      * (inert since 1.0: core.h), so G_COUNT, which the project format and the editor protocol depend on, stays */
     [G_CMODE] = PE("MODE", N_CMODE, 0),
     [G_CFDBK] = PD("FEEDBACK", F_PCT, 0, 127, 0),
+    /* (2.5) the delay's MODE: a new id (GSID 27; SKF4 holds the globals by GSID, the fixed layouts the first 27) */
+    [G_DMODE] = PE("DLY MODE", N_DMODE, DM_STEREO), /* (GLO > DELAY's PRESETS: not a card; the editor's list: apart
+                                                     * from the chorus's MODE, in its 8 letters, editor.c. STEREO
+                                                     * new; a project before 2.5 loads MONO, as it played: project.c) */
 };
 
 /* (Skiff 1.3, from Felucca 1.5) the INSERT's A B C as its TYPE means them (TP's ranges and defaults): the drives DRIVE
- * TONE LEVEL, CRUSH BITS RATE LPF, the swept ones RATE DEPTH FDBK; OFF TP's own */
+ * TONE LEVEL, CRUSH BITS RATE LPF, the swept ones RATE DEPTH FDBK, (2.5) FILTR CUTOFF RES SHAPE; OFF TP's own */
 #define PU(l, f, df, n, u) {l, n, 0, 127, df, f, u}
-static const param_desc_t INS_DESC[3][3] = {
+static const param_desc_t INS_DESC[4][3] = {
     {PU("DRIVE", F_PCT, 64, 0, 0), PU("TONE", F_CUTOFF, 96, 0, 0), PU("LEVEL", F_DB, 96, 0, 0)},
     {PU("BITS", F_INT, 64, N_IBITS, 0), PU("RATE", F_INT, 96, N_IRATE, U_HZ), PU("LPF", F_CUTOFF, 96, 0, 0)},
     {PU("RATE", F_LFOHZ, 64, 0, 0), PU("DEPTH", F_PCT, 96, 0, 0), PU("FDBK", F_PCT, 96, 0, 0)},
+    {PU("CUTOFF", F_CUTOFF, 64, 0, 0), PU("RES", F_PCT, 32, 0, 0), PU("SHAPE", F_SHAPE, 0, 0, 0)},
 };
 #undef PU
 static const param_desc_t *ins_desc(int32_t type, uint32_t k)
 {
     if (type <= 0 || type >= (int32_t)NELEM(N_ITYPE))
         return &TP[P_IA + k];
-    return &INS_DESC[type < 5 ? 0 : type == 5 ? 1 : 2][k];   /* (IT_SOFT .. IT_FUZZ, IT_CRUSH, the swept ones) */
+    return &INS_DESC[type < 5 ? 0 : type == 5 ? 1 : type < 9 ? 2 : 3][k];   /* (IT_SOFT .. IT_FUZZ, IT_CRUSH, the swept
+                                                                              * ones, IT_FILTER) */
 }
 
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
@@ -297,12 +308,17 @@ static int32_t param_fit(const param_desc_t *d, int32_t v)
  * TOOLS INIT, (2.0, #30) a song entry's sound: launch.c esnd_put, in the audio ISR) leaves alone. The mix (LEVEL,
  * PAN, MUTE: the TRACKS faders), the arpeggiator (ARP, ARP 2), the scale and key map (SCL), the pattern parameters
  * (LEN, DIV, SWING, GATE) and the SLICER insert, which chops whatever the track plays in time with its sequencer */
+/* (2.5) MENU > CONTROL > KEEP SENDS ON (a free bit of the settings' MIDI byte, ui.c ks_io; a build without the UI: OFF):
+ * the sends CHORUS DELAY REVERB are the mix's too, kept by a sound load as LEVEL and PAN (OFF: a sound brings its own) */
+static const uint8_t *const ks_io;
 static int param_kept(uint32_t i)
 {
+    if ((i == P_CHOR || i == P_DLY || i == P_REV) && ks_io && (*ks_io & 32u))
+        return 1;
     return i == P_LEVEL || i == P_PAN || i == P_MUTE || (i >= P_AMODE && i <= P_SGATE) ||
            (i >= P_SLCR && i <= P_SLDEPTH) || i == P_CHRD || i == P_VOIC || i == P_DIR ||   /* ((Skiff) DIR: the pattern's; */
            (i >= P_DKSRC && i <= P_DKREL) ||         /* the ducking: the mix's; */
-           (i >= P_FOLLOW && i <= P_FNOTE);          /* (2.1) the chord follow: SCL's) */
+           (i >= P_FOLLOW && i <= P_SDIR);           /* (2.1) the chord follow, (2.5) STRUM and DIR: SCL's) */
 }
 
 /* a knob moved an F_ENUM from `from` to v: past any alias in that direction (back to `from` at the end) */
@@ -406,6 +422,15 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
         }
         break;
     }
+    case F_SHAPE:                                   /* ((2.5) FILTR: LP BP HP, between two the way to the next: "30 BP"
+                                                     * is 30 % from LP to BP) */
+        if (v <= 0 || v == 64 || v >= 127)
+            str_cpy(val, v <= 0 ? "LP" : v == 64 ? "BP" : "HP", 4);
+        else {
+            fmt_int(val, v < 64 ? (v * 100 + 32) / 64 : ((v - 64) * 100 + 31) / 63);
+            *unit = v < 64 ? "BP" : "HP";
+        }
+        break;
     case F_DB:
         if (v <= 0) {
             str_cpy(val, "OFF", 6);
@@ -465,6 +490,9 @@ static void param_format(const param_desc_t *d, int32_t v, char *val, const char
             while (d->names[k])
                 k++;
             str_cpy(val, d->names[(uint32_t)(clamp(v, d->min, d->max) - d->min) * k / (uint32_t)(d->max - d->min + 1)], 6);
+        } else if (!v && d->unit == U_MS) {          /* ((2.5) STRUM 0: OFF) */
+            str_cpy(val, "OFF", 6);
+            break;
         } else {
             fmt_int(val, v);
         }
@@ -497,7 +525,8 @@ enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_
        GR_INS,                     /* (Skiff 1.3) FX > INSERT: its TYPE's transfer or sweep (ui_pgraph.c graph_insert) */
        GR_SMIX,                    /* (Skiff, #21) EDIT > SAMPLES: a user sample's LEVEL, REVERB, DELAY (ui.c smx_zone) */
        GR_LMIX,                    /* (2.0, #36, the user's pick 1A) EDIT > LANE MIX: a kit's lane levels and pans */
-       GR_FOLLOW };                /* (2.1) SCL > FOLLOW: the chord it follows, as CHORD's (ui_graph.c graph_follow) */
+       GR_FOLLOW,                  /* (2.1) SCL > FOLLOW: the chord it follows, as CHORD's (ui_graph.c graph_follow) */
+       GR_FXDLY, GR_FXREV };       /* (2.5) FX > DELAY, REVERB: the track's send beside the bus's own (page_desc) */
 
 typedef struct {
     const char *title;
@@ -518,13 +547,17 @@ static const page_t PAGES[] = {
     {"MOD", FAM_LFO, SC_TRACK, GR_MOD, {0xFF, P_M1SRC, P_M1DST, P_M1AMT}},   /* KNOB 1: the route (mod_ui_route; (2.0,
                                                                          * D 1A) LFO DEST and ENV DEST are its first 7) */
     {"FX", FAM_FX, SC_TRACK, GR_FX, {P_DIST, P_CHOR, P_DLY, P_REV}},
+    {"DELAY", FAM_FX, SC_TRACK, GR_FXDLY, {P_DLY, G_DTIME, G_DFDBK, G_DCOLOR}},   /* (2.5) the track's SEND, then GLO >
+                                                                          * DELAY's (page_desc); PRESETS: MODE */
+    {"REVERB", FAM_FX, SC_TRACK, GR_FXREV, {P_REV, G_RTYPE, G_RSIZE, G_RDAMP}},  /* (2.5) .. GLO > REVERB's */
     {"DRIVE", FAM_FX, SC_TRACK, GR_DRIVE, {P_DIST, P_DTYPE, P_DTONE, 0xFF}},   /* (Skiff phase 9) DIST's TYPE, TONE */
-    {"INSERT", FAM_FX, SC_TRACK, GR_INS, {P_ITYPE, P_IA, P_IB, P_IC}},   /* (1.3, from Felucca 1.5) the track's INSERT */
-    {"INSERT 2", FAM_FX, SC_TRACK, GR_INS, {P_IMIX, 0xFF, 0xFF, 0xFF}},  /* .. its dry / wet */
+    {"INSERT", FAM_FX, SC_TRACK, GR_INS, {P_ITYPE, P_IA, P_IB, P_IC}},   /* (1.3, from Felucca 1.5) the track's INSERT;
+                                                                          * (2.5) PRESETS: its MIX (INSERT 2 before) */
     {"SLICER", FAM_FX, SC_TRACK, GR_SLCR, {P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH}},
     {"DUCK", FAM_FX, SC_TRACK, GR_DUCK, {P_DKSRC, P_DKAMT, P_DKREL, 0xFF}},   /* (Skiff) ducking (duck.c) */
     {"SCALE", FAM_SCL, SC_TRACK, GR_SCALE, {P_ROOT, P_SCALE, P_QUANT, P_TRANS}},   /* ((#8) was SCL) */
-    {"CHORD", FAM_SCL, SC_TRACK, GR_CHORD, {P_CHRD, P_VOIC, 0xFF, 0xFF}},   /* SEL again: the chord keys (chord.c) */
+    {"CHORD", FAM_SCL, SC_TRACK, GR_CHORD, {P_CHRD, P_VOIC, P_STRUM, P_SDIR}},   /* SEL again: the chord keys (chord.c);
+                                                                          * (2.5) STRUM, its DIR (voice.c) */
     {"FOLLOW", FAM_SCL, SC_TRACK, GR_FOLLOW, {P_FOLLOW, P_FMODE, P_FNOTE, 0xFF}},   /* (2.1) again: the chord follow */
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},
     {"EDIT 2", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E4, P_E5, P_E6, P_E7}},
@@ -597,6 +630,13 @@ static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **
     if (id == 0xFFu) {
         *valp = 0;
         return 0;
+    }
+    if (pg->graph == GR_FXDLY || pg->graph == GR_FXREV) {   /* (2.5) FX > DELAY, REVERB: KNOB 1 the track's send, */
+        static const param_desc_t SEND = PD("SEND", F_PCT, 0, 127, 0);   /* named as such; 2..4 the bus's own */
+        if (slot)
+            return *valp = &song.g[id], &GP[id];
+        *valp = &TSEL->p[id];
+        return &SEND;
     }
     if (pg->scope == SC_STEP || pg->scope == SC_TRK) {
         *valp = 0;

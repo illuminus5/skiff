@@ -196,6 +196,59 @@ static void cr_dagger(int32_t x, int32_t y, uint16_t c)
     cr_spritez(x, y, SPR_DAGGER, c, 0, 2);
 }
 
+/* (2.5) HOME's scope: a track's creature (ui_graph.c cr_creatures; SPR_CR_*, tools/gen_sprites.py: a ramp glyph a
+ * cell, 4 x 6 px each, E an eye, F the flame), after the user's Ossuary synth: it surges out of the dark as its track
+ * plays (lv 0..1000: its glyphs up the ramp, the bone brighter; an empty cell stays empty) and recedes to a faint
+ * outline in silence; loud, its rows slip sideways and its glyphs break; its eyes burn in its track's colour
+ * (muted: crossed out), the candle's flame flickers, fuller the louder. CR_RAMP: the glyphs, 3 x 5, a row an octal
+ * digit (top first): ' ' . : - = + * # % @ x */
+static const uint16_t CR_RAMP[11] = {0, 02, 02020, 0700, 07070, 02720, 052725, 057575, 051245, 075747, 055255};
+static void cr_glyph(int32_t x, int32_t y, uint32_t g, uint16_t c)
+{
+    uint32_t b = CR_RAMP[g];
+    int32_t r, k;
+    for (r = 0; r < 5; r++)
+        for (k = 0; k < 3; k++, b <<= 1)
+            if (b & 040000u)
+                cv_rect(x + k, y + r, 1, 1, c);
+}
+static void cr_creature(int32_t x, int32_t y, const uint8_t *art, int32_t lv, uint16_t eye, int muted, uint32_t rnd)
+{
+    uint32_t w = art[0] & 127u, W = art[0] > 127u ? 2u * w - 1u : w, j, i;   /* (top bit: its left half, mirrored) */
+    uint32_t gain = 307u + (uint32_t)lv * 13u / 16u;  /* (the ramp's step, /1024) */
+    uint16_t bone = ux_mix(T_SURF, T_TEXT, 30 + lv * 9 / 128);
+    for (j = 0; j < art[1]; j++) {
+        uint32_t sh = 0;
+        rnd = rnd * 1103515245u + 12345u;
+        if (lv > 600 && (int32_t)(rnd >> 22) < (lv - 600) * 5 / 4)   /* (the row slips a cell) */
+            sh = rnd >> 8 & 1u ? 1u : W - 1u;
+        for (i = 0; i < W; i++) {
+            uint32_t at = (i + sh) % W, v = spr_px(art, j * w + (at < w ? at : W - 1u - at)), g;
+            uint16_t c = bone;
+            int32_t dice = (int32_t)((rnd = rnd * 1103515245u + 12345u) >> 22);   /* (0..1023) */
+            if (!v)
+                continue;
+            if (v == 10u) {                          /* E: an eye */
+                if (!muted && lv < 60)
+                    continue;
+                g = muted ? 10u : lv > 500 ? 9u : lv > 250 ? 6u : 2u;
+                c = muted ? T_DIM : ux_mix(T_SURF, eye, 35 + lv / 16);
+            } else if (v == 11u) {                   /* F: the flame */
+                if (muted || dice >= 410 + lv * 5 / 8)
+                    continue;
+                g = lv > 600 ? 9u : 6u;
+                c = ux_mix(CR_EMBER, CR_FLAME, lv * 3 / 32);
+            } else {
+                g = (v * gain + 512u) >> 10;
+                g = g < 1u ? 1u : g > 9u ? 9u : g;
+                if (dice < lv - 700)                 /* (louder: a glyph breaks) */
+                    g = 1u + ((rnd >> 12 & 255u) * 9u >> 8);
+            }
+            cr_glyph(x + (int32_t)i * 4, y + (int32_t)j * 6, g, c);
+        }
+    }
+}
+
 /* half the pixels of a box in c (a checkerboard: the ASCII shade, blood in a saw's teeth) */
 static void cr_dither(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 {

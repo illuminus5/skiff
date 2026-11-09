@@ -46,7 +46,7 @@
 #endif
 #endif
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "v2.2"       /* Skiff's; shown in the menu, the console and the editor; build.py --release X.Y */
+#define FELUCCA_VERSION "v2.5"       /* Skiff's; shown in the menu, the console and the editor; build.py --release X.Y */
 #endif
 #if FELUCCA_OTA && !FELUCCA_FLASH
 #error "FELUCCA_OTA needs FELUCCA_FLASH"
@@ -61,7 +61,10 @@
                                       * waiting loop is in RAM the ROM and the SPL use at boot) */
 /* (Skiff) audio code run from RAM (.ram_hot, app.ld), out of the XIP cache: the FX layer's (perform.c). From XIP it
  * shared the cache with the engines: on the unit, REPEAT 1/32 held cost +6 % CPU alone but +15 % under six busy
- * tracks (late halves, voices shed); 2 % by instruction count (the emulator). Never runs with the flash busy (the
+ * tracks (late halves, voices shed); 2 % by instruction count (the emulator). (2.5) And a track's block, on either core
+ * (fx.c mix_part, c1_parts: the voices' loop with what it calls each block, the matrix, SPREAD, DUCK, DRIVE, ENV 2, ENV
+ * SYNC, a kit's lane pans; 16 voices made the slowest block 86 % of a half): the engines' renders, the INSERT, the
+ * SLICER's steps and a user sample's own mix stay in XIP (AUDIO_FAR or a pointer). Never runs with the flash busy (the
  * audio ISR is off then), so it may call XIP code. Only here, the unit's build: core.h leaves it empty elsewhere.
  * RAM and XIP are over 4 MB apart, beyond a direct call's reach (fm1_flash.h FL_FAR): a call between them goes
  * through a pointer the compiler cannot fold back, AUDIO_FAR (the linker refuses a direct one). flatten: this clang

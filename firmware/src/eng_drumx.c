@@ -135,7 +135,7 @@ static void drumx_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
         int32_t s = y[i];
         if (g)
             s = (softclip((s * g) >> 12) * mk) >> 15;
-        out[i] += voice_amp(soft_knee(s + (s >> 2), 24000), m, i) << 1;
+        out[i] += voice_amp2(soft_knee(s + (s >> 2), 24000), m, i);
     }
 }
 

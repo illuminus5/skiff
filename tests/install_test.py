@@ -48,6 +48,7 @@ class FakeLink:
         if self.lost:
             return False
         self.dev.sent.append(bytes(pkt))
+        self.dev.via = self
         self.dev.rx(bytes(pkt))
         return True
 
@@ -61,8 +62,10 @@ class FakeLink:
         while not self.q.empty():
             self.q.get_nowait()
 
-    def close(self):
+    def close(self, going=False):
         self.closed = True
+        if not going and self is self.dev.leaving:         # (the link that finished, closed as the device restarts:
+            self.dev.risky += 1                            # rtmidi on Windows can block in it; MidoLink lets go)
 
 
 class FakeFM1:
@@ -77,6 +80,8 @@ class FakeFM1:
         self.stall_after, self.bad_addr = stall_after, bad_addr
         self.served = self.bad = self.upgrades = 0
         self.sent, self.links, self.gen, self.lock = [], [], 0, threading.Lock()
+        self.via = self.leaving = None               # the link a packet came by; the one that finished (it restarts)
+        self.risky = 0                               # that one closed, not let go
         self.boot(identity, name)
 
     def boot(self, identity, name):
@@ -113,6 +118,8 @@ class FakeFM1:
             if body is not None:
                 m = bytes([0, 0x59, cmd, len(body), 0, 0]) + body + bytes([~sum(body) & 0xFF])
                 self.tx(b"\xF0" + I.pack7(m) + b"\xF7")
+        elif d == I.UBOOT:
+            self.leaving = self.via                  # (the loader leaves for the boot ROM)
         elif d == I.UPGRADE:
             self.upgrades += 1
             first = self.bad_addr if self.bad_addr is not None else 0
@@ -135,8 +142,10 @@ class FakeFM1:
             if self.stall_after and self.served >= self.stall_after:
                 return
             if addr == I.FINISH_CHECK:
+                self.leaving = self.via
                 threading.Timer(0.05, self.boot, self.loader).start()
             elif addr == I.FINISH_WRITE:
+                self.leaving = self.via
                 threading.Timer(0.05, self.boot, (self.after_write, "Felucca")).start()
             else:
                 self.next()
@@ -227,6 +236,7 @@ def installs():
     rc, out, err = cli([p, "--yes"], dev)
     ok(rc == 0 and dev.bad == 0 and dev.upgrades == 2 and dev.served == 11 and "done: the device runs FM-1_900" in out
        and "100%" in out, f"install: running -> loader -> Felucca ({dev.served} reads)")
+    ok(rc == 0 and dev.risky == 0, "install: the ports that finished are let go, not closed (check, write)")
 
     dev = FakeFM1(image, identity="ota-FM-1_900", name="Felucca Update")
     rc, out, err = cli([p, "--yes"], dev)
@@ -427,7 +437,7 @@ def smk():
     dev = FakeFM1(image, identity="SMK-37 Pro_016", name="SMK-37 Pro Midi", loader=("ota-SMK-37 Pro_900", "Felucca Update"))
     rc, out, err = cli(["--uboot", p, "--yes"], dev)
     ok(rc == 0 and dev.upgrades == 1 and dev.bad == 0 and dev.identity == "ota-SMK-37 Pro_900"
-       and dev.sent[-1] == I.UBOOT and dev.sent.count(I.UBOOT) == 1 and "WL82 UBOOT1.00" in out,
+       and dev.sent[-1] == I.UBOOT and dev.sent.count(I.UBOOT) == 1 and "WL82 UBOOT1.00" in out and dev.risky == 0,
        "--uboot on a stock SMK-37 Pro: the check step, the loader up, the UBOOT key sent to it, no write")
     dev = FakeFM1(image, identity="ota-SMK-37 Pro_900", name="Felucca Update")
     rc, out, err = cli(["--uboot", p, "--yes"], dev)
@@ -503,13 +513,15 @@ def hardening():
 
         def close(self):
             self.closed += 1
-    for names, closes, kept in (([], 0, 2), (["SMK-37 Pro Midi 0"], 1, 0)):
+    for names, going, closes, kept in (([], False, 0, 2), (["SMK-37 Pro Midi 0"], False, 1, 0),
+                                       (["SMK-37 Pro Midi 0"], True, 0, 2)):
         link = I.MidoLink.__new__(I.MidoLink)
         link.backend, link.name, link.inp, link.out = Stub(names), "SMK-37 Pro Midi 0", Stub([]), Stub([])
         before = len(I._ABANDONED)
-        link.close()
+        link.close(going=going)
         ok(link.inp.closed == closes and link.out.closed == closes and len(I._ABANDONED) == before + kept,
-           "MIDI ports: " + ("a vanished device's are left open (rtmidi crashes closing them)" if kept
+           "MIDI ports: " + ("a restarting device's are left open (rtmidi can block closing them)" if going
+                             else "a vanished device's are left open (rtmidi crashes closing them)" if kept
                              else "a present device's are closed"))
     I._ABANDONED.clear()
 

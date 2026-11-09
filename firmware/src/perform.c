@@ -334,7 +334,7 @@ static __attribute__((noinline)) AUDIO_RAM void perf_mute(uint32_t k, int32_t *b
 
 /* (Skiff phase 9) DUB (C5): the dry mix into the delay's send, whole, while held (2.9 ms in and out); meanwhile the
  * delay's feedback up to DUB_FB, its return up to MIX's default (perf_begin; fx.c fx_buses): the echoes pile up, and
- * ring out after it is let go */
+ * ring out after it is let go. (2.5) A stereo delay: perf_pre_st */
 static __attribute__((noinline)) AUDIO_RAM void perf_dub(const int32_t *ml, const int32_t *mr, int32_t *sd, uint32_t n)
 {
     uint32_t i;
@@ -354,12 +354,41 @@ static void perf_dub_dly(int32_t *fb, int32_t *mix)
         *mix = pf.dfb * 3 / 4;
 }
 
-/* before the buses: THROW (KNOB 3) adds the dry mix to the delay and reverb sends */
-static __attribute__((noinline)) AUDIO_RAM void perf_pre(const int32_t *ml, const int32_t *mr, int32_t *sd, int32_t *sr,
-                                               uint32_t n)
+/* (2.5) THROW and DUB into a stereo delay (a stereo MODE, fx.c; se its right send): as perf_pre and perf_dub, the left mix
+ * into sd and the right into se (the reverb's send their mean, as before). In XIP, its own loops: perf_pre's and
+ * perf_dub's stay as they were (in RAM) */
+static __attribute__((noinline)) void perf_pre_st(const int32_t *ml, const int32_t *mr, int32_t *sd, int32_t *se,
+                                                  int32_t *sr, uint32_t n)
+{
+    uint32_t i;
+    int32_t m = perf_k[2] * 327, t = (pf.act >> PF_DUB) & 1u ? 32768 : 0;
+    for (i = 0; i < n; i++) {
+        pf.td += clamp(m - pf.td, -SL_SLOPE, SL_SLOPE);
+        if (pf.td) {
+            sd[i] += mulq16(ml[i], (uint32_t)pf.td << 1);
+            se[i] += mulq16(mr[i], (uint32_t)pf.td << 1);
+            sr[i] += mulq16((ml[i] + mr[i]) >> 1, (uint32_t)pf.td << 1);
+        }
+    }
+    if (pf.dd || ((pf.act >> PF_DUB) & 1u))
+        for (i = 0; i < n; i++) {
+            pf.dd += clamp(t - pf.dd, -SL_SLOPE, SL_SLOPE);
+            sd[i] += mulq16(ml[i], (uint32_t)pf.dd << 1);
+            se[i] += mulq16(mr[i], (uint32_t)pf.dd << 1);
+        }
+}
+
+/* before the buses: THROW (KNOB 3) adds the dry mix to the delay and reverb sends ((2.5) se: a stereo delay's right
+ * send, perf_pre_st; 0: MONO) */
+static __attribute__((noinline)) AUDIO_RAM void perf_pre(const int32_t *ml, const int32_t *mr, int32_t *sd, int32_t *se,
+                                               int32_t *sr, uint32_t n)
 {
     uint32_t i;
     int32_t m = perf_k[2] * 327;
+    if (se) {
+        AUDIO_FAR(perf_pre_st)(ml, mr, sd, se, sr, n);
+        return;
+    }
     for (i = 0; i < n; i++) {
         pf.td += clamp(m - pf.td, -SL_SLOPE, SL_SLOPE);
         if (pf.td) {

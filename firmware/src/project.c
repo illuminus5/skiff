@@ -145,12 +145,12 @@ typedef struct { uint8_t note[4], n, time, flags, vel, hit, acc; } step10_t;
 typedef struct { int16_t p[69]; uint8_t engine, preset; step10_t step[NSTEP]; uint8_t lane[NLANE][5]; } proj_trk_v5_t;
 typedef struct {                               /* format 5, before the song chain */
     uint32_t magic, size;
-    int16_t g[G_COUNT];
+    int16_t g[PROJ_NG_V2];
     uint8_t sel, parts, phys, rsv;
     proj_trk_v5_t t[PROJ_NT];
     uint32_t sum;
 } project_v5_t;
-typedef struct { uint32_t magic, size; int16_t g[G_COUNT]; uint8_t sel, parts, phys, rsv;
+typedef struct { uint32_t magic, size; int16_t g[PROJ_NG_V2]; uint8_t sel, parts, phys, rsv;
     proj_trk_v5_t t[PROJ_NT]; chain_config_t chain; uint32_t sum; } project_v6_t;
 _Static_assert(sizeof(project_v5_t) == 3352u && sizeof(project_v6_t) == 3388u, "frozen formats 5 / 6 sizes");
 #endif
@@ -228,7 +228,8 @@ _Static_assert(68u + 6u * (PROJ_NP + 2u + NENT * 2u + 1u) + PROJ_SCENES <=
                "SKF3's tracks, lists and scenes end before its PX block");
 typedef union { uint32_t align; uint8_t raw[FELUCCA_LEGACY ? PROJ_STORE_SIZE : PROJ_STORE4]; } project_store_t;   /* ((2.0)
                                                 * SKF4's, the largest record it reads; the converter's SKF1) */
-_Static_assert(G_COUNT == 27u, "FUN7 globals retain original IDs");
+_Static_assert(PROJ_NG_V2 == 27u && G_COUNT >= PROJ_NG_V2, "the fixed layouts (FUN1 .. FUN7, SKF1 .. SKF3) hold the "
+               "first 27 globals at their places; (2.5) one added since only SKF4 holds, by GSID");
 #if FELUCCA_LEGACY
 _Static_assert(sizeof(project_store_t) == 3840u && PROJ_STORE_V7 == sizeof(project_v6_t), "SKF1 / FUN7 sizes");
 typedef struct {                               /* a track of format 4, read only */
@@ -238,7 +239,7 @@ typedef struct {                               /* a track of format 4, read only
 } proj_trk_v4_t;
 typedef struct {                               /* format 4 (1.0 development builds), read only */
     uint32_t magic, size;
-    int16_t g[G_COUNT];
+    int16_t g[PROJ_NG_V2];
     uint8_t sel, parts, phys, rsv;
     proj_trk_v4_t t[PROJ_NT];
     uint32_t sum;
@@ -250,7 +251,7 @@ typedef struct {                               /* a track of format 3, read only
 } proj_trk_v3_t;
 typedef struct {                               /* format 3 (0.9 .. 1.0), read only */
     uint32_t magic, size;
-    int16_t g[G_COUNT];
+    int16_t g[PROJ_NG_V2];
     uint8_t sel, parts, rsv[2];
     proj_trk_v3_t t[PROJ_NT];
     uint32_t sum;
@@ -320,18 +321,32 @@ static int proj_ok(const project_t *q) { return q->magic == PROJ_MAGIC && q->siz
 #endif
     ; }
 
+/* (2.5) the globals of a record of a fixed layout (FUN7, SKF1 .. SKF3: bytes 8 .. 61): the first PROJ_NG_V2, by place;
+ * one added since (SKF4 holds it by GSID): its default, but the delay MONO, as these played (STEREO is a new
+ * project's) */
+static void proj_g_read27(int16_t *g, const uint8_t *b)
+{
+    uint32_t i;
+    for (i = 0; i < G_COUNT; i++)
+        g[i] = GP[i].def;
+    memcpy(g, b, 2u * PROJ_NG_V2);
+    g[G_DMODE] = DM_MONO;
+}
+
 #if FELUCCA_LEGACY
 /* G_RTYPE (id 24) was G_DRCH, the GM drum part's MIDI channel (0..16, 10 by default) until 1.0: a project of a
  * format before FUN7 may hold any channel there. FUN7 came after it was inert (always 0), so only those imports
  * set it: ROOM, the only reverb they knew */
 static void proj_rtype_room(int16_t *g) { g[G_RTYPE] = 0; }
 
-/* the globals of formats 1 and 2 (G_* unchanged since; any added later: their defaults) */
+/* the globals of formats 1 and 2 (G_* unchanged since; any added later: their defaults; (2.5) the delay MONO, as
+ * proj_g_read27) */
 static void proj_g_from_v2(int16_t *g, const int16_t *g2)
 {
     uint32_t i;
     for (i = 0; i < G_COUNT; i++)
         g[i] = i < PROJ_NG_V2 ? g2[i] : GP[i].def;
+    g[G_DMODE] = DM_MONO;
     proj_rtype_room(g);
 }
 
@@ -512,8 +527,7 @@ static int proj_from_v4(project_t *q, const project_v4_t *v4, int n)
     memset(q, 0, sizeof *q);
     q->magic = PROJ_MAGIC;
     q->size = sizeof *q;
-    memcpy(q->g, v4->g, sizeof q->g);
-    proj_rtype_room(q->g);
+    proj_g_from_v2(q->g, v4->g);                 /* ((2.5) their 27 globals, the rest at their defaults) */
     q->sel = v4->sel;
     q->parts = v4->parts;
     q->phys = v4->phys;
@@ -535,8 +549,7 @@ static int proj_from_v3(project_t *q, const project_v3_t *v3, int n)
     memset(q, 0, sizeof *q);
     q->magic = PROJ_MAGIC;
     q->size = sizeof *q;
-    memcpy(q->g, v3->g, sizeof q->g);
-    proj_rtype_room(q->g);
+    proj_g_from_v2(q->g, v3->g);                 /* ((2.5) their 27 globals, the rest at their defaults) */
     q->sel = v3->sel;
     q->parts = v3->parts;
     for (i = 0; i < PROJ_NT; i++)
@@ -700,8 +713,7 @@ static int proj_import_old(project_t *q, const void *b, int n)
             v->size == bytes && ((const uint32_t *)b)[bytes / 4u - 1u] == proj_hash(b, bytes - 4u)) {
             memset(q, 0, sizeof *q);
             q->magic = PROJ_MAGIC; q->size = sizeof *q;
-            memcpy(q->g, v->g, sizeof q->g);
-            proj_rtype_room(q->g);
+            proj_g_from_v2(q->g, v->g);         /* ((2.5) their 27 globals, the rest at their defaults) */
             q->sel = v->sel; q->parts = v->parts; q->phys = v->phys;
             for (i = 0; i < PROJ_NT; i++) {
                 int16_t def[P_COUNT];
@@ -869,7 +881,7 @@ static int proj_pack(project_store_t *out, const project_t *q)
             if (q->fm6[t][i] > 127u) return 0;
     if (!chain_valid(&q->chain) || !motion_valid(&q->motion) || !proj_motion_np(&mo)) return 0;
     memset(out, 0, sizeof *out); memcpy(b, &magic, 4); memcpy(b + 4, &size, 4);
-    memcpy(b + 8, q->g, sizeof q->g); b[62] = q->sel; b[63] = q->parts; b[64] = q->phys; b[66] = PROJ_NP;
+    memcpy(b + 8, q->g, 2u * PROJ_NG_V2); b[62] = q->sel; b[63] = q->parts; b[64] = q->phys; b[66] = PROJ_NP;
     for (t = 0; t < PROJ_NT; t++) {
         if (!proj_np_put(b + pos, q->t[t].p)) return 0;   /* ((phase 9) PROJ_NP, by count) */
         pos += PROJ_NP;
@@ -922,7 +934,7 @@ static int proj_unpack(project_t *q, const uint8_t *b, uint32_t st)
         68u + PROJ_NT * (np + 2u + NSTEP * 9u + nud) + sizeof q->chain + PROJ_MOT_BYTES > end)
         return 0;
     memset(q, 0, sizeof *q); q->magic = PROJ_MAGIC; q->size = sizeof *q;
-    memcpy(q->g, b + 8, sizeof q->g); q->sel = b[62]; q->parts = b[63]; q->phys = b[64];
+    proj_g_read27(q->g, b + 8); q->sel = b[62]; q->parts = b[63]; q->phys = b[64];
     if (v7 && (q->g[G_RTYPE] < 0 || q->g[G_RTYPE] > 1))   /* a FUN7 may still hold the old drum channel there */
         proj_rtype_room(q->g);
     for (t = 0; t < PROJ_NT; t++) {
@@ -1057,6 +1069,8 @@ static int proj_unpack4(project_t *q, const uint8_t *b)
     for (e = 0; e < G_COUNT; e++)
         q->g[e] = GP[e].def;
     if (!(n = gsid_get(q->g, b + pos, end - pos))) return 0;
+    if (b[pos] <= G_DMODE)                               /* ((2.5) a record before it (2.2's: 27): MONO, as it played */
+        q->g[G_DMODE] = DM_MONO;
     pos += n;
     for (t = 0; t < NTRK; t++) {
         if (end - pos < 3u) return 0;
@@ -1097,7 +1111,7 @@ static int proj_pack2(project_store_t *out, const project_t *q, const proj_fmt_t
             if (q->fm6[t][i] > 127u) return 0;
     if (!proj_ent_ok(q)) return 0;
     memset(out, 0, sizeof *out); memcpy(b, &f->magic, 4); memcpy(b + 4, &f->size, 4);
-    memcpy(b + 8, q->g, sizeof q->g); b[62] = q->sel; b[63] = q->parts; b[64] = q->phys; b[65] = q->song;
+    memcpy(b + 8, q->g, 2u * PROJ_NG_V2); b[62] = q->sel; b[63] = q->parts; b[64] = q->phys; b[65] = q->song;
     b[66] = PROJ_NP;
     for (t = 0; t < f->nt; t++) {
         if (!proj_np_put(b + pos, q->t[t].p)) return 0;   /* ((phase 9) PROJ_NP, by count) */
@@ -1172,7 +1186,7 @@ static int proj_unpack2(project_t *q, const uint8_t *b, const proj_fmt_t *f)
         memcpy(q->dx, b + PROJ_DX_AT(f) + 1u, sizeof q->dx);   /* (phase 7) its DRUM-X kit (bytes: dx_lane_t's are) */
         q->dx_on = 1;
     }
-    memcpy(q->g, b + 8, sizeof q->g); q->sel = b[62]; q->parts = b[63]; q->phys = b[64]; q->song = b[65];
+    proj_g_read27(q->g, b + 8); q->sel = b[62]; q->parts = b[63]; q->phys = b[64]; q->song = b[65];
     for (t = 0; t < f->nt; t++) {
         int16_t values[P_COUNT], def[P_COUNT];
         for (i = 0; i < np; i++) { if (b[pos] > 191u) return 0; values[i] = (int16_t)b[pos++] - 64; }

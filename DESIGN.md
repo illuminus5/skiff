@@ -53,7 +53,7 @@ Things to avoid:
 |---|---|---|---|
 | ENV, LFO | Open its page family; again: the next page | As a tap | — |
 | ARP | ARP pages | PERFORM layer: the list's entries or the scenes on the white keys, mutes on the black, throws on K1–K4, LAUNCH on SELECT | Lock |
-| SAVE | Its page family (PRESETS, USER, PATTERNS, PROJECT): the page it was left on, USER the first time (U3) | **UNDO**, one level back (8 levels kept) | — |
+| SAVE | Its page family (PRESETS, USER, PATTERNS, PROJECT): the page it was left on, USER the first time (U3) | **UNDO**, one level back (6 levels kept) | — |
 | FX | FX pages | FX layer: effects on the white keys; on the black the tracks' MUTE as GLO's ((2.0, D 1A): a tap latches it, held the track is cut; see One mute), macros on K1–K4 | Lock the layer open; locked, it latches (U2: MENU > FX LATCH retired) |
 | GLO | MIXER, DELAY, REVERB, CHORUS, GLOBAL (U3: the buses, FX's before; SYSTEM gone) | GLO layer: mutes, solos, tap tempo; with SELECT: tempo | Lock |
 | SEL | SCALE, CHORD (1.2.1, #8: the button is printed SEL; the page was SCL) | SEL layer: root on the keys | Lock |
@@ -68,10 +68,12 @@ Things to avoid:
 
 | Combo | Does | Arrives in |
 |---|---|---|
-| SHIFT + SAVE | **TAKE:** keep the last loop of notes and knob moves on the selected track (`take.c`, `ui_take.c`) | Phase 2 (done) |
+| SHIFT + SAVE | **TAKE:** keep the last loop of notes and knob moves on the selected track (`take.c`, `ui_take.c`); (2.5) stopped, with notes played since the stop: **FREE TAKE** (below) | Phase 2 (done) |
 | SHIFT + PRESETS (NOTES, FEEL) | **RANGE:** the selection stretched from where it was (`ui_input.c` `sel_shift`) | 2.0 (D) |
 | SHIFT + OCT− / OCT+ (NOTES, FEEL) | **COPY / PASTE** the selection (`sel_copy`, `sel_paste`) | 2.0 (D) |
 | SHIFT + EDIT (NOTES, FEEL) | **DELETE** the selection, REC armed or not: the picked notes, else every note starting in it, with their ties; one undo (`sel_delete`). Elsewhere SHIFT + EDIT locks EDIT's layer, as any layer's button; here EDIT held + HOME does | 2.0 |
+| SHIFT + EDIT (SEQ › SONG) | **CLEAR** the entry KNOB 1 is on, at once, playing too, no dialog: its pattern stays in the pool; one undo of the lists (`ui_input.c` `song_del`, `lists_undo`) | 2.5 |
+| SHIFT + PLAY (SEQ › SONG) | **FROM HERE:** the song from the entry KNOB 1 is on, stopped or playing (`bank.c` `song_from`, below) | 2.5 |
 | HOME held alone, then let go | MENU (settings). It opens on release, so it never fights a SHIFT combo. | Phase 1 |
 
 **TAKE in detail:**
@@ -87,14 +89,39 @@ Things to avoid:
   - PLAY ONE LOOP FIRST, NOTHING PLAYED or DISARM REC FOR A TAKE when there is nothing to take (U4: the way out, not just the problem).
 - **Hint:** while HOME is held, the header says [SAVE] TAKE.
 
+**FREE TAKE in detail** (2.5; `take.c` `free_note`, `ui_take.c` `fr_*`; tests/freetake_test.c): a take of what was played
+while stopped, its tempo, length and first beat found by Skiff.
+- **The log:** while the transport is stopped, each note's start and end from take_note's callers (the keys and their
+  chords, MIDI, the arp), 4 bytes each (the time in 2 ms, 15 bits; the note; the velocity, 0 an end; the track) in a
+  ring of 512 in the pool. Only those since the last stop count (`seq_stop` → `free_stop`: `free_n0`); nothing is
+  logged while the picker is open (`free_hold`), so its PLAY's stop moves nothing.
+- **The phrase:** the last one after a silence of over 2.5 s, 30 s at most (`fr_phrase`); notes started within 30 ms
+  of the one before, chained, are one onset (a chord, a strum).
+- **The tempo:** every BPM from 40 to 240 scored by how the onsets sit on its 1/16 grid at the best phase, |the sum of
+  their unit phases|² (`fr_fit`; the phase by CORDIC, `fr_atan2`; no 64-bit divide on the chip: `fr_inc` without
+  one). The guesses are the score's peaks, so ×2 and ÷2 come side by side, the one between 80 and 160 first when it
+  scores at least 80 % of the best (`fr_guess`).
+- **The picker** (its own screen while `fr.on`: the header FREE TAKE, cards GUESS BARS FROM TEMPO, the panel
+  PATTERN's steps, the footer OCT+ KEEP, OCT- BACK, PLAY LISTEN): KNOB 1 the guess, KNOB 2 the bars (1, 2, 4 at 1/16;
+  8 at 1/8), KNOB 3 which onset is the 1 (a pickup before it wraps to the loop's end), KNOB 4 TEMPO SET or KEEP (KEEP
+  when another track has notes or the clock is external). Each turn renders the take afresh from the track as it was
+  (`fr_from`). PLAY loops it; OCT+ (or SHIFT + SAVE again) keeps it; OCT- puts back the steps, LEN, DIV and the BPM.
+- **It replaces the pattern** (the user's pick after the first unit test: an overdub lost a chord's fourth note on
+  steps that held three): every step cleared as on a new unit, then the notes put in as a played take would be
+  (`rec_put`, per-note ties, drum lanes, FEEL's nudge); one undo, SAVE held.
+- **The hint** (2.5, `ui_layer.c` `free_hint`): the first 8 notes played stopped (16 log entries since the stop) say
+  SHIFT + SAVE: FREE TAKE (SMK: SHIFT + BT) once, bit 0 of `layer_seen` (no layer has it); not over a message, a
+  dialog or the menu, never with HINTS OFF.
+
 Add a combo here before adding it to the code. Every SHIFT combo has to appear on the SHIFT map.
 
 **UNDO in detail** (`ui.c` `undo_ring`, `undo_step`):
-- **What's kept:** the last 8 undoable acts, on any tracks. A copy is taken by a sound load, a take, a clear, a SEQ TOOLS action or an automation edit. Loads in a row while browsing count as one. Pattern loads, launches and the song take none: the pattern left is kept as it was.
+- **What's kept:** the last 6 undoable acts, on any tracks. A copy is taken by a sound load, a take, a clear, a SEQ TOOLS action or an automation edit. Loads in a row while browsing count as one. Pattern loads, launches and the song take none: the pattern left is kept as it was.
 - **How:** SAVE held goes one back. Then, while the undo box shows (2.7 s, `UNDO_WIN`), OCT− goes further back and OCT+ forward again. A new edit after undoing drops the redo.
 - **A copy belongs to its pattern:** taken while the track was on another pattern, SAVE held says UNDO NEEDS PATTERN 07 (its number) and changes nothing.
 - **What it says:** the box (BLOCKS) or the header names the act and its track (UNDO T1 TAKE) and how far back you are (2 OF 5 UNDONE). The keys dim when there is nothing more that way.
-- **Not undoable:** project and user-sound saves, a project load, a scene stored over another (U2: its dialog), erasing a sound, clearing an entry or a pattern. Their dialogs say CAN'T BE UNDONE. (U1) EDIT's step clear on NOTES and the grid takes a copy: a run of them (under 1.5 s apart, nothing else changed) is one. (U2) A recording pass is one: REC arming takes a copy (RECORDING), dropped again when it recorded nothing.
+- **The song's lists** (2.5, `UNDO_LISTS`): CLEAR SONG and SHIFT + EDIT's entry clear keep the lists in the copy's step room (`lists_undo`; a static assert checks they fit): SAVE held swaps them back, the tracks as they are.
+- **Not undoable:** project and user-sound saves, a project load, a scene stored over another (U2: its dialog), erasing a sound, clearing an entry (KNOB 2's CLEAR, which may erase its pattern) or a pattern. Their dialogs say CAN'T BE UNDONE. (U1) EDIT's step clear on NOTES and the grid takes a copy: a run of them (under 1.5 s apart, nothing else changed) is one. (U2) A recording pass is one: REC arming takes a copy (RECORDING), dropped again when it recorded nothing.
 
 **FLAM** (`seq.c`): RATCHET's fifth value on SEQ › FEEL (2.0; KNOB 2: X1–X4, then FLAM; SEQ › CHANCE's knob 3 before). The step plays a grace hit at 9/16 of its velocity, then the full hit 15 ms later (at most half the step). Chords and drum hits flam too; the chance is rolled once for both.
 
@@ -182,6 +209,31 @@ Add a combo here before adding it to the code. Every SHIFT combo has to appear o
   - Stored as the entry's REPS byte 16 (`REPS_CHAIN`): firmware before this one refuses a project holding one. The web editor draws a chain's box (the track's colour dimmed on the Song tab's ground, a notch between two side by side) and has CHAIN below 1x in REPS (LIST2); an editor before shows 1x, and a REPS it sets there splits the chain as KNOB 3 turned right.
 - **The header** (BLOCKS), in the selected track's colour before the title: SONG ON (SONG ONCE) on this page while the song plays; on the other SEQ pages, the pattern being edited: its entry, its number and, when more than one entry names it, how many (C · 06 · 2x); on a chain, its entries and the part's number (A-B · 02).
 
+**A song you can follow, and from any entry** (2.5; the user's picks 2B and 3A):
+- **Its bars** (2B; `bank.c` `ent_len48`, `ent_at48`, `song_at`): in 48ths of a quarter (`DIV_48`; a bar 192): an
+  entry one pass of its pattern's LEN steps of its DIV (`pool_div`, the pool's DIV beside its LEN); a REST, or an empty
+  entry inside the list, as long as the pattern before it (the track keeps its LEN and DIV over a rest: #97; one first
+  in the list counts the list's last pattern), an empty entry outside the list nothing; the song the longest list. Where the song is: the entries before the one the track is on, the
+  passes made there (`take_pass - take_p0`), the steps into this pass. With SONG on and playing, a line along the
+  header's foot shows where it is, notched at the entries; SONG's mark says BAR 9 OF 32 (in place of SONG ON), its
+  footer the entry's BARS 9-16. ponytail: a chain's REPS count per
+  part (`ent_at48`).
+- **SHIFT + PLAY** (`bank.c` `song_from`): the selected entry's start in the song puts each track with a list on the
+  entry its list is on then (the place modulo its list's length: a shorter list loops, SONG ONCE's end too), stopped
+  there by `ent_go`, and each track's place in it, in 48ths, goes to `seq.c` `sl_at` (a track without a list: as far
+  into its own pattern, as an SPP). The PLAY request that follows starts through `seq_go`: `seq_locate_at` (SPP's
+  locate, a place a track) instead of `seq_start`, the passes made counted (`take_pass`, so the song moves on after
+  the right REPS). `sl_on` is read only by `seq_go` (from `events_block` and the count-in's end, both kept in their
+  shape: tests/target_budget.py reads their loops from the layout); a PLAY press and `transport_stop_now` drop it.
+  External clock: refused (CLOCK EXTERNAL).
+- **SHIFT + EDIT** (`ui_input.c` `song_del`): the entry emptied (its pattern, sound bytes), the pattern left in the
+  pool, a track on it playing on to its end; `lists_undo` first (shared with CLEAR SONG).
+- **SAVE › PROJECT's KNOB 3** (3A; `ui.c` `proj_k3`): LOAD, NEW (any slot: the session left on no slot), CLEAR SONG
+  (`ui_input.c` `song_wipe`: the lists, their sounds, the entries the tracks are on and SONG emptied; the tracks'
+  patterns and the scenes stay; undoable) and CLEAR TRACKS (`tracks_wipe`: stopped, every track's pattern kept in the
+  pool first, then its steps and automation cleared, the sounds kept; no undo: its dialog says the patterns stay in
+  PATTERNS and the sounds stay).
+
 **SAVE › PATTERNS** (`ui_graph.c` `graph_bank`, `bank.c` `pool_refs` / `pool_clear`), after USER: the pool (the mockup's).
 - **The grid:** the 64 patterns, 8 × 8. A kept one is its number in a tile: TEXT while something uses it, MID and outlined while nothing does. An empty number is a dot; the picked one is white.
 - **Knobs:** 1 PATTERN (01–64), then its LEN, USED (the entries naming it in the lists and the saved projects, and a track on it that no entry names) and (2.0, #46, the user's pick 5A on design/mockups/v2_songs.png) ACTION: CLEAR, EMPTY or UNUSED, which OCT+ does (the footer says it: OCT+: EMPTY 21, OCT+: CLEAR 3 UNUSED).
@@ -233,8 +285,58 @@ Add a combo here before adding it to the code. Every SHIFT combo has to appear o
 - **The graph:** the track's level over one bar of its source's steps: a dip at each hit, its recovery over REL, the hits marked underneath in the source's colour.
 - The three belong to the track's mix: a sound load keeps them, and they're saved in the project. DEPTH and REL can be automated; BY can't. With BY OFF the mix is bit for bit as without ducking.
 
+**The stereo delay and chorus** (2.5; `fx.c` `dly_mono`, `dly_stereo`, `cho_st`; tests/stdelay_test.c): GLO › DELAY's
+MODE (`G_DMODE`, GSID 27): MONO, STEREO, PING.
+- **MONO** is 2.2's line, bit for bit: one 65,536-sample int16 line at 44.1 kHz in `dly_buf` (128 KiB).
+- **STEREO and PING** use the same 128 KiB as two 32,768-sample lines at half rate (22.05 kHz, 1.49 s each), written
+  through HALL's 1-2-1 filter and read interpolated (the repeats lose the highs above about 10 kHz); their loop's
+  products round towards 0 (`mulq15z`), so a tail dies to exact 0. PING feeds each line into the other.
+- **Stereo sends:** a second sum (`mixsum_t` `e`, the right send) from each track's PAN in `mix_part`, `mix_spread`, the
+  lane pans and `smx_render`; MONO's right send is skipped. The stereo wet goes out beside HALL's (`rev_side`).
+- **The chorus** (its CHORUS and FLANGER; PHASER stays mono) reads its line twice, the LFO 180° apart, in STEREO
+  and PING (`cho_st`).
+- **Switching** fades a block and clears the lines over 32 blocks (`dly_switch`, `dly_clear`), as HALL's `rev_switch`.
+- **The mono loops keep 2.2's shape;** the stereo work sits in noinline helpers with their own target_budget lines
+  (`smx_right`, `dly_mono`, `dly_stereo`, `cho_st`, `perf_pre_st`): stereo branches inside the mono loops had cost
+  +20..77 % on its estimate.
+- **Default:** STEREO for a new project (`params.c`); a project saved before 2.5 loads MONO, as it played
+  (`proj_g_read27`, `proj_g_from_v2`, and SKF4's reader when the stored globals end before `G_DMODE`).
+- **PRESETS turns MODE** on GLO › DELAY and FX › DELAY (the PRESETS card, below).
+
+**FX › DELAY and FX › REVERB** (2.5, the user's 1A; `params.c` `GR_FXDLY`, `GR_FXREV`): after FX's first page, the track's
+send on KNOB 1 beside the bus's own on KNOB 2-4 (GLO › DELAY's TIME, FEEDBACK, COLOR; GLO › REVERB's TYPE, SIZE,
+DAMP); the graphs as GLO's, scaled by the send. A knob's automation only for the track's own (a pointer into `t->p`):
+the buses' values are global. TIME turns in `DTIME_ORDER`, the dotted values in their place.
+
+**The PRESETS card** (2.5, the user's 5B; `ui_graph.c` `pr_knob`, `pr_card`): where PRESETS does something special, an
+84 × 40 card top right: PRESETS with a small knob (the SMK's K4), the value in the graph's colour, the job dim. On
+GLO › DELAY and FX › DELAY (MODE), PATTERN (DIR; a 64-step pattern: one line under the rows, `PR_LINE`), INSERT (MIX,
+`ui_pgraph.c` `pr_mix_card`). NOTES keeps its footer hint.
+
+**INSERT on one page, and FILTR** (2.5; the user's ask and 6B; `fx.c` `ins_filter`): INSERT 2 is gone, PRESETS turns
+MIX on INSERT's page (FX has 7 pages). FILTR (`IT_FILTER`, after CHOR): KNOB 2 CUTOFF, KNOB 3 RES, KNOB 4 SHAPE from
+LP through BP to HP (`F_SHAPE`: "30 BP" between). It is `dsp.c`'s `tsvf` (Q13 coefficients, Q12 damping): the BP
+taken as k·v1 so it is as loud as the others, the three blended by SHAPE, the input clamped, the integrator's steps
+rounded (floored, they left a DC of about 1,700 at low cutoffs). The graph (`ui_pgraph.c` `flt_curve`, shared with
+ANALOG's FLT, which is unchanged): the larger of the two shapes at their shares (`flt_off`), the LP BP HP strip and
+its mark. tests/insert_test.c: ±2 octaves, BP at the cutoff, no step over 1 dB across SHAPE.
+
+**STRUM** (2.5, the user's 7B; `voice.c` `sq`, `strum_*`; tests/chord_test.c): SCL › CHORD's KNOB 3 STRUM (OFF, 1-100
+ms) and KNOB 4 DIR (DOWN, UP, ALT; dim at OFF), `P_STRUM`, `P_SDIR` before `P_E0` (SIDs 146, 147; `P_COUNT` 148).
+`trk_note_on` hands a note to the track's queue (`strum_add`, only inside `events_block`: `sq_in`), `strum_flush` at
+its end sorts the chord and spreads it over STRUM (one divide a chord; ALT turns each chord round, from down at
+PLAY), `strum_tick` at its start plays what is due. A note-off drops its queued note; `trk_all_off` clears the queue.
+POLY only; kept by a sound load. With STRUM on, CHORD's graph draws the notes in time (`graph_strum`).
+
+**KEEP SENDS** (2.5, MENU › CONTROL, OFF by default): bit 5 of the settings' MIDI byte [15][17] (`PREF_KEEP_SENDS`),
+read by `params.c` `param_kept` (through `ks_io`, set in `ui.c`; a build without the UI: OFF), the one rule of every
+load (PRESETS, a user sound, a song entry's sound, the editor's): ON, CHORUS DELAY REVERB stay the track's, as LEVEL and
+PAN. `preset_fill` asks it before writing a preset's sends; DIGITAL's `fm4_load_preset` puts the kept ones back after
+`fm4_preset_values` (`fm4_convert.c` comes before `params.c` in the host builds). The editor's MENU id 21.
+
 **Six tracks** (phase 6; `core.h` `NTRK`, `NHEAVY`; mockups `design/mock_p6.py`, chosen 2026-10-10): T1–T6, T5 and T6 light.
-- **The voices** are still 8, shared by every track (`voice.c`): two more tracks add each block's fixed work, not voices.
+- **The voices** were still 8, shared by every track (`voice.c`): two more tracks added each block's fixed work, not
+  voices. (2.5: 16 voices, below.)
 - **Light tracks** (`engines.c` `eng_allowed`): T5 and T6 play every engine but PHYS and GRAIN, whose state is the big one (T1–T4 keep a PHYS-sized area each; a light track has DRUM's 1.8 KB, `eng_lite`).
   - The ENG knob and EDIT's KNOB 1 step past them; the PRESETS list leaves them out; the EDIT layer shows them dimmed, their keys dark.
   - Asking for one anyway (an EDIT key, a user sound, the editor) is refused with PHYS: T1-T4 ONLY in the header; nothing changes.
@@ -251,7 +353,7 @@ Add a combo here before adding it to the code. Every SHIFT combo has to appear o
   - FX: the effects as before; the mute row of six as GLO's.
   - PERFORM: black keys 1–6 stage the mutes.
 - **MIDI IN** (MENU > MIDI IN CH1-6, U3): channels 1–6 play T1–T6; 7–16 are free for other instruments. (1.3, from Felucca 1.5.5) MENU > MIDI > T1..T6 CHANNEL move a track to any channel (`seq.c` `trk_midi_ch`, settings bytes [15][6..11] as the distance up from the track's own, so 0 is CH1-6): MIDI IN hears the channels the tracks are on (the first track on a channel plays it), the keys play out on them, and a channel no track is on any more lets go of its notes at the next block (`midi_route_drop`). MIDI IN says TRACK once a track moved.
-- **MIDI OUT** (2.2): one funnel. Every note a track sounds passes voice.c `trk_note_on` / `trk_note_off` (steps, ratchets, flams, NUDGE, the arp, chords, chord follow after `fol_on`, keys, MIDI IN, STEP PREVIEW), and there `seq.c` `mo_note` sends it as NOTES OUT says (ALL; KEYS: `key_on` / `key_off`'s instead; OFF; an EXT track always, and it returns before any voice). A bitmap per track (`mn.on`) keeps what went out and on which channel (`mn.ch`): a note-off only for a note sent, on its channel; a channel changed, NOTES OUT changed, `trk_all_off` (a panic, CC120/123, a song entry's sound) or STOP end what is owed; a note-off the ring had no room for is kept (`mn.owe`) and sent the next block. `mn.quiet` around `midi_event`: MIDI IN is never sent back. The ring (`usb.c` `mo`, 128 events) holds each event with the TIMER4 tick its block plays at (`audio.c` sets `mo.tick` per block); `ep1_tx` (TIMER5, 2 kHz, also nested in a render as `uac_service`) sends the head events that are due, so MIDI leaves with its sound (to half a millisecond), not in a burst a half buffer early. A packet the host leaves for 20 ms is flushed (no app reading: an app opening later gets the present, not a stale note-on). CLOCK OUT: six pulses to the sequencer's own 1/16 (`div_samples(2)`, as the steps, the click and the launch points), each at its sample in the block (`mo_block_begin` / `mo_block_end`), Start in `seq_start` (the first pulse with step 0), Stop in `seq_stop` after the notes' ends. The SMK-37's TRS jack reads the same ring (`mo_trs`, its own read index), realtime ahead of the bytes queued. CC OUT: `midi_control.c` `cc_out_of` (learned first, else the standard map, unless learned elsewhere) and `cc_value` (`midi_cc_set`'s inverse), from the knob paths (`midi_learn.c` `cc_knob` via `ml_knob`, the SMK faders) and, on an EXT track, from a step's locks and automation (`mo_motion` around `motion_step`, before the step's notes). The settings: [15][17] (NOTES OUT, CLOCK OUT, CC OUT, THRU), [15][5] bits 3..7 (REMOTE), [1][1] (AUTO CHANNEL), the T1..T6 CHANNEL bytes' bits 6 (EXT) and 7 (OFF); 0 is every default, and older firmware reads the channels as they were. REMOTE presses go through the input HAL's debounce (`fm1_in.virt` / `vtap`), so they act as the contacts do. SPP: `midi_clock_spp` keeps it for Continue; `seq_locate` = `seq_start`, then each track's bookkeeping walked silently (whole cycles skipped). `events_block` and `keyboard_block` are their own functions, each with its own line in tests/target_budget.txt: inlined into the audio ISR's render loop, cold stubs moved before its head with every small change and read as loops.
+- **MIDI OUT** (2.2): one funnel. Every note a track sounds passes voice.c `trk_note_on` / `trk_note_off` (steps, ratchets, flams, NUDGE, the arp, chords, chord follow after `fol_on`, keys, MIDI IN, STEP PREVIEW), and there `seq.c` `mo_note` sends it as NOTES OUT says (ALL; KEYS: `key_on` / `key_off`'s instead; OFF; an EXT track always, and it returns before any voice). A bitmap per track (`mn.on`) keeps what went out and on which channel (`mn.ch`): a note-off only for a note sent, on its channel; a channel changed, NOTES OUT changed, `trk_all_off` (a panic, CC120/123, a song entry's sound) or STOP end what is owed; a note-off the ring had no room for is kept (`mn.owe`) and sent the next block. `mn.quiet` around `midi_event`: MIDI IN is never sent back. The ring (`usb.c` `mo`, 128 events) holds each event with the TIMER4 tick its block plays at (`audio.c` sets `mo.tick` per block); `ep1_tx` (TIMER5, 2 kHz, also nested in a render as `uac_service`) sends the head events that are due, so MIDI leaves with its sound (to half a millisecond), not in a burst a half buffer early. A packet the host leaves for 20 ms is flushed (no app reading: an app opening later gets the present, not a stale note-on). CLOCK OUT: six pulses to the sequencer's own 1/16 (`div_samples(2)`, as the steps, the click and the launch points), each at its sample in the block (`mo_block_begin` / `mo_block_end`), Start in `seq_start` (the first pulse with step 0), Stop in `seq_stop` after the notes' ends. The SMK-37's TRS jack reads the same ring (`mo_trs`, its own read index), realtime ahead of the bytes queued. CC OUT: `midi_control.c` `cc_out_of` (learned first, else the standard map, unless learned elsewhere) and `cc_value` (`midi_cc_set`'s inverse), from the knob paths (`midi_learn.c` `cc_knob` via `ml_knob`, the SMK faders) and, on an EXT track, from a step's locks and automation (`mo_motion` around `motion_step`, before the step's notes). The settings: [15][17] (NOTES OUT, CLOCK OUT, CC OUT, THRU), [15][5] bits 3..7 (REMOTE), [1][1] (AUTO CHANNEL), the T1..T6 CHANNEL bytes' bits 6 (EXT) and 7 (OFF); 0 is every default, and older firmware reads the channels as they were. REMOTE presses go through the input HAL's debounce (`fm1_in.virt` / `vtap`), so they act as the contacts do. (2.5) REMOTE's knobs: on its channel CC 116-119 KNOB 1-4, CC 85 ALGORITHM, 86 PRESETS, 87 SELECT, relative (1-63 right, 127-65 left, 0 and 64 nothing; Sloop maps no encoders, 120-127 are channel modes): `midi_control.c` `midi_event` adds the steps to `rmt_enc_q` (`ui.c`: `panel.c` `rmt_steps`, a static assert pins the encoders' order), `panel_enc` takes them with its own, the IRQs off. SPP: `midi_clock_spp` keeps it for Continue; `seq_locate` = `seq_start`, then each track's bookkeeping walked silently (whole cycles skipped); (2.5) `seq_locate_at` the same with a place a track (SHIFT + PLAY on SONG). `events_block` and `keyboard_block` are their own functions, each with its own line in tests/target_budget.txt: inlined into the audio ISR's render loop, cold stubs moved before its head with every small change and read as loops.
 - **MIDI LEARN** (1.3, from Felucca 1.5): MENU > MIDI > MIDI LEARN (OCT+) closes the MENU onto the page; a knob turned picks its parameter on the track it edits, the next CC heard is learned to it (`midi_learn.c`), OCT- clears the pick's, OCT+ is done; the footer's one line says what is picked and its CC, OCT+ DONE at the right. Ten entries of 3 bytes (code, CC, track) in engine 1's favourites row, bytes 2..31 (DIGITAL, retired: its stars only ever byte 0, still migrated); an engine parameter's code is 0xF8 + k, so moving P_E0 keeps them. A learned CC leaves the standard map. LEARN CLEAR forgets them; RESET SETTINGS too.
 - **The MENU scrolls** (1.3): a tab of more than six rows (MIDI's ten) shows six, the cursor's row the last shown once past them, a thin bar at the right for where they are. Rows with no value that OCT+ acts on (`menu_items.c` `menu_act`): CALIBRATION, RESET SETTINGS, ABOUT, MIDI LEARN and LEARN CLEAR (its count before the chevron); the key hint says START / STOP, CLEAR or OPEN.
 - **Projects:** SKF3, 2048 bytes, the six tracks and the scenes of six (`project.c` `proj_fmt_t`: SKF2's layout for six tracks). Older projects (SKF2, SKF1, Felucca's) load with T5 and T6 on their power-on sounds; SKF2 slots stay SKF2. ((2.0) SKF4 is written, SKF3 read; the older ones are the converter's.)
@@ -259,6 +361,57 @@ Add a combo here before adding it to the code. Every SHIFT combo has to appear o
 - **The pool** stays 64 patterns, shared by the six; six patterns can wait in RAM.
 - **Splash:** six blocks.
 - **Cost:** the audio interrupt's static cost 37,934 against a budget of 37,502 (within its margin); RAM .data+.bss 74.7 KB of 96 KB, the pool 339.8 KB of 348 KB.
+
+**16 voices** (2.5; `core.h` `NVOICE`, `VOICES_1CORE`, `VOICES_2CORE`; `voice.c` `voice_victim`): each track has 16
+voice slots and the tracks share 16 on two cores (8 on one, `VOICE_BUDGET`). The engines that cost more keep their
+caps (GRAIN and PHYS 3, VOICE 4, FM6 6), UNISON and SLICE 8 (`UNI_NV`, `SLC_NV`, so SLICE's windows stay `[8][64]`),
+the drums 8. A new note takes the quietest released voice first (`v_quieter`: the oldest was the rule), then as
+before; a steal within the track restarts the voice in place, counted by the console (`voices_restarted`). EDIT ›
+VOICE 2 shows 16. A reviewer's case (an ANALOG pad, 4-note chords every 2 s, a 3 s release): 2.2 on one core cut 25
+tails, on two 18; 2.5 on two cuts none. To pay for it:
+- **Every FM-1 on 2 CORES once** (`ui.c` `CPU2_DEFAULT`: the FM-1's 1, the SMK's and the browser's 0; `main.c`
+  `cpu2_move` before the second core starts, `unit_g_boot` marking it done): 1 CORE is 2.2 exactly. RESET SETTINGS
+  puts the default back.
+- **A track's block runs from RAM on both cores** (`AUDIO_RAM`: `mix_part`, `c1_parts` and the per-block helpers:
+  the matrix, SPREAD, DUCK, DRIVE, ENV 2, ENV SYNC, the lane pans); INSERT, the SLICER's steps, a user sample's mix,
+  `lfo_inc` and `mod_depth` stay in flash (`AUDIO_FAR`). 16 voices had made the slowest block 86 % of a half buffer
+  from flash; on the unit, the busiest project plays at about 46 %, its slowest block 2,202 µs of 2,902.
+- **RAM:** undo 8 → 6 levels (3,304 B), the 8 KiB gap after the RAM code given to it (`app.ld` RAMTEXT 0x7F00), the
+  RAM / pool border moved into .bss's spare (`build.py`'s limits with it).
+
+**Flash room** (2.5): the FM-1's dev image had to stay under its 581,564 B slot with the console in.
+- `tools/size_fns.py` `giant_helpers`: a main-loop helper called once, from one of the giant functions (`draw_graph`,
+  `ui_input`, `ed_handle`, `ui_draw_page`, `fm_draw`, `edit_param`), gets `noinline`. Inlined there, its locals grew
+  the giant's stack frame (`ed_handle` 1,948 B, `draw_graph` 1,680 B, `ui_input` 1,624 B: past the short offsets) and
+  cost more than its call. −2,960 B on the FM-1, measured on IR variants: 121 helpers tried one by one and together,
+  five smaller inlined (`KEEP_INLINE`), `fm1_main`'s larger out of line (left out). New helpers in those functions
+  are out of line by the same rule.
+- The FM-1's dev console is short (`console.c` `FELUCCA_CON_FULL`, the SMK's: `status`'s core lines, `memr`, `crash`,
+  `uboot` on the FM-1; `dbg`, `inp`, `params`, `flr`, `uac` and `usb` on the SMK): about 2.7 KB. Releases have none.
+
+**Timing, levels and the clock** (2.5's fixes):
+- **#107, tracks of different DIVs drifting apart:** each DIV's step was truncated on its own (at 120 BPM a 1/16
+  5,512 samples, a 1/8 11,025: a 1/16 track gained 2 samples a beat). The quarter is now a whole multiple of 24
+  samples (`core.h` `bpm_quarter`, `QUARTER24`), so every DIV's step is a whole share of it; the click, the launch
+  grid, CLOCK OUT and LFO SYNC count the same grid. tests/drift_test.c: 1/8, 1/16 and 1/8T over 30 simulated minutes
+  within a sample of the beat (fails on 2.2).
+- **#110, distortion in fading notes:** the mix floored 2 bits before LEVEL's and MASTER's products, and MASTER
+  lowered the level before the shift to 24 bits. Now one rounded cut a voice (`dsp.c` `voice_amp`, `voice_amp2`),
+  rounded level products (`fx.c` `lvl_mul`), the master on Q22 down to the DAC (`master_out`, `softclip22`; the DC
+  blocker and SPEAKER EQ's low cut at full precision), and USB's 16 bits dithered only while there is sound
+  (`usb.c` `uac_dith`), so silence stays 0. tests/tail_test.c (H3 against MASTER and SPEAKER EQ). A reverb's own tail
+  can still grow harmonics far down: #110 stays open for it.
+- **#111, an external clock's tempo jumping:** it was read from each 16th (6 pulses, whole milliseconds, the
+  timestamps late by up to a render): a swung clock read two tempos, a lost pulse about 110 BPM. Now a beat at a time
+  (`midi_clock.c` `midi_clock_tempo`), the mean of the last 8 beats, a beat half a pulse or more off the mean passed
+  over and two in a row taken as a new tempo (after SLOOP 2.7.2). midi_control_test's clock_tempo_test (±3 ms
+  jitter, a lost pulse, a ramp, 60:40 swing).
+- **#101, noise from INSERT's FLANG and CHOR on loud chords:** their line is kept at an eighth of the level (18 of 150
+  presets' chords had clipped it), the feedback's knee as before.
+- **TAKE:** a pass of the pattern that played before a switch is refused, not put into the one that came in.
+- **The installer** (`tools/fm1_install.py`): it hung closing the MIDI ports of a device that had just restarted into
+  its loader; those are now left as they are (`MidoLink.close(going)`), and the run ends with `os._exit`
+  (tests/install_test.py).
 
 **DRUM-X** (phase 7; engine 14, `eng_drumx.c`, `drumx_voice.c`, `ui_dx.c`): the drum engine of [JIANT FM](https://github.com/juanjiant-bit/JIANT) by juanjiant-bit (GPL-3.0-only), after the idea of Sonic Charge's Microtonic. It sits beside DRUM, which is unchanged: old sounds and projects play as before.
 - **A synthesized kit:** the same 8 lanes as DRUM (KICK SNARE CLAP CL HAT OP HAT TOM RIM BELL; BD SD CP CH OH TM RS CB on the grid). Each is a tuned oscillator (SIN, FM, MTL or BEL) with a pitch envelope, plus noise through a filter (LP, BP, HP), each with its envelope. Every sound has two patches, A and B, of five values: PITCH, P MOD, DECAY, NOISE, COLOR.
@@ -397,7 +550,7 @@ The colours differ in lightness as well as hue, and always appear with the track
   - (2.0, #35, the user's pick A of design/mockups/v2_kits.png) DRUM's KIT goes on to **USR1–USR3**, a user sample slot as the kit (`eng_drum.c` `drum_user`, `drum_smp`): each lane plays the slot's narrowest zone holding its key (`drum_user_zone`, the lanes' GM notes), the sample as recorded whatever the zone's root; the kit's and LANES' TUNE and DECAY (shorter only), LANES' LEVEL, LANE MIX's PAN, the open hat cut by the closed one, the grid, DUCK's KICK and DRIVE as on a synthesized kit; TONE under its middle a low-pass. A lane without a zone is silent, its fader and name dim (`ui_graph.c` `lane_fader_of`); the sound's name is the slot's (MY KIT) unless a user sound is loaded. The editor's Samples tab builds such a slot (Drum kit: a WAV a lane, cut to where the sound is, each with a level; one gain for the kit, so the files keep their levels to each other: `kitZones`).
   - A page that changes nothing on the track's engine is not there: ENV, ENV 2, VOICE, VOICE 2 and SCALE on DRUM and DRUM-X (`engine_t.oneshot`), ENV and ENV 2 on FM6 (`ownenv`); VOICE 2 is ALLOC, DTUNE and (1.3) SPREAD (PAN, MUTE: MIXER's). A card that does nothing there is dimmed: (2.0) MOD's routes the LFO to PITCH CUT SHAPE on the hits, the ENV's there and on FM6 (`mod_dead`; ENV DEST was hidden there), DRUM's KICK on a model kit, (1.3) LFO's RATE while LFO 2 SYNC is on, SPREAD on MONO and LEGATO. A button with no page says so (NO ENV ON DRUM); a page a track no longer has goes to its family's first (or HOME) and says so too.
   - Every family reopens the page it was left on (SAVE and GLO too), and the MENU closes back onto the page it was opened over.
-  - SAVE › TOOLS is gone (CLEAR is the REC and SEQ TOOLS layers', INIT the EDIT layer's), and so is GLO › SYSTEM: CLOCK and MIDI IN are MENU › CONTROL's ((1.3) MENU › MIDI's), TUNE MENU › AUDIO's, CPU (read only) MENU › SYSTEM's. (Skiff 1.3) CPU picks 1 CORE or 2 CORES (BETA, from the next power-on; RESTART until then), then the load: the second core renders tracks (fx.c mix_block: the split by the last block's cost, the sums per core, bit for bit as one core; tests/dualcore_test.c), and the voice budget is 12 instead of 8 while it runs (core.h VOICE_BUDGET). A core that misreads or stops answering is held: one core, CORE 2 FAILED, the row back to 1 CORE. (Skiff) CPU CLOCK, after CPU (SYSTEM's seven rows scroll): 360 MHZ (the boot stage's, the default) or 320 MHZ, JieLi's rated clock, switched at boot from RAM with the IRQs off, the cache and the flash controller retimed around the PLL change (curist's hal/fm1_clk320.h, hal/fm1_clk.h, main.c), the screen up, before the second core, the audio and USB; from the next power-on (RESTART, STOP while playing, as CPU). Clock registers not as the boot stage leaves them: not switched, the header says NO 320 MHZ and why, the row REFUSED; a reset during the switch is no failed boot, and no switch is tried again until power-off; a soft reset keeps the PLL, and a kept 320 is not switched again. ABOUT shows the clock (CPU 320 MHZ), the console's `status` cpu_mhz, clk320 and the loop-measured clk320_loop_mhz.
+  - SAVE › TOOLS is gone (CLEAR is the REC and SEQ TOOLS layers', INIT the EDIT layer's), and so is GLO › SYSTEM: CLOCK and MIDI IN are MENU › CONTROL's ((1.3) MENU › MIDI's), TUNE MENU › AUDIO's, CPU (read only) MENU › SYSTEM's. (Skiff 1.3) CPU picks 1 CORE or 2 CORES (BETA until 2.5, the FM-1's default since: 16 voices below; from the next power-on, RESTART until then), then the load: the second core renders tracks (fx.c mix_block: the split by the last block's cost, the sums per core, bit for bit as one core; tests/dualcore_test.c), and the voice budget is 12 instead of 8 while it runs ((2.5) 16, core.h VOICE_BUDGET). A core that misreads or stops answering is held: one core, CORE 2 FAILED, the row back to 1 CORE. (Skiff) CPU CLOCK, after CPU (SYSTEM's seven rows scroll): 360 MHZ (the boot stage's, the default) or 320 MHZ, JieLi's rated clock, switched at boot from RAM with the IRQs off, the cache and the flash controller retimed around the PLL change (curist's hal/fm1_clk320.h, hal/fm1_clk.h, main.c), the screen up, before the second core, the audio and USB; from the next power-on (RESTART, STOP while playing, as CPU). Clock registers not as the boot stage leaves them: not switched, the header says NO 320 MHZ and why, the row REFUSED; a reset during the switch is no failed boot, and no switch is tried again until power-off; a soft reset keeps the PLL, and a kept 320 is not switched again. ABOUT shows the clock (CPU 320 MHZ), the console's `status` cpu_mhz, clk320 and the loop-measured clk320_loop_mhz.
   - CLOCK, MIDI IN and TUNE are the unit's (`ui.c` `unit_g_*`, settings bytes [15][18..20]): a project still stores them (for older firmware) but a load leaves them; the first boot with U3 takes the restored session's.
 - **Sentence case** for the lines that explain, as the mockup's dialog and TAKE box: recording starts after 1, list ALL to add sounds, teach each button and knob. Titles, labels, values and key hints stay in capitals.
 - **Track numbers** (`icons.c` `cv_trk`): no cushions. The number stands alone in its track's colour, as on the HOME lanes: V where Felucca's 16 px cushion went (footer, MIXER, the GLO layer's SOLO keys), M where its 12 px one went (the GLO cards, the layers' mute keys). It's INK on a light tile or a held key, and DIM for a silent track. The TAKE box's chip, the number on its colour, is the one square, as in the mockup.
@@ -443,8 +596,15 @@ the grid, VHS snow, the high score table; `ui_neon.c`):
   selected: dark snow on its band).
 - **The scope** (HOME tapped on HOME; an engine's EDIT without a chart): the sound as the skyline: the wave a ridge of
   vector mountains over the horizon, the striped sun behind it swelling with how loud it is, the grid floor running
-  toward the viewer. CRYPT's: the sound burns: fire up from the foot as tall as the wave (ember, amber, gold, flame),
-  flickering, behind it a skull whose eyes go from ember to flame with the loudness.
+  toward the viewer. CRYPT's (2.5, after the user's Ossuary synth): six creatures in a row, a track's each, always the
+  same (1 a skull, 2 a ghost, 3 a candle, 4 a witch, 5 a hooded monk, 6 a demon), bone in tiny ASCII ramp glyphs
+  (`ui_crypt.c` `cr_creature`, their art in `tools/gen_sprites.py`), the track's number under each: a track playing
+  surges out of the dark (its glyphs up the ramp), its eyes burning in its colour, the candle's flame flickering, fuller
+  the louder; loud, its rows slip sideways and its glyphs break; silent, a faint outline; muted, its eyes crossed out
+  (MENU › LARGE's strip: the fire of before, the wave burning up from the foot). SKIFF's (2.5, `ux.skiff`): the logo's
+  sea (design/logo/make_logo.py): 18 columns of rounded cells, the tracks' colours in bands (track 1 at the left), each
+  band's swell as high as its track is loud and rolling on, a muted or silent track's band grey; the logo's skiff
+  sailing across over and over, on the highest crest under it.
 - **MENU:** an arcade's high score table: ranks 1ST..6TH, slanted, in the tracks' colours; dotted leaders; values cyan;
   the selected row and tab a sunset bar. The dialog: night glass in a double neon frame, the page under it paused like a
   tape (every other row darker); CANCEL lit cyan, the action red neon. The splash: the striped sun between palms, the
@@ -481,9 +641,11 @@ collisions, dark matter, the hazard sign, the polar scope; `ui_quark.c`, its cir
   CHORUS's copy ends in the electron, its FEEDBACK copy dotted; GLOBAL, FX's sends, LANES, WHEEL and SLICER calorimeter towers;
   the roll's notes bubble tracks from their vertex (its cursor in gold corners); the drum grid's hits and PATTERN's steps
   bunches. The scope (HOME tapped on HOME; 1.3.3, Q6): the 1.2 tour video's event display, live: each note a track
-  plays a collision at the vertex, three particles flying out in the track's colour and curling in the field, then
-  fading; round the beam pipe's rings the calorimeter, eight towers a track, as loud as the track is; the vertex gold,
-  brighter just after a hit. (It replaced Q5's wave wrapped round the detector.)
+  plays a collision at the vertex, three particles flying out in the track's colour and curling in the field; (2.5)
+  they live as long as the note sounds: lit while it plays, fading with its release (a hit's as it rings out), gone
+  with its voice (a sounding voice an event; UNISON's and MONO's one); round the beam pipe's rings the calorimeter,
+  eight towers a track, as loud as the track is; the vertex gold, brighter just after a hit. (It replaced Q5's wave
+  wrapped round the detector.)
 
 **The web editor looks like the unit** (1.0; `design/editor_looks.png` A BLOCKS, the user's pick over a softer app
 look): the night, each section a tile, white values, Barlow Condensed for headings, labels and values, each track its
@@ -520,6 +682,7 @@ asked first, as on the device. Nothing of these is pushed: the editor reads what
 | Name | The sound (M) over its engine (S), from x 28 |
 | Step cells | 16 cells of 6×16 px from x 100, a 2 px gap, 2 px more between beats; an empty step is a LINE block |
 | Playhead | A 1 px line before the step playing |
+| MENU › LARGE (2.5, #97, the user's 8C) | Under the tall cards the strip names the six sounds, two columns of three, the selected one a band of its colour, each theme's lanes as HOME's (`ui_graph.c` `graph_names`); HOME tapped: the scope, as before. Redrawn on a change (`home_sig`), not every other frame as the scope. Before, LARGE showed the scope there and the footer named the selected sound only: a reporter lost the instrument list |
 
 **Still open:**
 - the 20 MHz LCD clock, `LCD_BAUD=2`, to try on hardware.

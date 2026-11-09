@@ -39,6 +39,7 @@
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"   /* SIE register macros (never touched here) */
 #include "../firmware/src/usb.c"
+static const uint8_t zlo[2 * 4096];                    /* ((2.5) uac_tap's bits below Q15: none, the words exact) */
 
 static int fails;
 static int check(const char *what, int ok)
@@ -195,7 +196,7 @@ static void render_block(void)
         blk[2 * i] = (int16_t)prod_n;
         blk[2 * i + 1] = (int16_t)~prod_n;
     }
-    uac_tap(blk, 32);
+    uac_tap(blk, zlo, 32);
 }
 
 static void take_packet48(void);
@@ -448,7 +449,7 @@ static void rs_reset(void)
 static uint32_t rs_block(const int32_t *in, uint32_t n, int32_t *l, int32_t *r)
 {
     uint32_t k = 0;
-    uac_tap(in, n);
+    uac_tap(in, zlo, n);
     while (ua_r != ua_w) {
         uint32_t f = ua_ring[ua_r++ & (UA_N - 1u)];
         if (l)
@@ -680,7 +681,7 @@ static void test_resampler(void)
         i0 = instr_now();
         clock_gettime(CLOCK_MONOTONIC, &a);
         for (n = 0; n < frames_in; n += 32u) {
-            uac_tap(blk, 32);
+            uac_tap(blk, zlo, 32);
             out += ua_w - ua_r;
             ua_r = ua_w;
             __asm__ volatile("" : : "r"(blk) : "memory");

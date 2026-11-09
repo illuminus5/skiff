@@ -14,7 +14,7 @@ keyboard; the Starrykey 37 Play is not supported yet.
    its Bluetooth pairings, which no download can replace. Skiff never writes them, but a backup is the way back if
    anything else goes wrong.
 3. **Install:** the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) (Chrome or Edge) finds the
-   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.2-smk37.fwsc` (`-elite`, `-mke` for those
+   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.5-smk37.fwsc` (`-elite`, `-mke` for those
    models, not tried on a keyboard yet). About two minutes.
 
 Keep it plugged in and switched on while it writes. If the cable or the power is cut anyway, the keyboard stays in
@@ -29,7 +29,7 @@ This needs a computer with Windows or Linux, Python 3, this repository's `tools/
 reads the whole 1 MiB through the chip's built-in boot mode:
 
 1. With the keyboard on M-VAVE's V016 (or on Skiff) and connected:
-   `python tools/fm1_install.py --uboot skiff-2.2-smk37.fwsc`. The keyboard starts Skiff's update loader without
+   `python tools/fm1_install.py --uboot skiff-2.5-smk37.fwsc`. The keyboard starts Skiff's update loader without
    writing the firmware, then switches to the chip's boot mode: the computer sees a USB disk named `WL82 UBOOT1.00`.
    **If Windows offers to format it, cancel.**
 2. In an **administrator** terminal (on Linux: with `sudo`, and `/dev/sgN` as the device), from jl-uboot-tool's folder,
@@ -198,6 +198,10 @@ loader 7,859 B (the limit: 7,936 B, below).
 - **Console** (MENU > USB SERIAL, in a build without `--release`: Skiff 2.0's releases have no console): `smk`
   (inputs, the store's owner state, the calibration marker), `padtest`,
   `leds`, `flr 0xC1224 8` (should read `trimdat`).
+- **2.5 on the SMK:** the same firmware, with the SMK's names where 2.5 shows a control: the PRESETS card says K4
+  (DELAY's MODE, PATTERN's DIR, INSERT's MIX), the stopped capture's hint says SHIFT + BT: FREE TAKE, SONG's SHIFT map
+  + PLAY FROM HERE and + PARA CLEAR (KNOB BANK as SHIFT). MENU > CONTROL > KEEP SENDS sits before KEY VELOCITY. The
+  SMK keeps its CPU setting: 2.5 moves only FM-1s to 2 CORES; on 1 CORE 8 voices sound at once, on 2 CORES 16.
 
 ## The flash layout (the storage remap)
 

@@ -87,7 +87,7 @@ static __attribute__((noinline)) void analog_render_x(track_t *t, voice_t *v, in
         if (drv)
             s = softclip(((s >> 2) * (drive >> 2)) >> 11);
         s = soft_knee(tsvf_lp(&flt, s >> 1, &ic1, &ic2), 16000) << 1;
-        out[i] += voice_amp(s, m, i) << 1;
+        out[i] += voice_amp2(s, m, i);
     }
     v->ph[0] = ph0;
     v->ph[1] = ph1;
@@ -156,7 +156,7 @@ static inline __attribute__((always_inline)) void analog_osc(track_t *t, voice_t
             }
             s = y << 1;
         }
-        out[i] += voice_amp(s, m, i) << 1;
+        out[i] += voice_amp2(s, m, i);
     }
     v->ph[0] = ph0;
     v->ph[1] = ph1;

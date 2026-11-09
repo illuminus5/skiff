@@ -56,7 +56,7 @@ static __attribute__((noinline)) void duck_block(uint32_t n)
 }
 
 /* track k's signal this block, its gain ramped from 1 - r0 to 1 - r1 */
-static __attribute__((noinline)) void duck_apply(uint32_t k, int32_t *b, uint32_t n)
+static __attribute__((noinline)) AUDIO_RAM void duck_apply(uint32_t k, int32_t *b, uint32_t n)
 {
     uint32_t i;
     int32_t g = 32768 - duck[k].r0, d = (duck[k].r0 - duck[k].r1) / (int32_t)n;

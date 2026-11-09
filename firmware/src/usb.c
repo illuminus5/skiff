@@ -232,7 +232,7 @@ static const uint8_t *const mset_io;
 enum { NO_ALL, NO_KEYS, NO_OFF };                  /* NOTES OUT ([15][17] bits 0..1; 3: ALL) */
 #define MO_CLOCK_OFF 4u                            /* CLOCK OUT OFF */
 #define MO_CC_ON 8u                                /* CC OUT ON */
-#define MO_THRU_ON 16u                             /* THRU ON */
+#define MO_THRU_ON 16u                             /* THRU ON ((2.5) bit 5: MENU > CONTROL > KEEP SENDS, ui.c) */
 static uint32_t mset_ch(uint32_t v) { return v >= 1u && v <= 16u ? v : 0u; }   /* REMOTE, AUTO: 1..16, else OFF (0) */
 
 /* queue an event (a USB-MIDI packet) due at TIMER4 tick due: 0 when the ring is full (nothing changed). The FM-1 with
@@ -1196,6 +1196,24 @@ static void ep3_tx(void)                                /* <= 63 bytes per packe
 }
 #endif
 
+static inline int32_t uac_s16(int32_t v)
+{
+    return v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+}
+/* (2.5, #110) USB's 16-bit word: the master v (Q15) and its 7 bits below (fx.c dac_lo), rounded with a triangular
+ * dither of +-1 LSB (two uniform 0..127 from one LCG step, its top bits), so a fading note's last bits turn into a
+ * steady hiss instead of an error tied to the note. A word with nothing below it (USB LEVEL FIXED, silence) stays as it
+ * is. One generator, the audio ISR's (core 0): the same output for the same music */
+static uint32_t uac_rng = 0x2545F491u;
+static inline int32_t uac_dith(int32_t v, uint32_t lo)
+{
+    int32_t x = v * 128 + (int32_t)lo;
+    if (!lo)
+        return v;
+    uac_rng = uac_rng * 1664525u + 1013904223u;
+    return (x + 64 + (int32_t)(uac_rng >> 25) + (int32_t)((uac_rng >> 18) & 127u) - 127) >> 7;
+}
+
 #if FELUCCA_UAC
 /* ---- the audio input: audio.c produces (render start, then each block), TIMER5 consumes ---- */
 static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, before a half buffer renders */
@@ -1235,17 +1253,12 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         uac.fill_hi = fill;
 }
 
-static inline int32_t uac_s16(int32_t v)
-{
-    return v > 32767 ? 32767 : v < -32768 ? -32768 : v;
-}
-
 #if FELUCCA_UAC_48K
 /* 44.1 -> 48 kHz (x 160 / 147), one block: each input frame enters the history, then the 1 or 2 output
  * frames whose newest input it is: phase ph, the window of UAC_FIR_N frames ending at it, the taps of
  * phase ph (or of 159 - ph backwards: the prototype is symmetric), Q15 ((Skiff 2.0) was Q30) into
  * 64-bit sums. */
-static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
+static __attribute__((noinline)) void uac_tap48(const int32_t *out, const uint8_t *lo, uint32_t n)
 {
     uint32_t w = ua_w, i, j, k = 0, h = rs.w, ph = rs.ph;
     if (UA_N - (w - ua_r) < n + n / 8u + 2u) {         /* nobody reads: drop the block (<= n * 160 / 147 + 1) */
@@ -1254,7 +1267,8 @@ static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
     }
     for (i = 0; i < n; i++) {
         uint32_t s = h & (RS_H - 1u);
-        int16_t l = (int16_t)uac_s16(out[2u * i]), r = (int16_t)uac_s16(out[2u * i + 1u]);
+        int16_t l = (int16_t)uac_s16(uac_dith(out[2u * i], lo[2u * i])),   /* ((2.5, #110)) */
+                r = (int16_t)uac_s16(uac_dith(out[2u * i + 1u], lo[2u * i + 1u]));
         rs.l[s] = rs.l[s + RS_H] = l;
         rs.r[s] = rs.r[s + RS_H] = r;
         h++;
@@ -1300,14 +1314,15 @@ static __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
 }
 #endif
 
-static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   /* audio ISR: one block (Q15) */
+static __attribute__((noinline)) void uac_tap(const int32_t *out, const uint8_t *lo, uint32_t n)   /* audio ISR: a
+                                                       * block, Q15 and ((2.5) fx.c dac_lo) its 7 bits below */
 {
     uint32_t w = ua_w, i;
     if (!uac.feed)
         return;
 #if FELUCCA_UAC_48K
     if (uac.ring48) {
-        uac_tap48(out, n);
+        uac_tap48(out, lo, n);
         return;
     }
 #endif
@@ -1328,8 +1343,8 @@ static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   
     }
 #else
     for (i = 0; i < n; i++)
-        ua_ring[(w + i) & (UA_N - 1u)] = (uint32_t)(uint16_t)uac_s16(out[2u * i]) |
-                                         (uint32_t)(uint16_t)uac_s16(out[2u * i + 1u]) << 16;
+        ua_ring[(w + i) & (UA_N - 1u)] = (uint32_t)(uint16_t)uac_s16(uac_dith(out[2u * i], lo[2u * i])) |
+                                         (uint32_t)(uint16_t)uac_s16(uac_dith(out[2u * i + 1u], lo[2u * i + 1u])) << 16;
 #endif
     RING_PUBLISH();
     ua_w = w + n;

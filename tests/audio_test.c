@@ -22,7 +22,7 @@ void isr_alnk0(void) {}
 #define FELUCCA_UAC 1                                  /* audio.c taps USB audio: here into host_tap */
 static int32_t host_tap[2 * 64];
 static uint32_t host_tap_n;
-static void uac_tap(const int32_t *out, uint32_t n) { memcpy(host_tap, out, 8u * n); host_tap_n = n; }
+static void uac_tap(const int32_t *out, const uint8_t *lo, uint32_t n) { (void)lo; memcpy(host_tap, out, 8u * n); host_tap_n = n; }
 static void uac_render_start(void) {}
 #include "../firmware/src/audio.c"
 enum { FM1_ADC_BATT = 3, FM1_ADC_MASTER = 4 };
@@ -90,15 +90,15 @@ static void overload(void)
     trk[0].p[P_VOICE] = V_UNISON;
     trk_note_on(&trk[0], 55, 100);
     shed_voice(); mix_block(out, CTL);
-    check("UNISON loses an extra voice and retains its lead", trk[0].v[0].active && trk[0].v[0].gate && voices_busy() == NVOICE - 1u);
+    check("UNISON loses an extra voice and retains its lead", trk[0].v[0].active && trk[0].v[0].gate && voices_busy() == UNI_NV - 1u);
 
     for (mode = V_MONO; mode <= V_LEGATO; mode++) {
         fresh(); trk[0].p[P_VOICE] = V_POLY;
-        for (i = 0; i < NVOICE; i++) trk_note_on(&trk[0], 48u + 2u * i, 100);
+        for (i = 0; i < VOICE_BUDGET; i++) trk_note_on(&trk[0], 48u + 2u * i, 100);
         trk[0].p[P_VOICE] = (int16_t)mode;
         shed_voice(); mix_block(out, CTL);
         check("overload can reclaim stale POLY voices after a MONO / LEGATO change",
-              shed_count == 1u && trk[0].v[0].gate && voices_busy() == NVOICE - 1u);
+              shed_count == 1u && trk[0].v[0].gate && voices_busy() == VOICE_BUDGET - 1u);
     }
 
     fresh();
@@ -109,6 +109,17 @@ static void overload(void)
     lead->env = 10000; extra->env = 10;
     shed_voice();
     check("released voices shed the quieter tail first", extra->stage == 4u && lead->stage != 4u);
+
+    fresh();                                            /* (2.5) the budget's steal takes the quietest tail too */
+    trk[0].p[P_VOICE] = V_POLY;
+    for (i = 0; i < VOICE_BUDGET; i++) trk_note_on(&trk[0], 48u + 2u * i, 100);
+    lead = held(&trk[0], 48); extra = held(&trk[0], 50);
+    trk_note_off(&trk[0], 48); trk_note_off(&trk[0], 50);
+    lead->env = 1 << 22; extra->env = 1 << 18;          /* 48 the older and louder, 50 newer and quieter */
+    lead->age = 1u; extra->age = 2u;
+    trk_note_on(&trk[1], 72, 100);                      /* the budget full: one released voice goes */
+    check("(2.5) over the budget a new note takes the quietest released voice, not the oldest",
+          extra->stage == 4u && lead->stage == 3u && voices_busy() == VOICE_BUDGET);
 }
 static void dma(void)
 {
@@ -168,7 +179,8 @@ static double usb_run(uint32_t fixed, uint32_t master, int dac_is_tap_scaled_ok[
     for (b = 0; b < 400u; b++) {                       /* ~0.3 s */
         audio_block(out, 32);
         for (i = 0; i < 64u; i++) {
-            int32_t want = fixed ? ((host_tap[i] * (int32_t)master) >> 12) << OUT_SHIFT : host_tap[i] << OUT_SHIFT;
+            int32_t want = fixed ? (host_tap[i] * (int32_t)master) >> (12 - OUT_SHIFT)   /* ((2.5, #110) all 22 bits) */
+                                 : (host_tap[i] << OUT_SHIFT) + dac_lo[i];
             if (out[i] != want) dac_is_tap_scaled_ok[0] = 0;
         }
         if (b >= 100u) { usb += block_rms(host_tap, 32); dac += block_rms(out, 32) / (1 << OUT_SHIFT); }

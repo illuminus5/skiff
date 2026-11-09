@@ -384,10 +384,11 @@ class MidoLink:
         while not self.q.empty():
             self.q.get_nowait()
 
-    def close(self):
-        if self.lost:                       # the device is gone: closing its ports crashes rtmidi on Windows
-            _ABANDONED.extend((self.inp, self.out))     # (heap corruption, 0xC0000374); main() exits past them
-            return
+    def close(self, going=False):
+        """going: the device restarts now (it answered a FINISH, or took the UBOOT key)"""
+        if going or self.lost:              # the device is gone or going: closing its ports crashes rtmidi on
+            _ABANDONED.extend((self.inp, self.out))     # Windows (heap corruption, 0xC0000374), or blocks for good
+            return                                      # while the device leaves; main() exits past them
         for p in (self.inp, self.out):
             try:
                 p.close()
@@ -523,7 +524,7 @@ class Updater:
         time.sleep(DELAY["start"])
         served, finished, lost = self.serve(dev.link, image, FINISH_CHECK, DELAY["idle_check"],
                                             lambda k, addr, n: step("check", k))
-        dev.link.close()
+        dev.link.close(going=finished)      # (checked: it restarts into the loader)
         if not finished:
             raise InstallError("lost" if lost else "stopped",
                                f"the device {'was disconnected' if lost else 'stopped answering'} after "
@@ -544,7 +545,7 @@ class Updater:
         meter = WriteMeter(image)
         served, finished, lost = self.serve(ota.link, image, FINISH_WRITE, DELAY["idle_write"],
                                             lambda k, addr, n: step("write", meter.add(addr, n)))
-        ota.link.close()
+        ota.link.close(going=finished)      # (written: it restarts into the new firmware)
         if not finished:
             raise InstallError("lost" if lost else "stopped",
                                f"the loader {'was disconnected' if lost else 'stopped answering'} after "
@@ -597,7 +598,7 @@ class Updater:
         ota = self.staged(dev, image, product, step)
         step("uboot")
         ok = ota.link.send(UBOOT)
-        ota.link.close()
+        ota.link.close(going=ok)            # (the loader leaves for the boot ROM)
         if not ok:
             raise InstallError("lost", "the loader was disconnected before the UBOOT key was sent")
 

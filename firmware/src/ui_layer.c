@@ -319,6 +319,23 @@ static void layer_show(void)
     }
 }
 
+/* (2.5) the first phrase played stopped (8 notes since the stop: take.c's log, an entry for each start and end) says
+ * once how to keep it (ui_take.c's FREE TAKE); bit 0 of layer_seen (no layer's). Not over a message, a dialog, the
+ * menu; MENU > HINTS OFF: never */
+static void free_hint(void)
+{
+    if ((layer_seen & 1u) || song.playing || free_n - free_n0 < 16u || ui.msg_t || ui.confirm || ui.menu || ui_hints_off)
+        return;
+    layer_seen |= 1u;
+    settings_save();
+#if BOARD_SMK37
+    ui_message("SHIFT + BT: FREE TAKE");               /* (the SMK's SAVE: BT) */
+#else
+    ui_message("SHIFT + SAVE: FREE TAKE");
+#endif
+    ui.msg_t = 130;                                     /* (as a layer's hint, ~2 s) */
+}
+
 /* a tap: the button's page; the hint until its layer has been opened once (unless the tap said something; never
  * over a dialog or the menu) */
 static void layer_tap(uint32_t l)
@@ -1407,7 +1424,8 @@ static void shift_map(smap_t *m)
              drum = drum_track(TSEL);
     static const char SND[] = "SOUND";              /* (PRESETS' job on most pages: not this page's own) */
     const sheet_t *sh = sheet_of(g);
-    const char *pj = ui.home || g == GR_BROWSE ? SND : sel ? "STEP" : g == GR_STEPS ? "DIR" :
+    const char *pj = ui.home || g == GR_BROWSE ? SND : sel ? "STEP" : g == GR_STEPS ? "DIR" : g == GR_DELAY || g == GR_FXDLY ? "MODE" :
+                     g == GR_INS ? "MIX" :            /* ((2.5) INSERT 2's page before) */
                      g == GR_USER || g == GR_SLOTS ? "SLOT" : g == GR_BANK ? "PATTERN" : g == GR_EVENTS ? "ROW" :
                      g == GR_SONG ? "ENTRY" : sh ? sh->pj : g == GR_SLICES ? "SLICE" : SND;
     static const smap_t ALL[9] = {{"BUTTONS", "PAGES", 0}, {"HOLD ONE", "ITS LAYER", 0}, {"HOLD SAVE", "UNDO", 0},
@@ -1438,6 +1456,10 @@ static void shift_map(smap_t *m)
         m[6 + i] = ALL[i < 3u && sel ? 6u + i : i];
     if (sel)                                         /* ((2.0) there SHIFT + EDIT deletes, ui_input.c sel_delete) */
         m[11] = (smap_t){"+ EDIT", "DELETE", 2};
+    if (g == GR_SONG) {                              /* ((2.5) SONG: + PLAY the song from the entry, + EDIT empties it) */
+        m[6] = (smap_t){"+ PLAY", "FROM HERE", 2};
+        m[11] = (smap_t){"+ EDIT", "CLEAR", 2};
+    }
 #if BOARD_SMK37
     {   /* (SMK-37 Pro, SMK37_UX.md question 10) the controls by the SMK's printed names: K2 SELECT, K3 ALGORITHM, K4
          * PRESETS, PARA EDIT, BT SAVE, SEQ REC REC, KNOB BANK SHIFT. PLAY stays PLAY: the SMK prints a play sign there,

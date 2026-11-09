@@ -40,8 +40,10 @@ static double tone_db(uint32_t mode, double f)     /* gain of a -9 dB sine throu
         int32_t l = (int32_t)(6000.0 * sin(2.0 * M_PI * f * i / FS)), r = l;
         if (i >= skip)
             in += (double)l * l;
+        l *= 128;                                       /* ((2.5) master_out on Q22) */
+        r *= 128;
         master_out(&l, &r);
-        y[i] = l;
+        y[i] = l >> 7;
     }
     for (out = 0, i = skip; i < n; i++)
         out += (double)y[i] * y[i];
@@ -82,7 +84,10 @@ int main(void)
         lim_env = LIM_T;
         for (i = 0; i < FS; i++) {
             int32_t l = i < FS / 2u ? (int32_t)(12000.0 * sin(2.0 * M_PI * 55.0 * i / FS)) : 0, r = l;
+            l *= 128;                                   /* ((2.5) master_out on Q22) */
+            r *= 128;
             master_out(&l, &r);
+            l >>= 7;
             buf[mode][i] = l;
             if (mode == 2u) {
                 peak = l < 0 ? (-l > peak ? -l : peak) : (l > peak ? l : peak);

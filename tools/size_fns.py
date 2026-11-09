@@ -6,7 +6,8 @@ minsize (about -Oz) while everything else (the sound, render and ISR code, the f
 the main loop) keeps -Os. The JieLi clang 4 has no '#pragma clang attribute' and its minsize
 attribute is an error on variables, so build.py compiles felucca.c to LLVM IR without the
 optimizer, this script adds 'minsize' to those definitions, and the IR is then compiled at -Os
-(without the edit, that round trip is byte-identical to compiling felucca.c directly).
+(without the edit, that round trip is byte-identical to compiling felucca.c directly). (Skiff 2.5) Of those, a
+helper that only one of GIANTS calls also gets 'noinline' (giant_helpers).
   size_fns.py IN.ll OUT.ll"""
 import re
 import sys
@@ -75,19 +76,39 @@ def isr_reach(ir):
     return seen
 
 
+# (Skiff 2.5) the giant main-loop functions: a helper that only one of them calls, inlined there, adds its locals to
+# that frame (ed_handle's 1,948 B, draw_graph's 1,680 B, ui_input's 1,624 B: past the short stack offsets) and costs
+# more than the call it saves. Out of line, all of them: ~3 KB less (the FM-1 dev image, 2026-11-08: 121 helpers
+# measured one by one and together; KEEP_INLINE the five that are smaller inlined; fm1_main's were larger out of line)
+GIANTS = ("draw_graph", "ui_input", "ed_handle", "ui_draw_page", "fm_draw", "edit_param")
+KEEP_INLINE = ("midi_pc_poll", "unit_g_poll", "graph_follow", "scr_input", "rec_clear_poll")
+IR_CALL = re.compile(r"\bcall [^@\n]*@\"?([\w.]+)\"?\(")
+
+
+def giant_helpers(ir):
+    """the functions called once in all, from one of GIANTS (but KEEP_INLINE)"""
+    body = {m.group(1): m.group(2) for m in IR_BODY.finditer(ir)}
+    calls = {}
+    for f in IR_CALL.findall(ir):
+        calls[f] = calls.get(f, 0) + 1
+    return {f for g in GIANTS for f in IR_CALL.findall(body.get(g, "")) if calls[f] == 1 and f not in KEEP_INLINE}
+
+
 def main(src, dst):
     ir = Path(src).read_text()
     isr = isr_reach(ir)
     names, hit = size_names() - isr, set()
+    out = giant_helpers(ir) & names
 
     def mark(m):
         if m.group(2) not in names:
             return m.group(0)
         hit.add(m.group(2))
-        return m.group(1) + " minsize" + m.group(3)
+        return m.group(1) + " minsize" + (" noinline" if m.group(2) in out else "") + m.group(3)
     Path(dst).write_text(IR_DEF.sub(mark, ir))
     print(f"size: {len(hit)} main-loop functions built for size ({len(names) - len(hit)} not in this build; "
-          f"{len(size_names() & isr)} reached from an interrupt kept -Os)")
+          f"{len(size_names() & isr)} reached from an interrupt kept -Os; {len(out & hit)} of the giants' helpers "
+          f"out of line)")
     return 0
 
 

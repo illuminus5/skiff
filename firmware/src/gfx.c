@@ -128,6 +128,7 @@ static struct {
     uint8_t light, crypt, neon;  /* (Skiff) THEME CRYPT, its own font and widgets (C2, C3); NEON, CRYPT's font and its
                                   * own widgets (design/mock_neon.py) */
     uint8_t quark;               /* (Skiff) THEME QUARK: Skiff's font, its own widgets (design/mock_quark.py) */
+    uint8_t skiff;               /* (2.5) THEME SKIFF: its scope the logo's sea (ui_graph.c sk_sea) */
     uint32_t gen;                /* bumped by palette_set (the text ramps follow) */
 } ux;
 /* The look (Skiff, DESIGN.md: BLOCKS; U2: the only one, FLAT and LINE retired): SURF tiles with square corners on the
@@ -179,6 +180,7 @@ static void palette_set(uint32_t i)
     ux.crypt = i == UI_CRYPT_INDEX;
     ux.neon = i == UI_NEON_INDEX;
     ux.quark = i == UI_QUARK_INDEX;
+    ux.skiff = i == UI_SKIFF_INDEX;
     uf.f = UF_FACE[ux.crypt || ux.neon];         /* (CRYPT, NEON: the pixel faces) */
     uf.cap = UF_CAP[ux.crypt || ux.neon];
     ux.bg = p->bg; ux.surf = p->surf; ux.text = p->text; ux.theme = p->theme;
@@ -799,7 +801,17 @@ static int32_t cv_free_text(int32_t x, int32_t y, const aafont_t *f, const char 
  * a dialog's buttons; a red M for a mute): the label in S on the keycap's band, in the keycap's colour (KEY: MID) */
 #define KC_TY (HALF_UP(KC_H - AF_S_CAP_H + 1) - AF_S_CAP_Y)   /* the word's pen in the keycap's band (a row left over
                                                                * below: where the keycap's own label sat) */
-static int32_t kc_w(uint32_t id) { return id < KC_COUNT ? text_w(&AF_S, KC[id].label) : 0; }
+/* (2.5) a control by the name the unit prints: on the SMK-37 Pro, K2 K3 K4 do SELECT, ALGORITHM, PRESETS (panel.c),
+ * as SHIFT's map says them */
+static const char *kc_name(uint32_t id)
+{
+#if BOARD_SMK37
+    if (id == KC_SELECT || id == KC_ALGO || id == KC_PRESETS)
+        return KC[id == KC_SELECT ? KC_K2 : id == KC_ALGO ? KC_K3 : KC_K4].label;
+#endif
+    return KC[id < KC_COUNT ? id : 0u].label;
+}
+static int32_t kc_w(uint32_t id) { return id < KC_COUNT ? text_w(&AF_S, kc_name(id)) : 0; }
 static uint32_t kc_cat(char *d, uint32_t k, uint32_t n, const char *s)   /* s after d[0..k), cut to n; the new k */
 {
     while (*s && k + 1u < n)
@@ -811,9 +823,8 @@ static uint32_t kc_cat(char *d, uint32_t k, uint32_t n, const char *s)   /* s af
  * behind its corners; returns its right edge */
 static int32_t cv_keycap(int32_t x, int32_t y, uint32_t id, uint16_t fill, uint16_t ink, uint16_t under)
 {
-    const kc_t *k = &KC[id < KC_COUNT ? id : 0u];
     (void)ink;
-    return cv_text_on(x, y + KC_TY, &AF_S, k->label, fill == T_KEY ? T_MID : fill, under);
+    return cv_text_on(x, y + KC_TY, &AF_S, kc_name(id), fill == T_KEY ? T_MID : fill, under);
 }
 
 /* a key hint: the keycap, then what it does (S, TEXT); unavailable: a DIM keycap and a DIM word. The word sits on
@@ -822,7 +833,7 @@ static int32_t cv_keycap(int32_t x, int32_t y, uint32_t id, uint16_t fill, uint1
 /* (Skiff) BLOCKS: a hint is one line of words, "KEY: WHAT", as the mockup's PRESETS: STEP */
 static void kh_plain(char *b, uint32_t n, uint32_t id, const char *act)
 {
-    uint32_t k = kc_cat(b, 0, n, KC[id < KC_COUNT ? id : 0u].label);
+    uint32_t k = kc_cat(b, 0, n, kc_name(id));
     if (act && act[0])
         kc_cat(b, kc_cat(b, k, n, ": "), n, act);
 }
@@ -905,7 +916,7 @@ static void kc_words(char *d, uint32_t n, const char *s, int colon)
             d[k++] = *s++;
             continue;
         }
-        k = kc_cat(d, k, n, KC[id].label);
+        k = kc_cat(d, k, n, kc_name((uint32_t)id));
         s += len;
         if (colon && s[0] == ' ' && ((s[1] >= 'A' && s[1] <= 'Z') || (s[1] >= 'a' && s[1] <= 'z')) && k + 1u < n)
             d[k++] = ':';

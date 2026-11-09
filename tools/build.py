@@ -316,15 +316,16 @@ def check(img, syms, dis, rt):
     def sym(name):
         mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)
         return int(mm.group(1), 16) if mm else 0
+    ram_len, pool_len, rt_len = 92 * 1024, 0x58000, 0x7F00   # (2.5) app.ld's RAM, POOL and RAMTEXT
     bss = sym("_bss_end") - 0x01C08000
     pool = sym("_pool_end") - sym("_pool_start")
     rtx = sym("_ramx_end") - sym("_rt_start")      # (Skiff) the RAM code and .ramx after it (app.ld)
-    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of 98304; pool {pool} B of {0x57000}; "
-                 f"RAM code + .ramx {rtx} B of {0x6000}")
-    if bss > 96 * 1024:
+    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of {ram_len}; pool {pool} B of {pool_len}; "
+                 f"RAM code + .ramx {rtx} B of {rt_len}")
+    if bss > ram_len:
         errors.append("RAM region overflow")
-    if 0x57000 - pool < 8192:                     # keep >= 8 KiB of the pool spare (app.ld POOL)
-        errors.append(f"pool headroom {0x57000 - pool} B < 8192 B")
+    if pool_len - pool < 8192:                    # keep >= 8 KiB of the pool spare (app.ld POOL)
+        errors.append(f"pool headroom {pool_len - pool} B < 8192 B")
     return errors, notes
 
 

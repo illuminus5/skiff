@@ -355,9 +355,106 @@ static int solo(void)
     return bad;
 }
 
+/* (2.5, the user's 7B) STRUM and DIR through events_block, as the keys and the sequencer play: D4's DIA7 (D F A C)
+ * with STRUM 40 ms DOWN starts low to high, a note every 13.3 ms (to a block of 0.7 ms); UP high to low; ALT down, up,
+ * down; a key let go before its notes' time: they never start; STRUM 0, one note, MONO: at once, as before; a step's
+ * chord strums too */
+static uint32_t heard[128], blk;
+static void blocks(const track_t *t, uint32_t nb)        /* nb blocks on: the block each note's voice first gated in */
+{
+    uint32_t b, i;
+    for (b = 0; b < nb; b++) {
+        events_block(CTL);
+        blk++;
+        for (i = 0; i < NVOICE; i++)
+            if (t->v[i].active && t->v[i].gate && !heard[t->v[i].note])
+                heard[t->v[i].note] = blk;
+    }
+}
+static void strike(const track_t *t, uint32_t k)        /* key k pressed, 120 blocks on (88 ms), then let go */
+{
+    memset(heard, 0, sizeof heard);
+    blk = 0;
+    fm1_in.notes |= 1u << k;
+    host_notes |= 1u << k;
+    blocks(t, 120);
+    fm1_in.notes &= ~(1u << k);
+    blocks(t, 4);
+}
+static int in_order(const uint8_t *nn, uint32_t n, uint32_t gap)   /* nn heard in this order, gap blocks apart (+-1) */
+{
+    uint32_t i;
+    if (heard[nn[0]] != 1u)
+        return 0;
+    for (i = 1; i < n; i++)
+        if (heard[nn[i]] + 1u < heard[nn[i - 1u]] + gap || heard[nn[i]] > heard[nn[i - 1u]] + gap + 1u)
+            return 0;
+    return 1;
+}
+static int strum(void)
+{
+    static const uint8_t DN[4] = {62, 65, 69, 72}, UP[4] = {72, 69, 65, 62};
+    int bad = 0, ok;
+    track_t *t = &trk[0];
+    uint32_t gap = 40u * FS / 1000u / 3u / CTL, i;     /* (18 blocks: 588 samples) */
+    reset();
+    t->p[P_CHRD] = CH_DIA7;
+    t->p[P_STRUM] = 40;
+    strike(t, K_D4);
+    bad += check("(2.5) STRUM 40 ms DOWN: D F A C low to high, 13.3 ms apart (to a block), from the press's block",
+                 in_order(DN, 4, gap));
+    t->p[P_SDIR] = 1;
+    strike(t, K_D4);
+    bad += check("  UP: C A F D", in_order(UP, 4, gap));
+    t->p[P_SDIR] = 2;
+    strike(t, K_D4);
+    ok = in_order(DN, 4, gap);
+    strike(t, K_D4);
+    ok &= in_order(UP, 4, gap);
+    strike(t, K_D4);
+    bad += check("  ALT: down, up, down", ok && in_order(DN, 4, gap));
+    t->p[P_SDIR] = 0;
+    memset(heard, 0, sizeof heard);
+    blk = 0;
+    fm1_in.notes |= 1u << K_D4;
+    blocks(t, 5);
+    fm1_in.notes &= ~(1u << K_D4);
+    blocks(t, 120);
+    bad += check("  a key let go before its notes' time: they never start (D alone heard), nothing left", heard[62] == 1u &&
+                 !heard[65] && !heard[69] && !heard[72] && !ngated(t) && !sq[0].n);
+    t->p[P_STRUM] = 0;
+    strike(t, K_D4);
+    bad += check("  STRUM 0: the chord at once", heard[62] == 1u && heard[65] == 1u && heard[69] == 1u && heard[72] == 1u);
+    t->p[P_STRUM] = 40;
+    t->p[P_CHRD] = CH_OFF;
+    strike(t, K_D4);
+    bad += check("  one note: at once", heard[62] == 1u);
+    t->p[P_CHRD] = CH_DIA7;
+    t->p[P_VOICE] = V_MONO;
+    strike(t, K_D4);
+    bad += check("  MONO: the root at once", heard[62] == 1u && !heard[65]);
+    t->p[P_VOICE] = V_POLY;
+    t->p[P_CHRD] = CH_OFF;
+    memset(t->step, 0, sizeof t->step);                 /* a step's chord: C E G on step 1 */
+    t->step[0].note[0] = 60; t->step[0].note[1] = 64; t->step[0].note[2] = 67;
+    t->step[0].n = 3; t->step[0].time = ST_NOTE; t->step[0].vel = 100;
+    t->p[P_SLEN] = 16;
+    memset(heard, 0, sizeof heard);
+    blk = 0;
+    transport_req = 1;
+    blocks(t, 60);
+    transport_req = 2;
+    blocks(t, 2);
+    for (i = 0, ok = heard[60] != 0u; i < 2u; i++)
+        ok &= heard[i ? 67 : 64] + 1u >= heard[i ? 64 : 60] + 40u * FS / 1000u / 2u / CTL &&
+              heard[i ? 67 : 64] <= heard[i ? 64 : 60] + 40u * FS / 1000u / 2u / CTL + 1u;
+    bad += check("  a step's chord strums too (C E G, 20 ms apart)", ok);
+    return bad;
+}
+
 int main(void)
 {
-    int bad = theory() + shapes_voicings() + keys() + arp_rec() + midi_in() + kits() + solo();
+    int bad = theory() + shapes_voicings() + keys() + arp_rec() + midi_in() + kits() + solo() + strum();
     printf("%s\n", bad ? "CHORD TEST FAILED" : "chord keys test passed");
     return bad != 0;
 }

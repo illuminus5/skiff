@@ -98,7 +98,7 @@ static void run(uint32_t bpm, int playing, const ev_t *ev, uint32_t nev, uint32_
         }
     }
 }
-#define P16 5512u                                  /* a 1/16 at 120 BPM */
+#define P16 5514u                                  /* a 1/16 at 120 BPM ((2.5) the quarter x24, #107) */
 static int same(uint32_t a, uint32_t b)            /* out == in on [a, b), both sides */
 {
     uint32_t t;
@@ -156,7 +156,7 @@ static int test_timing(void)
         int32_t el, er;
         run(120, 1, ev, 2, 50000);
         rev_a = P16;
-        rev_len = 11025;
+        rev_len = 2u * P16;                            /* (a 1/8: (2.5) 11028, the quarter x24) */
         rev_t0 = P16 + rev_len;
         el = err_vs(rev_t0 + 160, rev_t0 + rev_len - 160, reversed, 0);
         er = err_vs(rev_t0 + 160, rev_t0 + rev_len - 160, reversed, 1);
@@ -549,7 +549,7 @@ static int test_misc(void)
             for (i = 0; i < CTL; i++)
                 ml[i] = mr[i] = 8000, sd[i] = sr[i] = 0;
             if (perf_begin(CTL))
-                perf_pre(ml, mr, sd, sr, CTL);
+                perf_pre(ml, mr, sd, 0, sr, CTL);
         }
         bad += check("KNOB 3 THROW at 100: the dry mix into both sends, full, the dry mix untouched",
                      sd[CTL - 1] > 7900 && sr[CTL - 1] > 7900 && ml[CTL - 1] == 8000 && mr[CTL - 1] == 8000);
@@ -747,7 +747,7 @@ static int test_p9(void)
             memset(sd, 0, sizeof sd);
             memset(sr, 0, sizeof sr);
             perf_begin(CTL);
-            perf_pre(ml, mr, sd, sr, CTL);
+            perf_pre(ml, mr, sd, 0, sr, CTL);
             perf_block(bl, br, CTL);
             if (!up && pf.dfb == DUB_FB)
                 up = f + CTL;
@@ -763,7 +763,7 @@ static int test_p9(void)
             memset(sd, 0, sizeof sd);
             memset(sr, 0, sizeof sr);
             perf_begin(CTL);
-            perf_pre(ml, mr, sd, sr, CTL);
+            perf_pre(ml, mr, sd, 0, sr, CTL);
             perf_block(bl, br, CTL);
             if (!down && !pf.dfb)
                 down = f + CTL;
@@ -918,7 +918,7 @@ static void demo_at(uint32_t t)
 static uint32_t p9_e;
 static void p9_at(uint32_t t)
 {
-    uint32_t bar = 4u * FS * 60u / 120u;
+    uint32_t bar = 4u * bpm_quarter(120u);
     if (t == ((bar + CTL - 1u) / CTL) * CTL)
         perf_press(p9_e, 1);
     if (t == ((3u * bar + CTL - 1u) / CTL) * CTL)
@@ -930,7 +930,7 @@ static void p9_demos(const char *dir)
     static const char *const NAME[4] = {"fx_gate", "fx_dub", "fx_flange", "fx_vinyl"};
     char path[512];
     FILE *f;
-    uint32_t t, m, frames = 4u * 4u * FS * 60u / 120u;
+    uint32_t t, m, frames = 16u * bpm_quarter(120u);
     for (m = 0; m < 4u; m++) {
         song_setup();
         p9_e = E[m];
@@ -967,7 +967,7 @@ static void demos(const char *dir)
 static uint32_t hd_mode;
 static void harm_at(uint32_t t)
 {
-    uint32_t bar = 4u * FS * 60u / 110u, e = hd_mode == 1u ? PF_ODN : PF_OUP;
+    uint32_t bar = 4u * bpm_quarter(110u), e = hd_mode == 1u ? PF_ODN : PF_OUP;
     if (!hd_mode)
         return;
     if (t == ((bar + CTL - 1u) / CTL) * CTL) {
@@ -983,7 +983,7 @@ static void harm_demos(const char *dir)
     static const char *const NAME[3] = {"harmonizer_up", "harmonizer_down", "harmonizer_shimmer"};
     char path[512];
     FILE *f;
-    uint32_t t, i, m, frames = 4u * 4u * FS * 60u / 110u + FS;
+    uint32_t t, i, m, frames = 16u * bpm_quarter(110u) + FS;
     for (m = 0; m < 3u; m++) {
         memset(trk, 0, sizeof trk);
         host_tracks_init();

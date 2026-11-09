@@ -3,10 +3,10 @@
 /* Voice allocation, envelopes, LFO and per-track rendering.
  * Runs in the audio ISR.
  *
- * Each synth part has its own NVOICE voices (so MONO / LEGATO / UNISON keep using
- * v[0..]), but only VOICE_BUDGET of all the parts' voices sound at once ((Skiff 1.3) NVOICE, 8; more with the second
- * core running: core.h): a part that starts
- * a voice while the budget is full takes one from any part (voice_victim): the oldest
+ * Each synth part has its own NVOICE voices ((2.5) 16; so MONO / LEGATO / UNISON keep using
+ * v[0..]), but only VOICE_BUDGET of all the parts' voices sound at once (core.h: 8 with one core, (2.5) 16 with the second
+ * core running): a part that starts
+ * a voice while the budget is full takes one from any part (voice_victim): the ((2.5) quietest)
  * released voice, else the oldest extra UNISON voice, else the oldest held voice of a
  * POLY part that is not its lowest note. A voice taken from another part fades out
  * over one block (stage 4: the envelope goes to 0, the block's amplitude ramp
@@ -79,7 +79,7 @@ static void track_lfo_adv(track_t *t)
     uint32_t old = t->lfo_ph;
     if (t->lfo_t != 0xFFFFFFFFu)
         t->lfo_t++;
-    t->lfo_ph += lfo_inc(t);
+    t->lfo_ph += AUDIO_FAR(lfo_inc)(t);                 /* ((2.5) XIP: the LFO graph's too, ui_graph.c) */
     t->lfo_wrap = t->lfo_ph < old;
 }
 static void track_lfo_end(track_t *t)
@@ -150,6 +150,13 @@ static uint32_t lowest_held(const track_t *t)           /* index of the lowest h
     return low;
 }
 
+/* (2.5) of two released voices, the one to give up first: the quieter (its envelope), the older when as loud (an
+ * engine's own envelopes, FM6's, read full): its loss is the least heard (the oldest of before could still ring) */
+static int v_quieter(const voice_t *a, const voice_t *b)
+{
+    return a->env < b->env || (a->env == b->env && a->age < b->age);
+}
+
 /* the voice to give up for a new one (see the top); soft: only released voices and
  * extra voices of other non-POLY parts (also ones left after a mode change).
  * Returns its index, *pp its part; NVOICE = none */
@@ -175,7 +182,7 @@ static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
                 c = 3;                                  /* held, not the bass */
             else
                 continue;
-            if (c < cat || (c == cat && v->age < (*pp)->v[best].age)) {
+            if (c < cat || (c == cat && (c == 1u ? v_quieter(v, &(*pp)->v[best]) : v->age < (*pp)->v[best].age))) {
                 cat = c;
                 best = i;
                 *pp = t;
@@ -186,6 +193,8 @@ static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
 }
 
 static uint32_t voice_kills;                            /* voices given up (budget, overload): console, hostsim */
+static uint32_t voice_steals;                           /* ((2.5) a track's own sounding voice restarted for its new
+                                                         * note: console) */
 static void voice_kill(voice_t *v)                      /* fade out over the next block (env_tick stage 4) */
 {
     v->gate = 0;
@@ -219,7 +228,7 @@ static voice_t *voice_reuse(track_t *t, voice_t *v)
  * Else a free voice: ROTATE takes
  * the next one round-robin (release tails ring out), REUSE (or any GLIDE) takes
  * the free voice whose last pitch is closest, so poly portamento moves each
- * voice the shortest way. Steal: the oldest released voice, else the oldest
+ * voice the shortest way. Steal: the ((2.5) quietest) released voice, else the oldest
  * held one, never the lowest held note (the bass). A free voice needs room in the
  * shared budget: when the voice to give up is one of this part's, it is restarted
  * in place instead. */
@@ -240,8 +249,10 @@ static voice_t *voice_alloc(track_t *t, uint32_t note)
     if (nfree && voices_busy() >= VOICE_BUDGET) {
         track_t *vp = 0;
         uint32_t k = voice_victim(t, 0, &vp);
-        if (k < np && vp == t)
+        if (k < np && vp == t) {
+            voice_steals++;
             return &t->v[k];                            /* our own: restart it in place (no click) */
+        }
         if (k < NVOICE)
             voice_kill(&vp->v[k]);
     }
@@ -271,13 +282,14 @@ static voice_t *voice_alloc(track_t *t, uint32_t note)
     for (i = 0; i < np; i++)                             /* the lowest held note is protected */
         if (t->v[i].gate && (low == np || t->v[i].note < t->v[low].note))
             low = i;
-    for (i = 0; i < np; i++)                             /* oldest released (not one fading out for another part) */
-        if (!t->v[i].gate && t->v[i].stage != 4u && (best == np || t->v[i].age < t->v[best].age))
+    for (i = 0; i < np; i++)                             /* ((2.5) the quietest) released (not one fading out for another */
+        if (!t->v[i].gate && t->v[i].stage != 4u && (best == np || v_quieter(&t->v[i], &t->v[best])))   /* part) */
             best = i;
     if (best == np)
         for (i = 0; i < np; i++)                         /* oldest held, not the bass */
             if (i != low && (best == np || t->v[i].age < t->v[best].age))
                 best = i;
+    voice_steals++;                                      /* ((2.5) all its voices sounding: one restarted) */
     return voice_reuse(t, &t->v[best == np ? 0 : best]);
 }
 
@@ -345,22 +357,27 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     }
 }
 
-/* MONO / LEGATO / UNISON: one note on one voice (eight for UNISON, or the
+/* MONO / LEGATO / UNISON: one note on one voice (eight for UNISON, UNI_NV, or the
  * engine's voice cap, spread by DETUNE over the same width) */
+static uint32_t uni_nvoice(const track_t *t)            /* ((2.5) UNISON stays at 8 with 16 voices a track) */
+{
+    uint32_t n = trk_nvoice(t);
+    return n < UNI_NV ? n : UNI_NV;
+}
 static void mono_play(track_t *t, uint32_t note, uint32_t vel, int retrig, int glide)
 {
-    uint32_t mode = (uint32_t)t->p[P_VOICE], nv = mode == V_UNISON ? trk_nvoice(t) : 1u, i;
+    uint32_t mode = (uint32_t)t->p[P_VOICE], nv = mode == V_UNISON ? uni_nvoice(t) : 1u, i;
     for (i = 0; i < nv; i++) {
         voice_t *v = &t->v[i];
         int32_t k = 2 * (int32_t)i - (int32_t)(nv - 1u);   /* -7 .. 7 */
-        if (nv > 1u && nv < NVOICE)
-            k = k * (NVOICE - 1) / (int32_t)(nv - 1u);      /* fewer voices: the outer ones as wide */
+        if (nv > 1u && nv < UNI_NV)
+            k = k * (UNI_NV - 1) / (int32_t)(nv - 1u);      /* fewer voices: the outer ones as wide */
         v->fine = nv > 1u ? k * t->p[P_DETUNE] * 56 / 889 : 0;   /* up to ~±40 cents */
         if (retrig || !v->active || !v->gate) {
             if ((!v->active || v->stage == 4u) && !voice_room(t, i > 0))
                 continue;                                   /* no room for this extra UNISON voice */
             /* level: about the same sum for 8 or 4 voices at random phases */
-            voice_start(t, v, note, nv >= NVOICE ? vel * 36u / 100u : nv > 1u ? vel / 2u : vel, glide);
+            voice_start(t, v, note, nv >= UNI_NV ? vel * 36u / 100u : nv > 1u ? vel / 2u : vel, glide);
             v->side = (uint8_t)(i & 1u);                    /* ((1.3) SPREAD: the detuned voices alternate) */
             if (nv > 1u && i && !ENGINES[t->engine]->sampled) {   /* random start phases: */
                 static uint32_t seed = 0x1234567u;          /* in phase they stack, evenly spread they cancel */
@@ -427,9 +444,107 @@ static void fol_drop(const track_t *t);
 static int mo_note(track_t *t, uint32_t note, uint32_t vel, uint32_t keys);
 static void mo_flush(uint32_t mask);
 static void trk_sound_on(track_t *t, uint32_t note, uint32_t vel);
-/* a note starts on track t: moved into the chord it follows, out to MIDI as it is asked for (an engine switch's fade
- * delays only the voice: what MIDI IN plays then is never sent back later), then its voice */
+/* (2.5, the user's 7B) STRUM (SCL > CHORD's KNOB 3, ms) and DIR (KNOB 4: DOWN UP ALT): the notes a POLY track starts in
+ * one block (a chord key, MIDI IN's chord, a step's, the ARP's, STEP PREVIEW's) start one after another over STRUM: low
+ * to high (DOWN), high to low (UP), or the two in turn (ALT, DOWN first from PLAY). trk_note_on keeps them (sq_in: in
+ * events_block, the audio ISR; the main loop's notes start at once); strum_flush, at its end, orders them, starts the
+ * first and times the others; strum_tick, at the next blocks' start, starts each as its time comes. A note let go
+ * before its time never starts; a panic forgets them. One note, a kit, MONO / LEGATO / UNISON, STRUM OFF: at once */
+#define SQ_N 8u
+static struct { uint8_t n, fresh, alt, note[SQ_N], vel[SQ_N]; uint16_t due[SQ_N]; } sq[NTRK];   /* fresh: the last
+                                                         * ones, this block's, not yet timed */
+static uint8_t sq_in;
+static int chord_kit(const track_t *t);
+static void trk_note_go(track_t *t, uint32_t note, uint32_t vel);
+static void sq_take(uint32_t k, uint32_t j)             /* entry j of track k's out */
+{
+    for (; j + 1u < sq[k].n; j++) {
+        sq[k].note[j] = sq[k].note[j + 1u];
+        sq[k].vel[j] = sq[k].vel[j + 1u];
+        sq[k].due[j] = sq[k].due[j + 1u];
+    }
+    sq[k].n--;
+}
+static void sq_go(uint32_t k, uint32_t j)               /* .. and started */
+{
+    uint32_t note = sq[k].note[j], vel = sq[k].vel[j];
+    sq_take(k, j);
+    trk_note_go(&trk[k], note, vel);
+}
+static __attribute__((noinline)) void strum_tick(uint32_t n)   /* n samples on: those whose time came, started */
+{
+    uint32_t k, j;
+    for (k = 0; k < NTRK; k++)
+        for (j = 0; j < sq[k].n;)
+            if (sq[k].due[j] > n) {
+                sq[k].due[j] = (uint16_t)(sq[k].due[j] - n);
+                j++;
+            } else
+                sq_go(k, j);
+}
+static __attribute__((noinline)) void strum_flush(void)   /* this block's, ordered and timed; the first started */
+{
+    uint32_t k, i, j;
+    for (k = 0; k < NTRK; k++) {
+        const track_t *t = &trk[k];
+        uint32_t m = sq[k].fresh, b = sq[k].n - m, up, span;
+        if (!m)
+            continue;
+        sq[k].fresh = 0;
+        span = (uint32_t)clamp(t->p[P_STRUM], 0, 100) * FS / 1000u;
+        for (i = b + 1u; i < sq[k].n; i++)              /* (low to high: a chord's few, by insertion) */
+            for (j = i; j > b && sq[k].note[j - 1u] > sq[k].note[j]; j--) {
+                uint8_t x = sq[k].note[j], y = sq[k].vel[j];
+                sq[k].note[j] = sq[k].note[j - 1u];
+                sq[k].vel[j] = sq[k].vel[j - 1u];
+                sq[k].note[j - 1u] = x;
+                sq[k].vel[j - 1u] = y;
+            }
+        up = t->p[P_SDIR] == 1 || (t->p[P_SDIR] == 2 && sq[k].alt);
+        if (t->p[P_SDIR] == 2 && m > 1u)
+            sq[k].alt ^= 1u;
+        span = m > 1u ? span / (m - 1u) : 0u;          /* (a note's step: one divide a chord) */
+        for (i = 0; i < m; i++)
+            sq[k].due[b + i] = (uint16_t)((up ? m - 1u - i : i) * span);
+        for (j = b; j < sq[k].n;)
+            if (!sq[k].due[j])
+                sq_go(k, j);
+            else
+                j++;
+    }
+}
+static int strum_add(track_t *t, uint32_t note, uint32_t vel)   /* kept for strum_flush: 1; to start now: 0 */
+{
+    uint32_t k = (uint32_t)(t - trk) % NTRK;
+    if (!sq_in || !t->p[P_STRUM] || trk_vmode(t) != V_POLY || chord_kit(t) || sq[k].n >= SQ_N)
+        return 0;
+    sq[k].note[sq[k].n] = (uint8_t)note;
+    sq[k].vel[sq[k].n] = (uint8_t)vel;
+    sq[k].due[sq[k].n++] = 0;
+    sq[k].fresh++;
+    return 1;
+}
+static void strum_drop(const track_t *t, uint32_t note)   /* let go before its time: it never starts */
+{
+    uint32_t k = (uint32_t)(t - trk) % NTRK, j;
+    for (j = 0; j < sq[k].n;)
+        if (sq[k].note[j] == note) {
+            if (j >= sq[k].n - sq[k].fresh)
+                sq[k].fresh--;
+            sq_take(k, j);
+        } else
+            j++;
+}
+
+/* a note starts on track t: (2.5) a strum's kept for its time, else trk_note_go now */
 static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
+{
+    if (!t->p[P_MUTE] && !strum_add(t, note, vel))
+        trk_note_go(t, note, vel);
+}
+/* .. moved into the chord it follows, out to MIDI as it is asked for (an engine switch's fade delays only the voice:
+ * what MIDI IN plays then is never sent back later), then its voice */
+static void trk_note_go(track_t *t, uint32_t note, uint32_t vel)
 {
     uint32_t i;
     if (t->p[P_MUTE])
@@ -488,6 +603,8 @@ static void trk_sound_on(track_t *t, uint32_t note, uint32_t vel)
 static void trk_note_off(track_t *t, uint32_t note)
 {
     uint32_t i, k = 0, mode = trk_vmode(t);
+    if (sq[(uint32_t)(t - trk) % NTRK].n)
+        strum_drop(t, note);                           /* ((2.5) a strum's not started yet: never) */
     note = fol_off(t, note);                           /* ((2.1) the note it sounded; 255: another still sounds it) */
     for (i = 0; i < t->xp_n; i++)                       /* not sounding yet (engine switch): forget it ((2.2) kept */
         if (t->xp_note[i] != note) {                    /* moved, as it will sound) */
@@ -530,6 +647,7 @@ static void trk_all_off(track_t *t)
     t->nmono = 0;
     t->mono_note = 0;
     t->xp_n = 0;
+    sq[(uint32_t)(t - trk) % NTRK].n = sq[(uint32_t)(t - trk) % NTRK].fresh = 0;   /* ((2.5) no strum left to come) */
     fol_drop(t);                                        /* ((2.1) nothing kept, no chord to lead with) */
     mo_flush(1u << (t - trk));                          /* ((2.2) NOTES OUT: every note it sent, ended) */
 }
@@ -606,7 +724,7 @@ static uint32_t esync_one(uint32_t quarter, int32_t v, uint32_t i)
     x = x - x2 / 2u + x3 / 6u - x4 / 24u;
     return x < 1u ? 1u : x > 65535u ? 65535u : x;
 }
-static __attribute__((noinline)) void esync_coef(track_t *t)   /* (not inlined: its divides stay out of the
+static __attribute__((noinline)) AUDIO_RAM void esync_coef(track_t *t)   /* (not inlined: its divides stay out of the
                                                                     * audio ISR's loop over the voices) */
 {
     const int16_t *p = t->p;
@@ -660,7 +778,7 @@ static int32_t env_tick(track_t *t, voice_t *v)
 /* (Skiff phase 9) one control tick of ENV 2 (P_EG2_ATK .. REL): the amplitude envelope's twin, a MOD source only (mod.c
  * MS_ENV2), ticked while a slot uses it; its release starts when the gate goes (where the amp envelope's is set), its end
  * ends nothing */
-static __attribute__((noinline)) void env2_tick(track_t *t, voice_t *v)   /* (out of line: the ISR's loops stay as they were) */
+static __attribute__((noinline)) AUDIO_RAM void env2_tick(track_t *t, voice_t *v)   /* (out of line: the ISR's loops stay as they were) */
 {
     const int16_t *p = t->p;
     if (!v->gate && v->stage2 && v->stage2 < 3u)
@@ -698,13 +816,13 @@ static int32_t midi_bend_q8[NTRK], midi_bend_target[NTRK];
  * ones. A cost per block, none per voice */
 static int32_t spread_buf[C1_NP][CTL];
 #define SPREAD_BUF(t) spread_buf[C1_PI(t)]
-static __attribute__((noinline)) void spread_clear(int32_t *sb)   /* (not inlined: the loops stay out of the ISR's) */
+static __attribute__((noinline)) AUDIO_RAM void spread_clear(int32_t *sb)   /* (not inlined: the loops stay out of the ISR's) */
 {
     uint32_t i;
     for (i = 0; i < CTL; i++)
         sb[i] = 0;
 }
-static __attribute__((noinline)) void spread_sum(int32_t *out, const int32_t *sb, uint32_t n)
+static __attribute__((noinline)) AUDIO_RAM void spread_sum(int32_t *out, const int32_t *sb, uint32_t n)
 {
     uint32_t i;
     for (i = 0; i < n; i++)
@@ -722,7 +840,7 @@ static int lanes_panned(const track_t *t)
     const int16_t *p = &t->p[P_LPAN0];
     return (p[0] | p[1] | p[2] | p[3] | p[4] | p[5] | p[6] | p[7]) != 0;
 }
-static __attribute__((noinline)) void lpan_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
+static __attribute__((noinline)) AUDIO_RAM void lpan_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)
 {
     int32_t vb[CTL], pan = t->p[P_LPAN0 + ((uint32_t)v->s[0] & 7u)], w = pan < 0 ? -pan : pan;
     int32_t *sd = pan > 0 ? SPREAD_BUF(t) : LPAN_BUF(t);
@@ -853,7 +971,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             lpan_render(t, v, out, n, &m);
         else if (t->engine == ENGI_SAMPLE && v->s[4] >= 0x8000)   /* ((Skiff, #21) a user sample's sound: its LEVEL and
                                                                 * sends, fx.c) */
-            smx_render(t, v, ti, t->spread_on > v->side ? sb : out, n, &m);
+            AUDIO_FAR(smx_render)(t, v, ti, t->spread_on > v->side ? sb : out, n, &m);
         else
             e->render(t, v, t->spread_on > v->side ? sb : out, n, &m);   /* ((1.3) SPREAD: the left ones) */
         nr++;

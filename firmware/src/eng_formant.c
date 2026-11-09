@@ -194,7 +194,7 @@ static void formant_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, con
         y7 = clamp(a, -(1 << 28), 1 << 28);             /* int32 state stays far from overflow */
         s = soft_knee(clamp((int32_t)(((int64_t)y7 * og + (int64_t)(y7 - y8) * ogk) >> 21), -200000, 200000), 24000);
         ph += inc;
-        out[i] += voice_amp(s, m, i) << 1;
+        out[i] += voice_amp2(s, m, i);
     }
     v->ph[0] = ph;
     v->ph[1] = (uint32_t)y7;

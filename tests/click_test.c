@@ -28,7 +28,7 @@ static void fm1_audio_init(int32_t *b, uint32_t n, void (*isr)(void), uint32_t p
 void isr_alnk0(void) {}
 #define FELUCCA_UAC 1                                  /* audio.c taps USB audio: here into tap */
 static int32_t tap_blk[2 * CTL];
-static void uac_tap(const int32_t *out, uint32_t n) { memcpy(tap_blk, out, 8u * n); }
+static void uac_tap(const int32_t *out, const uint8_t *lo, uint32_t n) { (void)lo; memcpy(tap_blk, out, 8u * n); }
 static void uac_render_start(void) {}
 #include "../firmware/src/audio.c"
 
@@ -117,7 +117,7 @@ static void clicks(uint32_t from)
         quiet = 0;
     }
 }
-#define QB 22048u                                      /* a beat at 120 BPM: four 1/16 steps of 5512 samples */
+#define QB 22056u                                      /* a beat at 120 BPM: four 1/16 steps of 5514 samples ((2.5) x24) */
 static uint32_t ceil_div(uint64_t a, uint32_t b) { return (uint32_t)((a + b - 1u) / b); }
 /* a pattern-free track 1 (all rests) at DIV 1/16 (2), LEN 16: its steps mark the grid, nothing sounds */
 static void grid_track(void)

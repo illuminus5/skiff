@@ -214,10 +214,16 @@ static void test_types(void)
         printf("insert:   %-5s peak 3 saws %6d, 8 saws %6d; worst DC (mean against the input's) %5.1f / %5.1f\n",
                N_ITYPE[ty], pk[0], pk[1], dc[0], dc[1]);
         {
-            char w[96];
-            snprintf(w, sizeof w, "%s: no DC (< 0.5 %% of a voice's full scale), bounded (< 1.5 x the input, LEVEL +7.5 dB)",
-                     N_ITYPE[ty]);
-            ck(w, dc[0] < 164.0 && dc[1] < 164.0 && pk[0] < 120000 && pk[1] < 288000);
+            char w[110];
+            if (ty == IT_FILTER) {                     /* ((2.5) RES 100 %: a resonant peak, as ANALOG's: its states' */
+                snprintf(w, sizeof w, "%s: no DC (< 0.5 %% of a voice's full scale), bounded (by its clamp: 300000)",
+                         N_ITYPE[ty]);                 /* clamp holds it) */
+                ck(w, dc[0] < 164.0 && dc[1] < 164.0 && pk[0] <= 300000 && pk[1] <= 300000);
+            } else {
+                snprintf(w, sizeof w, "%s: no DC (< 0.5 %% of a voice's full scale), bounded (< 1.5 x the input, LEVEL "
+                         "+7.5 dB)", N_ITYPE[ty]);
+                ck(w, dc[0] < 164.0 && dc[1] < 164.0 && pk[0] < 120000 && pk[1] < 288000);
+            }
             snprintf(w, sizeof w, "%s: MIX 0 the input bit for bit, MIX 50 %% halfway to MIX 100 %% (the wet), it acts",
                      N_ITYPE[ty]);
             ck(w, same0 && lin && diff);
@@ -345,9 +351,17 @@ static void test_pages_stored(void)
           str_eq(track_desc(t, P_IC)->label, "FDBK");
     go_title("INSERT"); frame();
     ok &= cur_page()->id[0] == P_ITYPE && cur_page()->id[3] == P_IC && cur_page()->graph == GR_INS;
-    go_title("INSERT 2"); frame();
-    ok &= cur_page()->id[0] == P_IMIX;
-    ck("the pages: INSERT (TYPE A B C, named by the TYPE), INSERT 2 (MIX)", ok);
+    {   /* ((2.5) PRESETS on INSERT: its MIX, INSERT 2's page before (gone); the sound stays */
+        uint32_t i, ins2 = 0;
+        uint8_t pre = t->preset;
+        t->p[P_IMIX] = 100;
+        turn(EN_PRESET, -3);
+        ok &= t->p[P_IMIX] < 100 && t->p[P_IMIX] >= 88 && t->preset == pre && cur_page()->graph == GR_INS;
+        for (i = 0; i < NPAGES; i++)
+            ins2 |= str_eq(PAGES[i].title, "INSERT 2");
+        ok &= !ins2;
+    }
+    ck("the pages: INSERT (TYPE A B C, named by the TYPE), PRESETS its MIX (no INSERT 2)", ok);
     set_ins(t, IT_PHASER, 11, 22, 33, 44);
     project_save(1);
     set_ins(t, 0, 64, 96, 96, 127);
@@ -357,11 +371,89 @@ static void test_pages_stored(void)
     ck("a project keeps the INSERT (SKF3's PX block)", ok);
 }
 
+/* (2.5, #101) room in FLANG / CHOR's line: a sine at 190000 (the loudest preset's 4-note chord at velocity 127, ~1.5 x
+ * the room of 2.2's quarter-scale line) at MIX 100 %, DEPTH 0 and FDBK 0 sits in the line whole (190000 >> 3, the line's
+ * eighth); 2.2 clamped it at 32767 (its wet clipped, harsh as MIX rose) */
+static void test_room(void)
+{
+    static const int32_t TY[2] = {IT_CHORUS, IT_FLANGER};
+    uint32_t k, i;
+    for (k = 0; k < 2u; k++) {
+        int32_t top = 0;
+        for (i = 0; i < NS; i++)
+            sig_in[i] = (int32_t)(190000.0 * sin(2.0 * M_PI * 220.0 * i / FS));
+        run_ins(TY[k], 0, 0, 0, 127, sig_a);
+        for (i = 0; i < IL_LEN; i++)
+            top = abs(ins[0].line[i]) > top ? abs(ins[0].line[i]) : top;
+        ck(k ? "(2.5, #101) FLANG: a sine at 190000 (a hot chord) in the line unclipped (an eighth: 23750)"
+             : "(2.5, #101) CHOR: a sine at 190000 (a hot chord) in the line unclipped (an eighth: 23750)",
+           top >= 23700 && top <= 23760);
+    }
+}
+
+/* (2.5, the user's 6B) FILTR: LP keeps a sine 2 octaves under CUTOFF and takes one 2 octaves over, HP the other way;
+ * BP at the cutoff as loud as LP's flat part (level-matched); SHAPE's sweep LP .. BP .. HP without a jump; its names */
+static double sine_db(double hz, int32_t a, int32_t b, int32_t c)   /* a sine at a voice's level through FILTR: dB */
+{
+    uint32_t i;
+    double e = 0, e0 = 0;
+    for (i = 0; i < NS; i++)
+        sig_in[i] = (int32_t)(24000.0 * sin(2.0 * M_PI * hz * i / FS));
+    run_ins(IT_FILTER, a, b, c, 127, sig_a);
+    for (i = NS - FS; i < NS; i++) {
+        e += (double)sig_a[i] * sig_a[i];
+        e0 += (double)sig_in[i] * sig_in[i];
+    }
+    return 10.0 * log10(e / e0);
+}
+static void test_filter(void)
+{
+    static const struct { int16_t v; const char *val, *unit; } NM[6] = {
+        {0, "LP", ""}, {19, "30", "BP"}, {64, "BP", ""}, {96, "51", "HP"}, {127, "HP", ""}, {1, "2", "BP"}};
+    int32_t ci = 0, s;
+    double hz, lpl, lph, hpl, hph, bp, prev = 0, jump = 0;
+    int ok = 1;
+    uint32_t k;
+    while (ci < 127 && CUTOFF_HZ[ci] < 500u)
+        ci++;
+    hz = CUTOFF_HZ[ci];
+    lpl = sine_db(hz / 4.0, ci, 0, 0);
+    lph = sine_db(hz * 4.0, ci, 0, 0);
+    hpl = sine_db(hz / 4.0, ci, 0, 127);
+    hph = sine_db(hz * 4.0, ci, 0, 127);
+    bp = sine_db(hz, ci, 0, 64);
+    printf("insert: FILTR at %.0f Hz, RES 0: LP %+.1f / %+.1f dB, HP %+.1f / %+.1f dB (2 octaves under / over), "
+           "BP at the cutoff %+.1f dB\n", hz, lpl, lph, hpl, hph, bp);
+    ck("(2.5) FILTR: LP keeps 2 octaves under CUTOFF (1 dB) and takes 2 over (-18 dB), HP the other way",
+       fabs(lpl) < 1.0 && lph < -18.0 && hpl < -18.0 && fabs(hph) < 1.0);
+    ck("  BP at the cutoff as loud as LP's flat part (1 dB: level-matched)", fabs(bp) < 1.0);
+    for (s = 0; s <= 127; s++) {                        /* (a sine an octave over the cutoff: LP -12, BP -6, HP 0 dB) */
+        double l = sine_db(hz * 2.0, ci, 40, s);
+        if (s && fabs(l - prev) > jump)
+            jump = fabs(l - prev);
+        prev = l;
+    }
+    printf("insert: FILTR SHAPE 0..127, a sine an octave over the cutoff: the largest step %.2f dB\n", jump);
+    ck("  SHAPE sweeps LP into BP into HP: no step over 1 dB", jump < 1.0);
+    for (k = 0; k < 6u; k++) {
+        char v[12];
+        const char *u;
+        param_format(&INS_DESC[3][2], NM[k].v, v, &u);
+        ok &= str_eq(v, NM[k].val) && str_eq(u, NM[k].unit);
+    }
+    trk[0].p[P_ITYPE] = IT_FILTER;
+    ok &= str_eq(track_desc(&trk[0], P_IA)->label, "CUTOFF") && str_eq(track_desc(&trk[0], P_IB)->label, "RES") &&
+          str_eq(track_desc(&trk[0], P_IC)->label, "SHAPE") && str_eq(N_ITYPE[IT_FILTER], "FILTR");
+    ck("  its values CUTOFF RES SHAPE; SHAPE reads LP, 30 BP, BP, 51 HP, HP", ok);
+}
+
 int main(void)
 {
     ui_power_on();                                      /* (the power-on state: the tempo, the FX, every track) */
     test_identity();
     test_types();
+    test_filter();
+    test_room();
     test_glide();
     test_motion();
     test_pages_stored();

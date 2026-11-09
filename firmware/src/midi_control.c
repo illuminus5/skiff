@@ -420,18 +420,29 @@ static volatile uint8_t *const mpc_io;
 /* (2.2) MENU > MIDI > REMOTE (channel 1..16, OFF): on its channel CC 102..115 press the panel's 14 buttons in the
  * order of their labels (panel.c B_FX .. B_OCTUP: Sloop's REMOTE map, so a controller's template for it works here),
  * 64 and up held down, below let go: the input's debounce takes them as the contacts (hal/fm1_input.h virt / vtap), so
- * taps, holds, layers and a button with a key act as on the panel. ui.c rmt_btn: panel.btn (a label's button) */
+ * taps, holds, layers and a button with a key act as on the panel. ui.c rmt_btn: panel.btn (a label's button).
+ * (2.5) Its encoders, relative (two's complement: 1..63 that many clicks right, 127..65 left; 0, 64 nothing): CC
+ * 116..119 KNOB 1..4, 85 ALGORITHM, 86 PRESETS, 87 SELECT (no CC of the MIDI spec's, Sloop's or the standard map's;
+ * 120..127 are the channel's modes). The turns go where the panel's do (panel.c panel_enc, by role: ui.c rmt_enc_q), so
+ * every page, acceleration and MIDI LEARN take them as a knob's */
 static const uint8_t *const rmt_btn;
+static volatile int16_t *const rmt_enc_q;
 
 static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
-    if (st == 0xB0u && d1 - 102u < 14u && rmt_btn && ch + 1u == mset_ch(MSET(15, 5) >> 3)) {
-        uint32_t bit = 1u << rmt_btn[d1 - 102u];
-        if (d2 >= 64u) {
-            fm1_in.virt |= bit;
-            fm1_in.vtap ^= bit;
-        } else
-            fm1_in.virt &= ~bit;
+    if (st == 0xB0u && (d1 - 102u < 14u || d1 - 116u < 4u || d1 - 85u < 3u) && rmt_btn &&
+        ch + 1u == mset_ch(MSET(15, 5) >> 3)) {
+        if (d1 - 102u < 14u) {
+            uint32_t bit = 1u << rmt_btn[d1 - 102u];
+            if (d2 >= 64u) {
+                fm1_in.virt |= bit;
+                fm1_in.vtap ^= bit;
+            } else
+                fm1_in.virt &= ~bit;
+        } else if (d2 && d2 != 64u && rmt_enc_q) {
+            uint32_t r = d1 >= 116u ? 3u + d1 - 116u : d1 == 87u ? 0u : d1 - 84u;   /* (panel.c EN_*: ui.c checks) */
+            rmt_enc_q[r] = (int16_t)(rmt_enc_q[r] + (d2 < 64u ? (int32_t)d2 : (int32_t)d2 - 128));
+        }
         return;
     }
     if (!song.g[G_ROUTE] && midi_slot(ch) < 0 && ch + 1u != mset_ch(MSET(1, 1) & 31u))   /* (CH1-6: a channel no */

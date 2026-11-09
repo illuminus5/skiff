@@ -132,7 +132,7 @@ static int32_t mod_tsrc(const track_t *t, uint32_t s, int32_t lfo)
 }
 
 /* AMP: the gain (Q15, 0..32767) of source x (bipolar: as 0..1) at amount a */
-static int32_t mod_gain(uint32_t s, int32_t x, int32_t a)
+static AUDIO_RAM int32_t mod_gain(uint32_t s, int32_t x, int32_t a)
 {
     int32_t u = MS_BIPOLAR(s) ? (x + 32768) >> 1 : x;
     return clamp(32767 - (a > 0 ? ((32767 - u) * a) >> 6 : (u * -a) >> 6), 0, 32767);
@@ -162,14 +162,14 @@ static __attribute__((noinline)) int32_t mod_depth(const track_t *t, int32_t lfo
     for (k = 0; k < NMSLOT; k++) {
         uint32_t s = (uint32_t)p[P_M1SRC + 3u * k];
         if (p[P_M1DST + 3u * k] == MD_DEPTH && p[P_M1AMT + 3u * k] && s && s < MS_N)
-            g = mulq15(g, mod_gain(s == MS_LFO && p[P_LPOL] ? MS_ENV : s, mod_tsrc(t, s, lfo), p[P_M1AMT + 3u * k]));
+            g = mulq15(g, AUDIO_FAR(mod_gain)(s == MS_LFO && p[P_LPOL] ? MS_ENV : s, mod_tsrc(t, s, lfo), p[P_M1AMT + 3u * k]));
     }
     return g;
 }
 
 /* before a part's block (fx.c mix_part): the per-track offsets, the per-block destinations into t->p.
  * 0 = no slot active (then nothing changed) */
-static __attribute__((noinline)) int mod_begin(track_t *t)
+static __attribute__((noinline)) AUDIO_RAM int mod_begin(track_t *t)
 {
     modw_t *mw = &MOD(t);
     const int16_t *p = t->p;
@@ -189,7 +189,8 @@ static __attribute__((noinline)) int mod_begin(track_t *t)
     mw->nv = mw->nk = 0;
     mw->pit = mw->cut = mw->shp = 0;
     mw->gain = 32767;
-    mw->ldep = mod_depth(t, lfo);                       /* ((1.3) DEPTH first: the other slots see the LFO it leaves) */
+    mw->ldep = AUDIO_FAR(mod_depth)(t, lfo);            /* ((1.3) DEPTH first: the other slots see the LFO it leaves;
+                                                         * (2.5) XIP, from RAM) */
     if (mw->ldep < 32767)
         lfo = mulq15(lfo, mw->ldep);
     for (; k < NMSLOT; k++) {
@@ -233,7 +234,7 @@ static __attribute__((noinline)) int mod_begin(track_t *t)
 }
 
 /* after the part's block (when mw->on): the stored values back */
-static __attribute__((noinline)) void mod_end(track_t *t)
+static __attribute__((noinline)) AUDIO_RAM void mod_end(track_t *t)
 {
     modw_t *mw = &MOD(t);
     uint32_t j;
@@ -245,7 +246,7 @@ static __attribute__((noinline)) void mod_end(track_t *t)
 /* a voice's modulation (voice.c track_render, when mw->on), onto its vmod_t m as track_render made it:
  * pitch (the increment again, with the fine factor fine as there), cutoff and shape (clamped to what the
  * fixed routings can reach), the amplitude (and v->env_out, the next block's start). env: its envelope */
-static __attribute__((noinline)) void mod_voice(track_t *t, voice_t *v, vmod_t *m, int32_t fine)
+static __attribute__((noinline)) AUDIO_RAM void mod_voice(track_t *t, voice_t *v, vmod_t *m, int32_t fine)
 {
     const modw_t *mw = &MOD(t);
     int32_t pit = mw->pit, cut = mw->cut, shp = mw->shp, gain = mw->gain, env = m->envq15;

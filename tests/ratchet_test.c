@@ -172,6 +172,7 @@ static int projects(void)
     project_capture(&before);
     proj_power_on(&before, PROJ_NT); before.sum = proj_sum(&before);   /* ((Skiff phase 6) SKF1 holds four tracks: the rest
                                                                         * come back as at power-on) */
+    before.g[G_DMODE] = DM_MONO; before.sum = proj_sum(&before);        /* ((2.5) and 27 globals: the delay MONO */
     ok = proj_pack(&packed, &before) && proj_import(&after, &packed, sizeof packed) && !memcmp(&before, &after, sizeof before);
     for (i = 0; ok && i < 8u; i++)
         ok &= step_ratchet(&after.t[0].step[i]) == 1u + i % 4u && step_chance(&after.t[0].step[i]) == step_chance(&before.t[0].step[i]) &&
@@ -265,7 +266,8 @@ static int presets(void)
                  !up_parse(a, n, &r, &slot) && r.ver == UP_VER_SID && !up_pat(&r));
     up_store(4, "SOUND");
     bad += check("  (Skiff) SAVE > USER stores the sound only: no pattern, no grid", up_used(4) && !up_grid(up_rec(4)) &&
-                 !up_rec(4)->note[2] && !up_rec(4)->flags[2]);
+                 !up_pat(up_rec(4)));          /* ((2.5) v6, by stored id: since P_COUNT 148 its ids reach the old
+                                                * pattern's bytes, note[2] is STRUM's) */
     return bad;
 }
 
@@ -422,6 +424,7 @@ static int flam(void)
     step_set_rflam(&trk[0].step[3], 5);
     project_capture(&before);
     proj_power_on(&before, PROJ_NT); before.sum = proj_sum(&before);   /* ((Skiff phase 6) four tracks in SKF1) */
+    before.g[G_DMODE] = DM_MONO; before.sum = proj_sum(&before);        /* ((2.5) and 27 globals: the delay MONO */
     ok = proj_pack(&packed, &before) && proj_import(&after, &packed, sizeof packed) && !memcmp(&before, &after, sizeof before);
     pos = 68u + PROJ_NP + 2u + 3u * 9u;              /* step 3 of track 1 */
     ok &= (packed.raw[pos + 4] & 128u) && (after.t[0].step[3].flags & SF_FLAM) && (after.t[0].step[3].flags & SF_ACCENT);

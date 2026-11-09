@@ -795,7 +795,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_SIX_HOME, S_SIX_SONG, S_SIX_PERF, S_SIX_MIXER, S_SIX_GLO, S_SIX_FX,                  /* (Skiff phase 6) */
        S_SIX_EDIT, S_SIX_EDIT_SAID,
        S_MOD_GRID, S_VOICE2, S_VOICE2_UNI, S_ARP_ON, S_ARP2, S_EDIT_FLT, S_GLOBAL_SWING, S_VOICE_GLIDE,   /* (Skiff U5) */
-       S_SHIFT_ENV, S_SHIFT_STEP, S_SHIFT_HOME, S_LFO_RUN, S_HOME_SCOPE,
+       S_SHIFT_ENV, S_SHIFT_STEP, S_SHIFT_HOME, S_LFO_RUN, S_HOME_SCOPE, S_HOME_SCOPE_PLAY,   /* (.. 2.5) */
        S_FM_TONE, S_FM_ENV, S_FM_KEYS, S_FM_ALGO, S_FM_PITCH, S_FM_LFO, S_FM_INIT,   /* (FM6 LAB) */
        S_DRIVE_SOFT, S_DRIVE_HARD, S_DRIVE_FOLD, S_DRIVE_CRUSH, S_DRIVE_FUZZ, S_INS_FUZZ, S_INS_CRUSH, S_INS_FLANG,
        S_MENU_MIDI, S_MENU_MIDI_SCROLL, S_LEARN, S_LEARN_CC, S_LFO2, S_ENV2, S_LANES_TUNE, S_REVERB_HALL, S_CHORUS_FB,
@@ -809,6 +809,11 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_SONG_CHAINS, S_SONG_CHAIN_COPY,                                                      /* (2.0, #44's box) */
        S_DRUM_KIT_USR, S_LANES_USR,                                                           /* (2.0, #35) */
        S_FOLLOW, S_FOLLOW_SCALE, S_FOLLOW_FIT, S_FOLLOW_OFF, S_FOLLOW_WAIT,                   /* (2.1) */
+       S_FREE_TAKE, S_FREE_TAKE_TURNED, S_DLY_MONO, S_DLY_PING, S_FX_DELAY, S_FX_REVERB, S_FX_SENDS, S_PATTERN_64, S_SONG_STRIP, S_PROJECT_NEW,
+       S_PROJECT_CLEAR, S_CONFIRM_CLEAR_SONG, S_CONFIRM_CLEAR_TRKS,                             /* (2.5) */
+       S_INS_FILTER, S_INS_FILTER_HP,                                                         /* (2.5, 6B) */
+       S_CHORD_STRUM, S_CHORD_STRUM_ALT,                                                      /* (2.5, 7B) */
+       S_SHIFT_SONG, S_HINT_FREE,                                                             /* (2.5) */
        S_MOCK_HOME, S_MOCK_PRESETS, S_MOCK_SEQ, S_MOCK_DRUM, S_MOCK_MIXER, S_MOCK_DIALOG, S_MOCK_MENU, S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "project", "lanes", "step", "pattern", "chance", "motion", "drum",
@@ -834,7 +839,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "dx_sound", "dx_sound_2", "dx_sound_3", "confirm_init_dx",
     "six_home", "six_song", "six_perform", "six_mixer", "six_glo", "six_fx", "six_edit", "six_edit_said",
     "mod_grid", "voice_2", "voice_2_uni", "arp_on", "arp_2", "edit_flt", "global_swing", "voice_glide",
-    "shift_env", "shift_step", "shift_home", "lfo_run", "home_scope",
+    "shift_env", "shift_step", "shift_home", "lfo_run", "home_scope", "home_scope_play",
     "fm_op_tone", "fm_op_env", "fm_op_keys", "fm_all_algo", "fm_all_pitch", "fm_all_lfo", "fm_init",
     "drive_soft", "drive_hard", "drive_fold", "drive_crush", "drive_fuzz", "insert_fuzz", "insert_crush", "insert_flanger",
     "menu_midi", "menu_midi_scroll", "learn", "learn_cc", "lfo_2", "env_2", "lanes_tune", "reverb_hall", "chorus_feedback",
@@ -842,7 +847,9 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "notes_range", "notes_pick", "feel_range", "notes_overlap", "momentary", "pool_empty", "pool_unused", "confirm_empty",
     "song_once", "song_new", "song_copyplus", "song_chain", "song_chain3", "notes_chain", "lane_mix", "lane_mix_dx",
     "song_sound", "song_sounds", "song_chains", "song_chain_copy", "drum_kit_usr", "lanes_usr",
-    "follow", "follow_scale", "follow_fit", "follow_off", "follow_wait", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
+    "follow", "follow_scale", "follow_fit", "follow_off", "follow_wait", "free_take", "free_take_turned", "dly_mono", "dly_ping", "fx_delay", "fx_reverb", "fx_sends", "pattern_64", "song_strip", "project_new",
+    "project_clear", "confirm_clear_song", "confirm_clear_trks", "insert_filter", "insert_filter_hp", "chord_strum",
+    "chord_strum_alt", "shift_song", "hint_free_take", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
 
 /* the scenes of the UI design screens: the state the UI-redesign
  * prototype drew them from (its setup(): two pattern tracks, the drum pattern on track 4, a synthetic scope),
@@ -992,6 +999,7 @@ static void setup(int s)
 {
     memset(kb_chn, 0, sizeof kb_chn);               /* no key held (roll_playing holds one) */
     fm1_in.buttons = 0;                             /* (no button held: momentary holds LFO) */
+    memset(&scd, 0, sizeof scd);                    /* ((2.5) the scope's levels and notes: none, whatever came before) */
     if (s >= S_MOCK_HOME) {
         mock_state(s);
         return;
@@ -1026,6 +1034,12 @@ static void setup(int s)
         TSEL->p[P_IA] = s == S_INS_CRUSH ? 24 : 90; TSEL->p[P_IB] = s == S_INS_CRUSH ? 40 : 100; TSEL->p[P_IC] = 96;
         TSEL->p[P_IMIX] = 110;
         go_title("INSERT"); ui.hot_col = 1; ui.hot_t = 30; break;
+    case S_INS_FILTER: case S_INS_FILTER_HP:         /* ((2.5, the user's 6B) FILTR as its mockup: CUTOFF ~1.2 kHz, RES
+                                                     * 40 %, SHAPE 30 BP; HP: a low cutoff, all HP */
+        TSEL->p[P_ITYPE] = IT_FILTER;
+        TSEL->p[P_IA] = s == S_INS_FILTER ? 75 : 30; TSEL->p[P_IB] = 51; TSEL->p[P_IC] = s == S_INS_FILTER ? 19 : 127;
+        TSEL->p[P_IMIX] = 110;
+        go_title("INSERT"); ui.hot_col = 1; ui.hot_t = 30; break;
     case S_MENU_MIDI: case S_MENU_MIDI_SCROLL:         /* (1.3) MIDI: LEARN CLEAR's count; scrolled to T6, T2 on 10 */
         memset(favorites.factory[ENGI_DIGITAL], 0, sizeof favorites.factory[ENGI_DIGITAL]);
         memset(&favorites.factory[15][6], 0, 6);
@@ -1048,7 +1062,7 @@ static void setup(int s)
         go_title("ENV 2"); break;
     case S_LANES_TUNE: drum(0); go_title("LANES"); ui.lane = 1; TSEL->p[P_LTUNE0 + 1] = 80; TSEL->p[P_LDECAY0 + 1] = -24;
         ui.hot_col = 2; ui.hot_t = 30; break;
-    case S_REVERB_HALL: go_title("REVERB"); song.g[G_RTYPE] = 2; ui.hot_col = 0; ui.hot_t = 30; break;
+    case S_REVERB_HALL: go_page(GR_REVERB); song.g[G_RTYPE] = 2; ui.hot_col = 0; ui.hot_t = 30; break;
     case S_CHORUS_FB: go_title("CHORUS"); song.g[G_CFDBK] = 70; ui.hot_col = 3; ui.hot_t = 30; break;
     case S_CHORUS_FLANGER: case S_CHORUS_PHASER:
         go_title("CHORUS"); song.g[G_CMODE] = (int16_t)(s == S_CHORUS_FLANGER ? 1 : 2); song.g[G_CFDBK] = 60;
@@ -1056,6 +1070,9 @@ static void setup(int s)
     case S_PRESETS_BASS: ui_ptag = PT_BASS; go_page(GR_BROWSE); break;
     case S_STEP: song.rec = 1; go_page(GR_ROLL); ui.cursor = 6; break;
     case S_PATTERN: my_steps(TSEL); go_title("PATTERN"); ui.cursor = 3; break;   /* ((Skiff S1) with notes) */
+    case S_PATTERN_64:                              /* ((2.5) 4 rows, PEND: PRESETS' card on one line under them */
+        my_steps(TSEL); TSEL->p[P_SLEN] = 64; TSEL->p[P_DIR] = 2; go_title("PATTERN");
+        break;
     case S_CHANCE: go_page(GR_FEEL); my_steps(TSEL); step_set_chance(&TSEL->step[0], 65); break;   /* ((2.0) FEEL: on a note) */
     case S_MOTION: go_page(GR_EVENTS); ui.ev_top = 1; break;   /* ((U3, R5) AUTOMATION's top row: PLAY, CLEAR) */
     /* 1.1.5, the REC layer (REC held): over HOME, the settings as they come (CLICK OFF, COUNT-IN OFF, LEVEL MID);
@@ -1113,15 +1130,21 @@ static void setup(int s)
         TSEL->p[P_M2DST] = 14; TSEL->p[P_M2AMT] = -64; mod_ui_route = MOD_SLOT0 + 1u; go_title("MOD"); break;
     case S_FX: go_title("FX"); break;
     case S_SLICER: TSEL->p[P_SLCR] = 1; go_title("SLICER"); break;
-    case S_DLY: go_title("DELAY"); break;   /* ((U3, N4) GLO's, was FX > DLY) */
+    case S_DLY: go_page(GR_DELAY); break;   /* ((U3, N4) GLO's, was FX > DLY) */
     case S_SCL: TSEL->p[P_SCALE] = 2; go_title("SCALE"); break;
     case S_CHORD:                                    /* A minor DIA7, the last chord on B: Bm7b5 */
-    case S_CHORD_WIDE: {                             /* A harmonic minor DIA7 +OCT on G#: G#dim7 over three octaves */
+    case S_CHORD_WIDE:                               /* A harmonic minor DIA7 +OCT on G#: G#dim7 over three octaves */
+    case S_CHORD_STRUM: case S_CHORD_STRUM_ALT: {    /* ((2.5, the user's 7B) S_CHORD's with STRUM 40 ms: DOWN, ALT */
         uint8_t out[CHORD_MAX];
-        TSEL->p[P_VOICE] = V_POLY; TSEL->p[P_ROOT] = 9; TSEL->p[P_SCALE] = s == S_CHORD ? 2 : 7;
-        TSEL->p[P_CHRD] = CH_DIA7; TSEL->p[P_VOIC] = s == S_CHORD ? VC_CLOSE : VC_BASS;
-        chord_build(TSEL, s == S_CHORD ? 71u : 68u, out);
-        go_title("CHORD"); ui.hot_col = 0; ui.hot_t = 30;
+        int wide = s == S_CHORD_WIDE;
+        TSEL->p[P_VOICE] = V_POLY; TSEL->p[P_ROOT] = 9; TSEL->p[P_SCALE] = wide ? 7 : 2;
+        TSEL->p[P_CHRD] = CH_DIA7; TSEL->p[P_VOIC] = wide ? VC_BASS : VC_CLOSE;
+        if (s == S_CHORD_STRUM || s == S_CHORD_STRUM_ALT) {
+            TSEL->p[P_STRUM] = 40;
+            TSEL->p[P_SDIR] = s == S_CHORD_STRUM_ALT ? 2 : 0;
+        }
+        chord_build(TSEL, wide ? 68u : 71u, out);
+        go_title("CHORD"); ui.hot_col = s == S_CHORD_STRUM_ALT ? 3 : s == S_CHORD_STRUM ? 2 : 0; ui.hot_t = 30;
         break;
     }
     case S_CHORD_OFF: go_title("CHORD"); break;
@@ -1167,14 +1190,39 @@ static void setup(int s)
         ui.home = 1;
         ui.home_scope = 1;
         break;
+    case S_HOME_SCOPE_PLAY: {                        /* (2.5) .. the tracks playing, loud to silent (T5 muted): QUARK's
+                                                      * notes (T1's flying out, T3's chord held, T2's released and
+                                                      * fading), CRYPT's creatures, SKIFF's sea */
+        static const int32_t PK[NTRK] = {30000, 12000, 6000, 1500, 20000, 0};
+        static const struct { uint8_t k, i, stage; int32_t env; uint16_t ms; } V[] = {
+            {0, 0, 2, 1 << 24, 60}, {2, 0, 2, 1 << 24, 900}, {2, 1, 2, 1 << 24, 900}, {2, 2, 2, 1 << 24, 900},
+            {1, 0, 3, 1 << 20, 1500}, {4, 0, 2, 1 << 24, 300}};
+        for (uint32_t k = 0; k < NTRK; k++)
+            trk[k].peak = PK[k];
+        trk[4].p[P_MUTE] = 1;
+        for (uint32_t n = 0; n < NELEM(V); n++) {
+            voice_t *v = &trk[V[n].k].v[V[n].i];
+            v->active = 1; v->gate = V[n].stage < 3u; v->stage = V[n].stage; v->env = V[n].env; v->note = 57;
+            v->age = 100u + n;
+            scd.id[V[n].k][V[n].i] = (uint16_t)v->age;
+            scd.t0[V[n].k][V[n].i] = (uint16_t)(fm1_ms - V[n].ms);
+        }
+        scd.last = fm1_ms;
+        ui.home = 1;
+        ui.home_scope = 1;
+        break;
+    }
     case S_SHIFT_ENV:                                /* (Skiff U5, A1) HOME held: SHIFT's map of ENV, STEP, HOME */
     case S_SHIFT_STEP:
     case S_SHIFT_HOME:
+    case S_SHIFT_SONG:                               /* ((2.5) SONG's: + PLAY FROM HERE, + EDIT CLEAR) */
         if (s == S_SHIFT_ENV) go_title("ENV");
         else if (s == S_SHIFT_STEP) go_page(GR_ROLL);
+        else if (s == S_SHIFT_SONG) { song_lists(0); go_page(GR_SONG); }
         else ui.home = 1;
         ui.shift = 1;
         break;
+    case S_HINT_FREE: go_home(); ui_message("SHIFT + SAVE: FREE TAKE"); ui.msg_t = 130; break;   /* ((2.5) once, free_hint) */
     case S_VOICE: go_title("VOICE"); break;
     case S_GLOBAL: go_title("GLOBAL"); break;
     case S_CHORUS: go_title("CHORUS"); break;   /* ((U3, N4) GLO's; SYSTEM gone, R2) */
@@ -1371,6 +1419,45 @@ static void setup(int s)
         go_title("FOLLOW");
         ui.hot_col = s == S_FOLLOW_SCALE ? 1 : s == S_FOLLOW_FIT ? 1 : 0; ui.hot_t = 30;
         break;
+    case S_DLY_MONO:                                /* ((2.5) GLO > DELAY, PRESETS turned: its MODE MONO, PING (dly: */
+    case S_DLY_PING:                                /* STEREO, a new project's) */
+        song.g[G_DMODE] = s == S_DLY_MONO ? DM_MONO : DM_PING;
+        go_page(GR_DELAY);
+        break;
+    case S_FX_DELAY:                                /* ((2.5, the user's 1A) FX > DELAY: SEND and the bus's TIME FEEDBACK */
+    case S_FX_REVERB:                               /* COLOR, PRESETS' MODE its card; FX > REVERB: SEND TYPE SIZE DAMP; */
+    case S_FX_SENDS:                                /* FX with the same sends (DELAY 70 %, REVERB 55 %) */
+        TSEL->p[P_DLY] = 89;
+        TSEL->p[P_REV] = 70;
+        song.g[G_RTYPE] = 2;
+        go_page(s == S_FX_REVERB ? GR_FXREV : s == S_FX_SENDS ? GR_FX : GR_FXDLY);
+        ui.hot_col = 0; ui.hot_t = 30;
+        break;
+    case S_FREE_TAKE:                               /* ((2.5) a FREE TAKE's picker (ui_take.c) on T1: a riff played */
+    case S_FREE_TAKE_TURNED: {                      /* stopped at 97 BPM, twice (T2 has notes: TEMPO KEEP); turned: */
+        static const uint8_t POS[7] = {0, 3, 6, 8, 10, 12, 14}, NT[7] = {48, 51, 55, 58, 55, 51, 53};   /* KNOB 1 to
+                                                     * the next guess, PLAY listening */
+        uint32_t bar, i;
+        sel_set(0);
+        song.playing = 0;
+        track_defaults_steps(TSEL);
+        free_n0 = free_n;
+        for (bar = 0; bar < 2u; bar++)
+            for (i = 0; i < 7u; i++) {
+                uint32_t at = 100000u + (uint32_t)((bar * 16u + POS[i]) * 154.64 + 20.0);
+                fm1_ms = at;
+                input_on(TSEL, NT[i], 100);
+                fm1_ms = at + 90u;
+                input_off(TSEL, NT[i]);
+            }
+        take_commit(0);
+        if (s == S_FREE_TAKE_TURNED) {
+            fr_knob(0, 1);
+            song.playing = 1;
+            TSEL->seq_idx = 9;
+        }
+        break;
+    }
     case S_SONG_SOUND:                              /* ((2.0, #30, 2A) entries with a sound: T1 A, T2 A C D, T4 E, T6 C */
     case S_SONG_SOUNDS: {                           /* (corners cut); T2 on STRINGS: KNOB 2 at SOUND on C (OCT+: SET
                                                      * SOUND STRINGS); no pick: C's sound named */
@@ -1575,7 +1662,7 @@ static void setup(int s)
         perf_held = perf_act = PF_BIT(PF_OUP) | PF_BIT(PF_ODN);
         perf_k[3] = 60; ui.hot_col = 3; ui.hot_t = 30;
         break;
-    case S_REVERB: go_title("REVERB"); song.g[G_RTYPE] = 1; ui.hot_col = 0; ui.hot_t = 30; break;   /* TYPE: SPRING */
+    case S_REVERB: go_page(GR_REVERB); song.g[G_RTYPE] = 1; ui.hot_col = 0; ui.hot_t = 30; break;   /* TYPE: SPRING */
     case S_MENU_HOLD: ui.menu = 1; ui.menu_sel = MI_HOLD; settings_hold = 2; break;
     case S_MENU_LEDS: ui.menu = 1; ui.menu_sel = MI_LEDS; settings_leds = LEDS_INV; break;
     case S_MENU_END: ui.menu = 1; ui.menu_sel = MI_COUNT - 1u; ui_prefs = 0xFF; ui_rec_prefs = 0x2A; break;   /* the last row,
@@ -1642,6 +1729,22 @@ static void setup(int s)
         break;
     case S_ROLL_EMPTY: case S_ROLL_ACID: case S_ROLL_CHORDS: case S_ROLL_TIES: case S_ROLL_LEN32: case S_ROLL_HIGH:
     case S_ROLL_LOW: case S_ROLL_WIDE: case S_ROLL_PLAYING: roll_scene(s); break;
+    case S_SONG_STRIP:                              /* ((2.5, the user's 2B) HOME while a song plays: the strip under */
+        song_lists(1);                              /* the header, where the song is, a notch at each entry's end */
+        take_pass[1] = 2; take_p0[1] = 0; trk[1].seq_cnt = 9;
+        ui.home = 1;
+        break;
+    case S_PROJECT_NEW:                             /* ((2.5, the user's 3A) SAVE > PROJECT's KNOB 3 on a used slot: NEW, */
+    case S_PROJECT_CLEAR:                           /* CLEAR SONG */
+        song.playing = 0; project_save(1); song.g[G_SLOT] = 2; go_page(GR_SLOTS); ui.msg_t = 0;
+        ui.act = 3; ui.act2 = s == S_PROJECT_NEW ? 1 : 2;
+        ui.hot_col = 2; ui.hot_t = 30;
+        break;
+    case S_CONFIRM_CLEAR_SONG:                      /* .. OCT+: its dialogs */
+    case S_CONFIRM_CLEAR_TRKS:
+        song.playing = 0; project_save(1); song.g[G_SLOT] = 2; go_page(GR_SLOTS); ui.msg_t = 0;
+        ui.confirm = s == S_CONFIRM_CLEAR_SONG ? CF_CLEAR_SONG : CF_CLEAR_TRKS; ui.confirm_trk = 1;
+        break;
     /* (Skiff 2.0, D: design/mockups/v2_notes.png) ROLL_CHORDS' chords: NOTES with steps 5..8 selected (SHIFT + PRESETS,
      * PITCH just turned); the chord on 5 with its C4 picked (its key lit); FEEL over 5..8, 5 and 7 at 1:2 (CHANCE turned) */
     case S_NOTES_RANGE: case S_NOTES_PICK: case S_FEEL_RANGE:

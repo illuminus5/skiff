@@ -329,7 +329,7 @@ static void trio_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const 
         a = clamp(ic1, -49152, 49152);                  /* beyond +-49152 a quarter of the excess */
         ic1 = a + ((ic1 - a) >> 2);
         y = soft_knee((x * ma + v1 * mb + v2 * mc) >> 10, 16000);   /* linear up to half scale */
-        out[i] += voice_amp(y << 1, m, i) << 1;
+        out[i] += voice_amp2(y << 1, m, i);
     }
     prev = cur + cr[n];
     v->ph[0] = ph0;

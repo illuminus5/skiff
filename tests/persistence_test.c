@@ -614,6 +614,61 @@ static persist_t per4_now(void)                  /* ((2.0) the PER4 a unit of be
     memcpy(&f.favorites, &favorites, sizeof favorites);
     return f;
 }
+/* a power-on's settings: project.c persist_boot's load, then main.c's order (the one-time changes) */
+static void boot_settings(void)
+{
+    union { persist_t per; sks_t sks; } f;
+    memset(&favorites, 0, sizeof favorites);
+    memset(&song, 0, sizeof song); sel_set(0);
+    if (settings_import(&f, st_load(OBJ_SETTINGS, &f, sizeof f))) {
+        if (f.sks.magic != SKS_MAGIC)
+            memset(&f.sks, 0, sizeof f.sks);
+        persist_saved = f.sks;
+        settings_export(&persist_saved);
+    }
+    settings_init();
+    cpu2_move();                                 /* ((2.5) before the second core is started) */
+    if (ui_set_rev < 1u) {
+        ui_prefs |= PREF_BPM_LOCK;
+        ui_set_rev = 1;
+        settings_save();
+    }
+#if FELUCCA_LEGACY
+    proj_migrate(1);
+#endif
+    unit_g_adopt = ui_set_rev < 2u;
+    autosave_boot(1);
+    unit_g_boot();
+}
+
+/* (2.5) every FM-1 on 2 CORES once (ui.c cpu2_move, unit_g_boot): 2.2's 1 CORE boots on 2 CORES and is saved so; set
+ * back to 1 CORE it stays there; RESET SETTINGS gives 2 CORES. The SMK-37's build (CPU2_DEFAULT 0): 1 CORE throughout */
+static int cpu2_once_test(void)
+{
+    int bad = 0, ok;
+    uint32_t e0;
+    reset();
+    settings_init();
+    CPU2_BYTE &= (uint8_t)~1u;                   /* (2.2's: 1 CORE, the one-time changes done up to 2) */
+    ui_set_rev = 2;
+    favorites.factory[15][24] = 0xA5u;
+    settings_save();
+    boot_settings();
+    ok = CPU2_SET == CPU2_DEFAULT && ui_set_rev == 2u + CPU2_DEFAULT;
+    e0 = erases;
+    boot_settings();
+    bad += check("(2.5) 2.2's 1 CORE: the FM-1's first boot moves it to 2 CORES, saved, once (the SMK-37 stays)",
+                 ok && CPU2_SET == CPU2_DEFAULT && erases == e0);
+    menu_put(MI_CPU, 0);
+    settings_save();
+    e0 = erases;
+    boot_settings();
+    bad += check("  .. set back to 1 CORE, it stays so at the next power-on", !CPU2_SET && erases == e0);
+    settings_reset();
+    bad += check("  .. RESET SETTINGS: 2 CORES on the FM-1, 1 CORE on the SMK-37", CPU2_SET == CPU2_DEFAULT);
+    return bad;
+}
+
 static int other_fw_test(void)
 {
     static const uint8_t REC[3][11] = {          /* [15][18..28]: Felucca 1.6, JIANT 0.9.10, Skiff's own */
@@ -635,26 +690,7 @@ static int other_fw_test(void)
             settings_export(&f.sks);
         }
         st_save(OBJ_SETTINGS, &f, i < 3 ? sizeof f.per : sizeof f.sks);
-        memset(&favorites, 0, sizeof favorites);
-        memset(&song, 0, sizeof song); sel_set(0);
-        if (settings_import(&f, st_load(OBJ_SETTINGS, &f, sizeof f))) {   /* (project.c persist_boot's; then main.c's */
-            if (f.sks.magic != SKS_MAGIC)                                 /* order) */
-                memset(&f.sks, 0, sizeof f.sks);
-            persist_saved = f.sks;
-            settings_export(&persist_saved);
-        }
-        settings_init();
-        if (ui_set_rev < 1u) {
-            ui_prefs |= PREF_BPM_LOCK;
-            ui_set_rev = 1;
-            settings_save();
-        }
-#if FELUCCA_LEGACY
-        proj_migrate(1);
-#endif
-        unit_g_adopt = ui_set_rev < 2u;
-        autosave_boot(1);
-        unit_g_boot();
+        boot_settings();
         printf("persist:   %s: CLOCK %d MIDI IN %d TUNE %d, LIST %u HINTS OFF %u LAUNCH %u KEYS %u FEEL %u BPM LOCK %u\n",
                i == 0 ? "Felucca 1.6" : i == 1 ? "JIANT" : i == 2 ? "Skiff" : "Skiff SKS1", song.g[G_CLOCK],
                song.g[G_ROUTE], song.g[G_TUNE],
@@ -663,10 +699,11 @@ static int other_fw_test(void)
         if (i < 2)
             ok = !song.g[G_CLOCK] && !song.g[G_ROUTE] && !song.g[G_TUNE] && !ui_ptag && !ui_hints_off &&
                  launch_mode() == LAUNCH_LOOP && !perf_scenes() && !(ui_rec_prefs & REC_FEEL) && (ui_prefs & PREF_BPM_LOCK) &&
-                 ui_set_rev == 2u;
+                 ui_set_rev == 2u + CPU2_DEFAULT;
         else
             ok = song.g[G_CLOCK] == 1 && song.g[G_ROUTE] == 1 && song.g[G_TUNE] == -4 && ui_ptag == 3u && ui_hints_off &&
                  launch_mode() == LAUNCH_NOW && perf_scenes() && (ui_rec_prefs & REC_FEEL) && !(ui_prefs & PREF_BPM_LOCK);
+        ok &= CPU2_SET == CPU2_DEFAULT;                  /* ((2.5) every FM-1 on 2 CORES once, whatever it ran before) */
         bad += check(i == 0 ? "Felucca 1.4+ settings: its FX keys etc. are not Skiff's CLOCK MIDI IN TUNE ..: the defaults"
                      : i == 1 ? "JIANT settings: its SKIN, USB, LOAD .. are not Skiff's: the defaults"
                      : i == 2 ? "  .. Skiff's own (its mark): every one as saved"
@@ -1035,6 +1072,7 @@ int main(void)
     bad += autosave_test();
     bad += autosave_save_test();
     bad += other_fw_test();
+    bad += cpu2_once_test();
     printf("%s\n", bad ? "PERSISTENCE TEST FAILED" : "persistence test passed");
     return bad != 0;
 }

@@ -226,10 +226,10 @@ int main(void)
     bad += check("layout: SLICER after DETUNE, then the matrix just before P_E0 ((Skiff) DIR, the ducking after the lane levels)",
                  P_SLCR == P_DETUNE + 1 && P_SLDEPTH + 1 == P_M1SRC && P_M4AMT + 1 == P_FM1_ATK && P_FM4_LEVEL + 1 == P_CHRD && P_VOIC + 1 == P_LN0 &&
                  P_LN7 + 1 == P_DIR && P_DIR + 1 == P_DKSRC && P_DKREL + 1 == P_DTYPE && P_LDECAY7 + 1 == P_LSYNC &&
-                 P_ESYNC + 1 == P_LPAN0 && P_LPAN7 + 1 == P_FOLLOW && P_FNOTE + 1 == P_E0 && P_E0 == 138 &&   /* ((1.3)
-                                               * LFO SYNC .. ENV SYNC: P_COUNT past 127; (2.0, #36) the lane pans; (2.1) the
-                                               * chord follow) */
-                 P_COUNT == PROJ_NP_V3 + 89u && PROJ_NP == 103u && PROJ_NX == 32u && PROJ_NX == PROJ_PX_MAX &&
+                 P_ESYNC + 1 == P_LPAN0 && P_LPAN7 + 1 == P_FOLLOW && P_FNOTE + 1 == P_STRUM && P_SDIR + 1 == P_E0 &&
+                 P_E0 == 140 &&                /* ((1.3) LFO SYNC .. ENV SYNC: P_COUNT past 127; (2.0, #36) the lane pans;
+                                               * (2.1) the chord follow; (2.5) STRUM, DIR) */
+                 P_COUNT == PROJ_NP_V3 + 91u && PROJ_NP == 103u && PROJ_NX == 32u && PROJ_NX == PROJ_PX_MAX &&
                  PROJ_NP_V3 == PROJ_NP_V2 + 4u);
     bad += check("SKF1 fits one flash object, the retained cache in NOINIT", sizeof(project_store_t) <= 4096u - 256u &&
                  sizeof(project_store_t) == 3840u && 0xC8u + 4u * sizeof(project_store_t) <= 0x3D50u);
@@ -249,9 +249,11 @@ int main(void)
     ok = proj_import(&q, &buf, (int)sizeof v2);
     bad += check("FUN2 -> FUN6: converted, valid format 5 slot", ok && proj_ok(&q) && q.magic == PROJ_MAGIC);
     ok = q.sel == 2;
-    for (i = 0; i < G_COUNT; i++)
-        ok &= q.g[i] == (i == G_RTYPE || i == G_CMODE || i == G_CFDBK ? 0 : (int16_t)(500 + i));
-    bad += check("FUN2 -> FUN6: globals (id 24, the old drum channel: ROOM; 25 26 CHORUS MODE, FEEDBACK 0) and selected track", ok);
+    for (i = 0; i < G_COUNT; i++)                       /* ((2.5) a global added since: its default; the delay MONO */
+        ok &= q.g[i] == (i == G_DMODE ? DM_MONO : i >= PROJ_NG_V2 ? GP[i].def :
+                         i == G_RTYPE || i == G_CMODE || i == G_CFDBK ? 0 : (int16_t)(500 + i));
+    bad += check("FUN2 -> FUN6: globals (id 24, the old drum channel: ROOM; 25 26 CHORUS MODE, FEEDBACK 0; (2.5) 27 the "
+                 "delay MONO) and selected track", ok && GP[G_DMODE].def == DM_STEREO);
     ok = 1;
     for (t = 0; t < PROJ_NT; t++)
         ok &= track_ok(&q.t[t], &v2.t[t], t, t == 3u, 127, 127);   /* (G_DRLVL / G_DRREV 525 / 526: 127; G_CMODE / G_CFDBK now) */
@@ -269,7 +271,7 @@ int main(void)
     memset(&v3, 0, sizeof v3);
     v3.magic = PROJ_MAGIC_V3;
     v3.size = sizeof v3;
-    for (i = 0; i < G_COUNT; i++)
+    for (i = 0; i < PROJ_NG_V2; i++)
         v3.g[i] = (int16_t)(600 + i);
     v3.sel = 3;
     v3.parts = PROJ_PARTS;
@@ -281,7 +283,8 @@ int main(void)
     ok = proj_import(&q, &buf, (int)sizeof v3) && proj_ok(&q) && q.magic == PROJ_MAGIC && q.sel == 3 &&
          q.parts == PROJ_PARTS;
     for (i = 0; i < G_COUNT; i++)
-        ok &= q.g[i] == (i == G_RTYPE || i == G_CMODE || i == G_CFDBK ? 0 : (int16_t)(600 + i));
+        ok &= q.g[i] == (i == G_DMODE ? DM_MONO : i >= PROJ_NG_V2 ? GP[i].def :
+                         i == G_RTYPE || i == G_CMODE || i == G_CFDBK ? 0 : (int16_t)(600 + i));
     for (t = 0; t < PROJ_NT; t++)
         ok &= track_v3_ok(&q.t[t], &v3.t[t], t);
     bad += check("FUN3 -> FUN6: every parameter kept, the matrix OFF, steps, globals (24: ROOM; 25 26: 0)", ok && pow_on(&q));
@@ -1026,8 +1029,12 @@ int main(void)
         for (i = 0; i < P_COUNT; i++)
             ok &= c.t[1].p[i] == (i < 100u ? a.t[1].p[i] : param_desc_of(a.t[1].engine, i)->def);
         for (i = 0; i < G_COUNT; i++)
-            ok &= c.g[i] == (i < 20u ? a.g[i] : GP[i].def);
-        bad += check("  an older record (20 globals, 100 parameters on T2): the rest at their defaults", ok);
+            ok &= c.g[i] == (i < 20u ? a.g[i] : i == G_DMODE ? DM_MONO : GP[i].def);
+        bad += check("  an older record (20 globals, 100 parameters on T2): the rest at their defaults (the delay MONO)", ok);
+        skf4_edit(&st2, &st, g0 + 1u + 2u * G_DMODE, -2, g0, -1);          /* ((2.5) 2.2's record: 27 globals */
+        ok = proj_import(&c, &st2, (int)PROJ_STORE4) && !memcmp(c.g, a.g, 2u * G_DMODE) && a.g[G_DMODE] != DM_MONO &&
+             c.g[G_DMODE] == DM_MONO && st2.raw[g0] == 27u && GP[G_DMODE].def == DM_STEREO;
+        bad += check("  (2.5) 2.2's record (27 globals): the delay MONO, as it played (a new project: STEREO)", ok);
 #define SKF4_BAD(off, v) (st2 = st, st2.raw[(off)] = (v), sum = proj_hash(st2.raw, PROJ_STORE4 - 4u), \
                           memcpy(st2.raw + PROJ_STORE4 - 4u, &sum, 4), !proj_import(&c, &st2, (int)PROJ_STORE4))
         st2 = st; st2.raw[p0 + 1u] ^= 1u;

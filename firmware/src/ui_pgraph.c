@@ -22,6 +22,7 @@ static void graph_delay(uint16_t c)
 {
     uint32_t tap = DLY_6TH[song.g[G_DTIME] % 13], win = tap * 4u > 96u ? tap * 4u : 96u, unit = win > 96u ? 96u : 24u;
     int32_t lvl = 1000, i, n = (int32_t)(win / unit), w = (int32_t)(tap * 208u / win) - 3;
+    int32_t send = cur_page()->graph == GR_FXDLY ? TSEL->p[P_DLY] : 127;   /* ((2.5) FX > DELAY: the track's echoes */
     char b[8];
     for (i = 0; i < n; i++) {                        /* the beats (bars), every one named up to 8, else every 4th */
         int32_t x = 14 + (int32_t)((uint32_t)i * unit * 208u / win);
@@ -69,9 +70,11 @@ static void graph_delay(uint16_t c)
             cv_rect(x, 120 - h, w, h, i ? ux_mix(T_TEXT, NE_VIOLET, 30 + 8 * i) : T_TEXT);
         } else
         cv_rect(x, 120 - h, w, h, i ? ux_mix(c, T_SURF, 15 + 50 * (i - 1) / 6) : T_TEXT);
-        lvl = i ? lvl * song.g[G_DFDBK] * 230 / 32768 : song.g[G_DMIX] * 1000 / 127;
+        lvl = i ? lvl * song.g[G_DFDBK] * 230 / 32768 : song.g[G_DMIX] * 1000 / 127 * send / 127;
     }
     pg_text(14, 16, "DRY", T_MID);
+    pr_card(228, 3, "MODE", N_DMODE[(uint32_t)song.g[G_DMODE] % NELEM(N_DMODE)],   /* ((2.5, 5B) PRESETS' MODE: */
+            (int32_t)((uint32_t)song.g[G_DMODE] % NELEM(N_DMODE)), (int32_t)NELEM(N_DMODE), c, 0);   /* its card */
 }
 
 /* REVERB: the first reflections, then the tail SIZE long, its top dimmed by DAMP; SPRING: its coil over it; (Skiff
@@ -82,16 +85,18 @@ static void graph_reverb(uint16_t c)
     int32_t hall = song.g[G_RTYPE] == 2;
     int32_t i, x, e = 32768, len = (40 + song.g[G_RSIZE] * 144 / 127) * (hall ? 2 : 1), k = 32768 - 98304 / len;
     int32_t dim = 20 + song.g[G_RDAMP] * 60 / 127;   /* % of the tail's height dimmed */
+    int32_t amp = cur_page()->graph == GR_FXREV ? TSEL->p[P_REV] : 127, hmax = 84 * amp / 127;   /* ((2.5) FX >
+                                                      * REVERB: the track's reflections and tail, by its send) */
     if (ux.crypt) {                                  /* (Skiff C4) CRYPT: the reflections ! columns, the tail shade
                                                       * characters # * + : . fading along it, its top blood (DAMP);
                                                       * SPRING its coil ~ */
         static const char SH[5] = {'#', '*', '+', ':', '.'};
         int32_t r;
         for (i = 0; i < 5; i++)
-            for (r = 0; r < ER[i] / 9; r++)
+            for (r = 0; r < ER[i] * amp / 127 / 9; r++)
                 cr_ch(12 + i * 5, 126 - r * 9, &AF_S, '!', T_TEXT);
         for (x = 44; x <= 222; x += 6) {
-            int32_t h = 84 * e >> 15, n = h / 9, t = (x - 44) * 100 / 184;
+            int32_t h = hmax * e >> 15, n = h / 9, t = (x - 44) * 100 / 184;
             for (r = 0; r < n; r++) {
                 int top = r >= n * (100 - dim) / 100;
                 int32_t si = t * 4 / 100 + top;
@@ -109,15 +114,16 @@ static void graph_reverb(uint16_t c)
         return;
     }
     for (i = 0; i < 5; i++) {                        /* ((Skiff phase 9) NEON: lit tubes; QUARK: calorimeter towers) */
+        int32_t er = ER[i] * amp / 127;
         if (ux.neon)
-            ne_tube(12 + i * 6, 126 - ER[i], 3, ER[i], T_TEXT, T_SURF);
+            ne_tube(12 + i * 6, 126 - er, 3, er, T_TEXT, T_SURF);
         else if (ux.quark)
-            qk_tower(12 + i * 6 - 1, 126, 4, 84, ER[i], T_TEXT, 0);
+            qk_tower(12 + i * 6 - 1, 126, 4, 84, er, T_TEXT, 0);
         else
-            cv_rect(12 + i * 6, 126 - ER[i], 3, ER[i], T_TEXT);
+            cv_rect(12 + i * 6, 126 - er, 3, er, T_TEXT);
     }
     for (x = 44; x <= 228; x++) {
-        int32_t h = 84 * e >> 15, top = h * dim / 100, t = (x - 44) * 100 / 184, y;
+        int32_t h = hmax * e >> 15, top = h * dim / 100, t = (x - 44) * 100 / 184, y;
         if (ux.neon) {                               /* ((Skiff phase 9) NEON: the sun's bands under it, DAMP's top violet) */
             cv_rect(x, 126 - h, 1, top, ux_mix(NE_VIOLET, T_SURF, 45 + t * 30 / 100));
             ne_band_col(x, 126 - h + top - 3, 126 - 84, 126);
@@ -351,10 +357,29 @@ static void graph_drive(const track_t *t, uint16_t c)
     }
 }
 
-/* (Skiff 1.3) FX > INSERT and INSERT 2: the TYPE as fx.c track_insert runs it, in DRIVE's look (pg_curve_graph). The
+/* (Skiff 1.3) FX > INSERT: the TYPE as fx.c track_insert runs it, in DRIVE's look (pg_curve_graph); ((2.5) top right
+ * PRESETS' card: MIX, INSERT 2's page before; the TYPE's name there before is KNOB 1's card's). The
  * drives and CRUSH: the transfer (DRIVE / BITS, blended by MIX) across the input, and a sine's cycle through it, TONE /
  * LPF and LEVEL (CRUSH: its held samples); the swept ones: the sweep over one of its cycles (PHASR and FLANG a triangle,
  * FLANG's squared, CHOR a sine, as deep as DEPTH) and two of its cycles at the right. OFF or MIX 0: the straight line */
+/* a value and its unit, as the panels write them: "1.2 kHz", "86 %" */
+static void val_unit(char *b, const param_desc_t *d, int32_t v)
+{
+    const char *u;
+    param_format(d, v, b, &u);
+    if (u && *u) {
+        str_cpy(b + str_len(b), " ", 2);
+        str_cpy(b + str_len(b), u, 5);
+    }
+}
+static void graph_ins_filter(const track_t *t, uint16_t c);   /* (2.5) FILTR's (by ANALOG's FLT, below) */
+/* (2.5) INSERT's MIX on the PRESETS card, top right (as DELAY's MODE): "86 %", its knob where MIX is */
+static void pr_mix_card(const track_t *t, uint16_t c)
+{
+    char v[16];
+    val_unit(v, &TP[P_IMIX], t->p[P_IMIX]);
+    pr_card(228, 3, "MIX", v, clamp(t->p[P_IMIX], 0, 127), 128, c, 0);
+}
 static int32_t pg_ins_curve(const pg_curve_t *k, int32_t x)
 {
     int32_t y;
@@ -377,6 +402,10 @@ static void graph_insert(const track_t *t, uint16_t c)
 {
     uint32_t ty = (uint32_t)clamp(t->p[P_ITYPE], 0, IT_N - 1), i;
     pg_curve_t k = {ty, 0, t->p[P_IA], t->p[P_IB], t->p[P_IC], ins_mixq(t->p[P_IMIX])};
+    if (ty == IT_FILTER) {                           /* ((2.5) FILTR: its own, the filter across the panel) */
+        graph_ins_filter(t, c);
+        return;
+    }
     int32_t w[88], lp1 = 0, lp2 = 0, h = 0, kq = ins_lpk(ty == IT_CRUSH ? k.c : k.b);
     uint32_t hold = INS_HOLD[clamp(k.b, 0, 127) >> 3];
     for (i = 0; i < 176u; i++) {                     /* (the wave: a sine's cycle of 88 samples, its second pass) */
@@ -394,7 +423,7 @@ static void graph_insert(const track_t *t, uint16_t c)
             w[i - 88u] = y;
     }
     pg_curve_graph(pg_ins_curve, &k, w, c);
-    cv_text(140, 26 - AF_M.asc, &AF_M, N_ITYPE[ty], ty && k.mix ? c : T_DIM);
+    pr_mix_card(t, c);
 }
 
 /* GLOBAL: a bar's 16 steps (a beat's tallest), the off steps late by SWING+ (seq: core.h swing_step_len) over a mark
@@ -442,7 +471,7 @@ static void graph_global(uint16_t c)
 static void graph_voice(const track_t *t, uint16_t c)
 {
     static const char *const SAYS[] = {"POLY: A VOICE A NOTE", "MONO: ONE VOICE, NEW ATTACK",
-                                       "LEG: ONE VOICE, NO NEW ATTACK", "UNI: ALL VOICES, ONE NOTE"};
+                                       "LEG: ONE VOICE, NO NEW ATTACK", "UNI: 8 VOICES, ONE NOTE"};   /* ((2.5) of 16) */
     int32_t g = t->p[P_GLIDE], w = g ? 6 + g * 90 / 127 : 0;
     char b[16];
     const char *unit;
@@ -480,40 +509,38 @@ static void graph_voice(const track_t *t, uint16_t c)
  * nearest pitch); DETUNE: the UNI voices' spread (voice.c mono_play) */
 static void graph_voice2(const track_t *t, uint16_t c)
 {
-    uint32_t np = trk_nvoice(t), i, mode = trk_vmode(t), uni = mode == V_UNISON;
-    uint32_t rot = mode == V_POLY && !t->p[P_ALLOC] && !t->p[P_GLIDE];
-    int32_t sp = 216 / (int32_t)np, w = sp - 6;
+    uint32_t mode = trk_vmode(t), uni = mode == V_UNISON, np = uni ? uni_nvoice(t) : trk_nvoice(t), i;
+    uint32_t rot = mode == V_POLY && !t->p[P_ALLOC] && !t->p[P_GLIDE], row = np > 8u ? 8u : np;   /* ((2.5) 16: two rows */
+    int32_t sp = 216 / (int32_t)row, w = sp - 6, h = np > 8u ? 26 : 28;                           /* of 8) */
     char b[24];
     for (i = 0; i < np; i++) {
-        int32_t x = 12 + (int32_t)i * sp, on = t->v[i].active;
-        b[0] = (char)('1' + i);
-        b[1] = 0;
+        int32_t x = 12 + (int32_t)(i % row) * sp, y = 24 + (int32_t)(i / row) * 31, on = t->v[i].active;
+        fmt_int(b, (int32_t)i + 1);
         if (ux.crypt) {                              /* (Skiff C4) CRYPT: the voices skulls, those sounding lit, the next
                                                       * one gold in a double frame */
             int nx = rot && i == t->rr % np;
-            cr_spritez(x + (w - 18) / 2, 29, SPR_SKULL, on ? T_THEME : nx ? CR_GOLD : T_DIM, T_SURF, 2);
+            cr_spritez(x + (w - 18) / 2, y + 5, SPR_SKULL, on ? T_THEME : nx ? CR_GOLD : T_DIM, T_SURF, 2);
             if (nx)
-                cr_frame2(x - 2, 23, w + 4, 30, CR_GOLD);
+                cr_frame2(x - 2, y - 1, w + 4, h + 2, CR_GOLD);
             continue;
         }
-        cv_rect(x, 24, w, 28, on ? c : T_RAISE);
-        cv_text_in(x, 24 + CAP_IN(M, 28), w, &AF_M, b, on ? T_INK : T_MID, on ? c : T_RAISE);
+        cv_rect(x, y, w, h, on ? c : T_RAISE);
+        cv_text_in(x, y + CAP_IN(M, h), w, &AF_M, b, on ? T_INK : T_MID, on ? c : T_RAISE);
         if (rot && i == t->rr % np) {
-            cv_frame(x - 2, 22, w + 4, 32, T_TEXT);
-            cv_frame(x - 1, 23, w + 2, 30, T_TEXT);
+            cv_frame(x - 2, y - 2, w + 4, h + 4, T_TEXT);
+            cv_frame(x - 1, y - 1, w + 2, h + 2, T_TEXT);
         }
     }
     if (rot) {
         str_cpy(b, "NEXT NOTE: VOICE ", 20);
-        b[17] = (char)('1' + t->rr % np);
-        b[18] = 0;
+        fmt_int(b + 17, (int32_t)(t->rr % np) + 1);
     } else
         str_cpy(b, mode != V_POLY ? "ALLOC: ONLY IN POLY" : "NEXT NOTE: THE NEAREST", 24);
     pg_text(12, 16, b, T_MID);
     for (i = 0; i < (uni ? np : 1u); i++) {
         int32_t k = 2 * (int32_t)i - (int32_t)(uni ? np - 1u : 0u);
-        if (uni && np > 1u && np < NVOICE)
-            k = k * (NVOICE - 1) / (int32_t)(np - 1u);
+        if (uni && np > 1u && np < UNI_NV)
+            k = k * (UNI_NV - 1) / (int32_t)(np - 1u);
         if (ux.crypt) {                              /* (Skiff C4) CRYPT: a row of dashes each, - - - */
             int32_t x;
             for (x = 76; x <= 224; x += 6)
@@ -583,21 +610,46 @@ static void graph_osc(const track_t *t, uint16_t c)
     pg_text(12, 16, b, T_MID);
 }
 
-/* ANALOG's FLT: the low pass's curve on a pitch axis: flat, a peak at CUTOFF as high as RES, falling after */
-static void graph_flt(const track_t *t, uint16_t c)
+/* a filter's level at d (the cutoff's place minus this one, on a 0..1000 pitch axis), 0..1000 (620: as it came in): LP
+ * flat, a peak at the cutoff as high as RES, falling after; ((2.5) FILTR) HP its mirror; BP a peak at the cutoff as high
+ * as LP's flat part (FILTR's BP is level-matched), falling both ways (faster with RES); shape (0 LP .. 64 BP .. 127 HP)
+ * blends the two beside it */
+static int32_t flt_off(int32_t w)                   /* a share w / 64 as a level: 20 log10, ~27 a dB (-1000: none) */
 {
-    int32_t fc = t->p[P_E4] * 1000 / 127, res = t->p[P_E5], x, py = 0, xc = 12 + fc * 216 / 1000;
+    static const int16_t OFF[9] = {-1000, -482, -321, -227, -161, -109, -67, -31, 0};
+    int32_t i = w >> 3;
+    return i >= 8 ? 0 : OFF[i] + (OFF[i + 1] - OFF[i]) * (w & 7) / 8;
+}
+static int32_t flt_level(int32_t d, int32_t res, int32_t shape)
+{
+    int32_t ad = d < 0 ? -d : d, bump = ad < 60 ? (380 * res / 127) * (3600 - ad * ad) / 3600 : 0;
+    int32_t peak = 620 + 380 * res / 127, lp = d >= 0 ? 620 + bump : peak + d * 32 / 10;
+    int32_t hp = d <= 0 ? 620 + bump : peak - d * 32 / 10, bp = 620 - ad * (16 + res / 8) / 10, a, b;
+    if (shape <= 64) {                               /* (the louder of the two at its share, as the sound sums them: 30 %
+                                                      * BP lowers LP's flat part 3 dB, not a slope) */
+        a = lp + flt_off(64 - shape);
+        b = bp + flt_off(shape);
+    } else {
+        a = bp + flt_off((127 - shape) * 64 / 63);
+        b = hp + flt_off((shape - 64) * 64 / 63);
+    }
+    a = a > b ? a : b;
+    return a < 0 ? 0 : a;
+}
+/* flt_level's curve across the panel (cut, res, shape: 0..127) in each theme's look (ANALOG's FLT, (2.5) FILTR): CRYPT
+ * ASCII art (8 lines of 13 px) over its shade, a skull on its peak, a dagger at the cutoff; else the line over its fill
+ * (NEON the sun's bands, QUARK a Monte Carlo fill) and the cutoff's line. *pkx, *pky: its peak (the first highest) */
+static void flt_curve(int32_t cut, int32_t res, int32_t shape, uint16_t c, int32_t *pkx, int32_t *pky)
+{
+    int32_t fc = cut * 1000 / 127, x, py = 0, xc = 12 + fc * 216 / 1000;
     uint16_t fill = ux_mix(c, T_SURF, 75);
-    char b[16], v[12];
-    const char *unit;
-    if (ux.crypt) {                                  /* (Skiff C4) CRYPT: the curve as ASCII art (8 lines of 13 px) over its
-                                                      * shade, a skull on its peak, a dagger at the cutoff */
+    *pkx = xc;
+    *pky = 120;
+    if (ux.crypt) {
         uint8_t L[37];
         int32_t i, pk = 0;
         for (i = 0; i < 37; i++) {
-            int32_t f = i * 1000 / 36, d = fc - f, l = d >= 0 ? 620 + (d < 60 ? (380 * res / 127) * (3600 - d * d) / 3600 : 0) :
-                                                                620 + 380 * res / 127 + d * 32 / 10;
-            L[i] = (uint8_t)(8 - (l < 0 ? 0 : l) * 8 / 1000);
+            L[i] = (uint8_t)(8 - flt_level(fc - i * 1000 / 36, res, shape) * 8 / 1000);
             if (L[i] < L[pk])
                 pk = i;
         }
@@ -605,29 +657,72 @@ static void graph_flt(const track_t *t, uint16_t c)
         cr_art(12, 16, 6, 13, L, 37, T_THEME);
         cr_skull(12 + pk * 6 - 4, 16 + L[pk] * 13 - 12, CR_FLAME, T_SURF, 0);
         cr_dagger(xc - 4, 104, CR_GOLD);
-    } else {
+        return;
+    }
     cv_rect(xc, 8, 1, 114, T_DIM);
     for (x = 0; x <= 216; x++) {
-        int32_t f = x * 1000 / 216, d = fc - f, peak = 620 + 380 * res / 127, l, y;
-        if (d >= 0)
-            l = 620 + (d < 60 ? (380 * res / 127) * (3600 - d * d) / 3600 : 0);
-        else
-            l = peak + d * 32 / 10;
-        if (l < 0) l = 0;
-        y = 120 - l * 104 / 1000;
+        int32_t y = 120 - flt_level(fc - x * 1000 / 216, res, shape) * 104 / 1000;
         pg_under(12 + x, y, 16, 120, fill);          /* ((Skiff N4, Q4) NEON the sun's bands under it, QUARK a Monte
                                                       * Carlo fill) */
         if (x)
             cv_line_t(12 + x - 1, py, 12 + x, y, c, 3);
+        if (y < *pky) {
+            *pkx = 12 + x;
+            *pky = y;
+        }
         py = y;
     }
-    }
-    param_format(&ENG_ANALOG.edit[4], t->p[P_E4], v, &unit);
-    str_cpy(b, v, 10);
-    if (unit && *unit) {
-        str_cpy(b + str_len(b), " ", 2);
-        str_cpy(b + str_len(b), unit, 5);
-    }
+}
+
+/* (2.5, the user's 6B) FX > INSERT, FILTR: the filter across the panel as ANALOG's FLT draws it, LP into BP into HP by
+ * SHAPE; top left LP BP HP on a line, SHAPE's place a mark; its peak NEON a spark, QUARK a nucleus; the cutoff's value
+ * by its line (CRYPT by the dagger; low, where the top's taken by the shape's line or MIX's card); MIX's card top right */
+static void graph_ins_filter(const track_t *t, uint16_t c)
+{
+    int32_t cut = clamp(t->p[P_IA], 0, 127), sh = clamp(t->p[P_IC], 0, 127), xc = 12 + cut * 1000 / 127 * 216 / 1000;
+    int32_t px, py, m = 12 + sh * 80 / 127, w;
+    char b[16];
+    flt_curve(cut, clamp(t->p[P_IB], 0, 127), sh, c, &px, &py);
+    if (ux.quark)
+        qk_nucleus(px, py, T_THEME, 7);
+    else if (ux.neon)
+        ne_spark(px, py + 1, T_ACCENT, 2);
+    pg_text(12, 18, "LP", sh <= 32 ? T_TEXT : T_DIM);
+    pg_text(46, 18, "BP", sh > 32 && sh < 96 ? T_TEXT : T_DIM);
+    pg_text(80, 18, "HP", sh >= 96 ? T_TEXT : T_DIM);
+    pg_hline(12, 92, 24, T_LINE);
+    if (ux.quark)
+        qk_disc(m + 2, 24, 3, T_ACCENT);
+    else if (ux.neon)
+        ne_spark(m + 2, 25, T_ACCENT, 1);
+    else if (ux.crypt)
+        cr_ch(m, 30, &AF_S, '^', CR_GOLD);
+    else
+        cv_rrect(m, 22, 5, 5, 2, T_ACCENT, T_SURF);
+    val_unit(b, track_desc(t, P_IA), cut);
+    w = text_w(&AF_S, b);
+    if (ux.crypt && xc < 170)
+        pg_text(xc + 10, 117, b, CR_GOLD);
+    else if (ux.crypt)
+        pg_text_r(xc - 6, 117, b, CR_GOLD);
+    else if (xc + 5 > 96 && xc + 5 + w < 142)        /* (top, by the line: clear of the shape's line and MIX's card) */
+        pg_text(xc + 5, 20, b, T_TEXT);
+    else if (xc - 4 - w > 96 && xc - 4 < 142)
+        pg_text_r(xc - 4, 20, b, T_TEXT);
+    else if (xc + 5 + w < 226)                        /* (else low, over the fill) */
+        pg_text(xc + 5, 114, b, T_TEXT);
+    else
+        pg_text_r(xc - 4, 114, b, T_TEXT);
+    pr_mix_card(t, c);
+}
+
+/* ANALOG's FLT: the low pass's curve on a pitch axis (flt_curve): flat, a peak at CUTOFF as high as RES, falling after */
+static void graph_flt(const track_t *t, uint16_t c)
+{
+    int32_t fc = t->p[P_E4] * 1000 / 127, xc = 12 + fc * 216 / 1000, px, py;
+    char b[16];
+    flt_curve(t->p[P_E4], t->p[P_E5], 0, c, &px, &py);
+    val_unit(b, &ENG_ANALOG.edit[4], t->p[P_E4]);
     if (ux.crypt && xc < 170)                        /* (Skiff C4) CRYPT: beside the dagger */
         pg_text(xc + 10, 117, b, CR_GOLD);
     else if (ux.crypt)

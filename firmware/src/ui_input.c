@@ -555,6 +555,7 @@ static int rec_tap(void)                                /* 1: the arming changed
 static int layer_play(void);
 static void play_press(void)
 {
+    sl_on = 0;                                          /* ((2.5) a PLAY of its own: not SONG's entry (seq.c seq_go) */
     if (layer_play())
         return;
     if (lists.song == SONG_ONCE && !song.playing && !seq_counting()) {
@@ -1567,6 +1568,13 @@ static void edit_param(uint32_t slot, int32_t steps)
         ui.act2 = st == 2;
         return;
     }
+    if (pg->graph == GR_SLOTS && slot == 2u) {            /* ((2.5, the user's 3A) PROJECT's KNOB 3: LOAD (a used */
+        int32_t st = ui.act == 3u ? 1 + (int32_t)ui.act2 : 0;   /* slot), NEW, CLEAR SONG, CLEAR TRACKS; left past */
+        st = clamp(st + steps, 0, project_used((uint32_t)song.g[G_SLOT] - 1u) ? 4 : 3);   /* the first: none picked */
+        ui.act = st ? 3u : ui.act == 3u ? 0u : ui.act;
+        ui.act2 = (uint8_t)(st ? st - 1 : 0);
+        return;
+    }
     if (pg->graph == GR_BANK && slot == 3u) {             /* ((2.0, #46) PATTERNS' KNOB 4: the ACTION, OCT+ does it */
         ui.bact = (uint8_t)clamp((int32_t)ui.bact + (steps > 0 ? 1 : -1), 0, BA_N - 1);
         return;
@@ -1597,10 +1605,74 @@ static void edit_param(uint32_t slot, int32_t steps)
     if ((vp == &TSEL->p[P_DKSRC] || vp == &TSEL->p[P_FOLLOW]) && v == (int32_t)(song.sel % NTRK) + 1)
         v = v == d->max ? *vp : v + (steps > 0 ? 1 : -1);   /* (Skiff) DUCK BY, (2.1) FOLLOW: never the track itself */
     *vp = (int16_t)v;
-    if (pg->scope != SC_GLOBAL) {
+    if (vp >= TSEL->p && vp < TSEL->p + P_COUNT) {     /* ((2.5) a track's own: FX > DELAY's SEND, not its TIME) */
         motion_capture(TSEL, (uint32_t)(vp - TSEL->p), *vp);
         ml_knob(TSEL, (uint32_t)(vp - TSEL->p));        /* ((1.3) MIDI LEARN: picked) */
     }
+}
+
+/* (2.5, the user's 3A) SAVE > PROJECT's CLEAR SONG: the song's lists emptied (every track's entries, their sounds,
+ * the entry each is on, SONG OFF); the tracks keep the patterns they are on, the pool every pattern, the scenes stay.
+ * Its undo copy holds the lists: SAVE held puts the song back */
+static void lists_undo(const char *label)
+{
+    undo_label = label;
+    undo_push(UNDO_LISTS);
+    undo.trk = (uint8_t)(song.sel % NTRK + 1u);
+    undo.what = UNDO_LISTS;
+    undo.keep = 0;
+    memcpy(undo.step, &lists, sizeof lists);
+}
+/* (2.5) SHIFT + EDIT on SONG: the selected entry emptied there and then, playing too, without a dialog: its pattern
+ * stays in the pool (KNOB 2's CLEAR may erase it), a track on it plays on to its end; SAVE held brings it back */
+static void song_del(void)
+{
+    uint32_t k = song.sel % NTRK, e = sg.entry % NENT;
+    char b[8] = {'T', (char)('1' + k), ' ', (char)('A' + e), 0};
+    if (!lists.ent[k][e][0]) {
+        ui_say(b, " EMPTY");
+        return;
+    }
+    lists_undo("ENTRY");
+    fm1_irq_off();
+    lists.ent[k][e][0] = lists.snd[k][e][0] = lists.snd[k][e][1] = 0;
+    fm1_irq_on();
+    ui_say(b, " CLEARED");
+}
+static void song_wipe(void)
+{
+    lists_undo("SONG");
+    fm1_irq_off();
+    memset(lists.ent, 0, sizeof lists.ent);
+    memset(lists.snd, 0, sizeof lists.snd);
+    memset(lists.cur, 0, sizeof lists.cur);
+    lists.song = 0;
+    fm1_irq_on();
+    ui_message("SONG CLEARED");
+}
+/* .. CLEAR TRACKS: stopped, every track's pattern kept in the pool first (as NEW does: SAVE > PATTERNS and the song's
+ * entries still have them), then each track's steps and automation emptied, on no pattern (a new one when kept);
+ * the sounds stay */
+static void tracks_wipe(void)
+{
+    uint32_t k;
+    transport_stop_now();
+    if (keep_all() == 1) {
+        ui_way("PATTERNS FULL", WAY_PATTERNS);
+        return;
+    }
+    for (k = 0; k < NTRK; k++) {
+        track_t *t = &trk[k];
+        motion_clear(t);
+        fm1_irq_off();
+        track_defaults_steps(t);
+        trk_pid[k] = 0;
+        fm1_irq_on();
+        t->nheld = 0;
+        t->arp_phys = 0;
+    }
+    undo_clear();                                       /* (the copies were of patterns the tracks are not on now) */
+    ui_message("TRACKS CLEARED");
 }
 
 /* OCT+ on an action page: the picked action. A load stays picked (browse and load again; (Skiff U1) a project's asks
@@ -1701,10 +1773,16 @@ static void act_do(void)
     switch (id) {
     case G_LOAD:                                          /* (Skiff U1) over the session: the dialog first ((U3, A2)
                                                            * when it changed since its last save or load) */
-        if (!project_used(k) && project_changed())        /* ((1.2.1, #6) an empty slot: NEW, over changed music */
-            confirm_open(CF_NEW_PROJ, k);                 /* the dialog first) */
-        else if (!project_used(k))
+        if (proj_k3() >= PK3_SONG) {                      /* ((2.5, 3A) KNOB 3 on CLEAR SONG, CLEAR TRACKS: asks */
+            confirm_open(proj_k3() == PK3_SONG ? CF_CLEAR_SONG : CF_CLEAR_TRKS, k);
+            ui.act = ui.act2 = 0;
+        } else if (proj_k3() == PK3_NEW && project_changed()) {   /* ((1.2.1, #6) NEW ((2.5) any slot's), over */
+            confirm_open(CF_NEW_PROJ, k);                 /* changed music: the dialog first) */
+            ui.act = ui.act2 = 0;
+        } else if (proj_k3() == PK3_NEW) {
+            ui.act = ui.act2 = 0;
             project_new();
+        }
         else if (project_changed())
             confirm_open(CF_LOAD_PROJ, k);
         else
@@ -1856,7 +1934,8 @@ static void cursor_turn(int32_t s)
 /* Discussions #92 / #94: the PRESETS knob by page (the menu, a dialog, NAME and the layers: ui_input before this).
  *   SEQ's NOTES and FEEL ((2.0) and the DRUM grid): the step cursor, over a long note's ties (cursor_turn; a sound load
  *     there would drop the track's motion: never); SHIFT held: the selection (sel_shift); (#31) REC on, a chord held:
- *     its LENGTH; PATTERN: the track's DIR
+ *     its LENGTH; PATTERN: the track's DIR; (2.5) GLO > DELAY: its MODE (MONO STEREO PING: its four knobs are full);
+ *     FX > INSERT: its MIX (the page's PRESETS card)
  *   the list / action pages USER, PATTERNS, PROJECT, SONG: the selection, as their KNOB 1; TOOLS and SLICES: nothing
  *   HOME, PRESETS and every other page (EDIT, ENV, LFO, FX, SCL, ARP, MIXER, GLOBAL, ...): the selected track's
  *     sound, one list over every engine, then the used user presets (preset_step). A sound load keeps the steps
@@ -1883,6 +1962,13 @@ static void presets_turn(int32_t s)
         t->p[P_DIR] = (int16_t)param_turn(track_desc(t, P_DIR), t->p[P_DIR], s);
         motion_capture(t, P_DIR, t->p[P_DIR]);
         ml_knob(t, P_DIR);
+    } else if (g == GR_DELAY || g == GR_FXDLY) {          /* ((2.5) GLO > DELAY, FX > DELAY: its MODE, as PATTERN's DIR) */
+        song.g[G_DMODE] = (int16_t)param_turn(&GP[G_DMODE], song.g[G_DMODE], s);
+    } else if (g == GR_INS) {                             /* ((2.5) FX > INSERT: its MIX, INSERT 2's page before; as DIR */
+        track_t *t = TSEL;                                /* (automation, MIDI LEARN), as fast as a knob */
+        t->p[P_IMIX] = (int16_t)param_turn(track_desc(t, P_IMIX), t->p[P_IMIX], accel(EN_PRESET, s, 127));
+        motion_capture(t, P_IMIX, t->p[P_IMIX]);
+        ml_knob(t, P_IMIX);
     } else if (sheet_of(g)) {                             /* (Skiff phase 8; FM6 LAB) a sheet's pick: DRUM-X's sound */
         sheet_of(g)->pick(s);                             /* (BD .. CB), FM6's operator */
     } else if (g == GR_SLICES) {                          /* ((Skiff U4, F7) SLICES: KNOB 1's, the slice; was nothing) */
@@ -1947,6 +2033,7 @@ static void layer_keys(uint32_t keys);
 static void perf_encoders(int32_t ls, int32_t lp); /* (Skiff) ui_layer.c */
 static void layer_knob(uint32_t k, int32_t s);
 static int layer_play(void);
+static void free_hint(void);                        /* ((2.5) ui_layer.c) */
 static int layer_set_open(void);
 static uint32_t layer_oct(uint32_t pressed, uint32_t oct);
 static void layer_oct_open(uint32_t pressed);
@@ -2115,6 +2202,7 @@ static void ui_input(void)
                                                          * its map has gone) */
     midi_pc_poll();                                     /* ((1.3) MIDI Program Change) */
     ml_poll();                                          /* ((1.3) MIDI LEARN: a CC came for the picked parameter) */
+    free_hint();                                        /* ((2.5) a phrase played stopped: how to keep it, once) */
     if (scr_input(pressed, notes)) {                    /* MENU > SCREEN OFF: dark, or the wake gesture: swallowed */
         if (((pressed >> panel.btn[B_PLAY]) & 1u) && (song.playing || seq_counting()))
             transport_req = 2;                          /* (Skiff U1) .. but PLAY still stops the music */
@@ -2160,11 +2248,15 @@ static void ui_input(void)
 #endif
     rec_own = ui.lock == LAYER_REC;                     /* (its press closes the REC layer: no arming) */
     if (shift_held() && ((pressed >> panel.btn[B_EDIT]) & 1u) && !ui.menu && !ui.confirm && !name_on() &&
-        song.seq_mode && !ui.home && (step_page(cur_page()->graph) || cur_page()->graph == GR_FEEL)) {
+        song.seq_mode && !ui.home && (step_page(cur_page()->graph) || cur_page()->graph == GR_FEEL ||
+                                      cur_page()->graph == GR_SONG)) {
         pressed &= ~(1u << panel.btn[B_EDIT]);          /* ((2.0) SHIFT + EDIT on NOTES, FEEL: the selection deleted, */
         shift_mark();                                   /* not EDIT's layer locked: EDIT held + HOME still locks it) */
         home_long = 0;
-        sel_delete(TSEL);
+        if (cur_page()->graph == GR_SONG)               /* ((2.5) on SONG: the entry emptied) */
+            song_del();
+        else
+            sel_delete(TSEL);
     }
     if (ui.home_t0 && !ui.menu && !ui.confirm && !name_on() && (pressed & layer_bits_all())) {
         uint32_t lb = pressed & layer_bits_all();       /* (Skiff U2) SHIFT + a layer's button: locked open (again: */
@@ -2184,7 +2276,8 @@ static void ui_input(void)
     layer_lock_input(pressed);                          /* (a button closes a locked layer) */
     layer_arm(pressed, now);
     layer_oct_open(pressed);                            /* (OCT± with a SET layer's button down: it opens now) */
-    oct = oct_taps(pressed, ui.menu || ui.confirm || act_cols() || name_on() || layer_set_open() || ui.ml.on);
+    oct = oct_taps(pressed, ui.menu || ui.confirm || act_cols() || name_on() || layer_set_open() || ui.ml.on ||
+                            fr.on);                     /* ((2.5) a free take's picker: OCT+ keeps, OCT- puts back) */
     oct = layer_oct(pressed, oct);                      /* (a SET layer's OCT-: put back) */
     layer_masks();                                      /* seq.c: keys pressed with a layer's button are its own */
     lay = layer_held();
@@ -2304,6 +2397,22 @@ static void ui_input(void)
         name_input(notes, oct);
         return;
     }
+    if (fr.on) {                                        /* ((2.5) a FREE TAKE's picker (ui_take.c): KNOB 1..4 and PLAY; OCT+
+                                                         * keeps it, OCT- puts the track back; nothing else reacts */
+        uint32_t k;
+        int32_t s;
+        if (oct & 3u)
+            fr_close((oct & 2u) != 0u);
+        else
+            for (k = 0; k < 4u; k++)
+                if ((s = panel_enc(EN_K1 + k)) != 0)
+                    fr_knob(k, s);
+        if ((pressed >> panel.btn[B_PLAY]) & 1u)
+            play_press();
+        ui.pg_down = 0;
+        enc_drop();
+        return;
+    }
     if (save == BT_HOLD)                                /* SAVE held: undo, one level back (ui.c undo_step) */
         undo_step(0);                                   /* (Skiff: one level back; OCT- / OCT+ then: ui.undo_w) */
     else if (save == BT_TAP && !ui.confirm)             /* SAVE acts on release (a hold is the undo) */
@@ -2338,6 +2447,10 @@ static void ui_input(void)
                 (void)project_erase(ui.confirm_trk & 3u);
             } else if (kind == CF_NEW_PROJ) {
                 project_new();
+            } else if (kind == CF_CLEAR_SONG) {         /* ((2.5, 3A) SAVE > PROJECT's KNOB 3) */
+                song_wipe();
+            } else if (kind == CF_CLEAR_TRKS) {
+                tracks_wipe();
             } else if (kind == CF_RESET_SET) {          /* ((Skiff U4, A3) MENU > SYSTEM > RESET SETTINGS) */
                 settings_reset();
                 ui_message("SETTINGS RESET");
@@ -2385,7 +2498,12 @@ static void ui_input(void)
         b = panel_btn_of(id);
         switch (b) {
         case B_PLAY:
-            play_press();
+            if (shift_held() && !ui.home && cur_page()->graph == GR_SONG && !ui.menu && !ui.confirm && !name_on()) {
+                shift_mark();                           /* ((2.5) SHIFT + PLAY on SONG: the song from the entry, */
+                home_long = 0;                          /* bank.c song_from) */
+                song_from();
+            } else
+                play_press();
             break;
         case B_REC:                                     /* (Skiff U2) arms / disarms on the press, in a layer too; */
             if (!rec_own)                               /* SHIFT + REC: its layer, locked (above) */

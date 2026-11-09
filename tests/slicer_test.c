@@ -145,7 +145,7 @@ static int test_timing(void)
         f += CTL;
     }
     for (k = 0; k < steps; k++) {                 /* the step lengths as seq.c step_samples has them */
-        uint32_t base = (uint32_t)FS * 60u / 97u / 4u, len, idx = k & 15u, on = (SL_PAT[pat - 1u] >> idx) & 1u;
+        uint32_t base = bpm_quarter(97u) / 4u, len, idx = k & 15u, on = (SL_PAT[pat - 1u] >> idx) & 1u;
         uint32_t non = (SL_PAT[pat - 1u] >> ((idx + 1u) & 15u)) & 1u;
         int32_t sw = (20 + 10) * (int32_t)base / 250;
         len = base + (uint32_t)((idx & 1u) ? -sw : sw);
@@ -259,7 +259,7 @@ static int test_off_stut(void)
     slicer_start();
     {
         static int32_t in[4u * 44100u], out[4u * 44100u];
-        uint32_t len = (uint32_t)FS * 60u / 120u / 4u;
+        uint32_t len = bpm_quarter(120u) / 4u;
         for (f = 0; f < sizeof in / sizeof in[0]; f++)
             in[f] = out[f] = (int32_t)(12000.0 * sin(2 * M_PI * 150.0 * f / FS));   /* 18.75 periods a step */
         for (f = 0; f + CTL <= sizeof in / sizeof in[0]; f += CTL)

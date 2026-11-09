@@ -45,6 +45,7 @@
 #define SLC_AUTO 32u                 /* AUTO slices at most */
 #define SLC_SEGS 16u                 /* zones of a user slot */
 #define SLC_RB 64u                   /* reverse: samples decoded per window */
+#define SLC_NV 8u                    /* ((2.5) its voices: 8 with 16 a track, so its windows stay 1 KB a track) */
 #define SLC_BASE 60                  /* note of slice 0 (+ the track's ROOT) */
 #define SLC_HOP 32u                  /* AUTO detector: samples per hop */
 
@@ -439,7 +440,7 @@ static int16_t *slc_rb(track_t *t, voice_t *v)
 {
     uint32_t p = (uint32_t)(t - trk), i = (uint32_t)(v - t->v);
     /* (Skiff: the reverse windows, one per part voice, in the part's shared area: engines.c) */
-    return p < NPART && i < NVOICE ? ((int16_t (*)[SLC_RB])eng_part(t))[i] : 0;
+    return p < NPART && i < SLC_NV ? ((int16_t (*)[SLC_RB])eng_part(t))[i] : 0;
 }
 
 static void slice_note_on(track_t *t, voice_t *v)
@@ -602,7 +603,7 @@ static void slice_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const
         }
         y = v->s[2] + (((v->s[3] - v->s[2]) * (int32_t)(frac >> 1)) >> 15);
         v->s[7] += mulq15(y - v->s[7], lp);             /* TONE */
-        out[i] += voice_amp(v->s[7], m, i) << 1;
+        out[i] += voice_amp2(v->s[7], m, i);
         if (v->s[6] == 2)
             break;
     }
@@ -656,4 +657,5 @@ static const engine_t ENG_SLICE = {
     .sampled = 1,
     .keys = slice_keys,
     .amp = slice_amp,
+    .poly = SLC_NV,
 };

@@ -44,6 +44,7 @@ static const uint16_t SL_PAT[SL_NPAT] = {
     0x7597,   /* 16 xxx.x..xx.x.xxx. */
 };
 static const uint8_t SL_DEN[6] = {2, 4, 8, 3, 6, 12};   /* P_SLRATE (N_SLDIV): a step = 1 / DEN beats */
+static uint32_t beat_samples(void);                    /* (fx.c: the quarter, a whole number of 24-sample units) */
 
 static int16_t sl_buf[NTRK][SL_LEN] __attribute__((section(".pool")));
 typedef struct {
@@ -77,7 +78,7 @@ static void sl_enter(const track_t *t, sl_t *s)
 {
     uint32_t mode = (uint32_t)t->p[P_SLCR];
     s->idx = (uint8_t)((s->idx + 1u) & 15u);
-    s->base = (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM] / SL_DEN[(uint32_t)t->p[P_SLRATE] % 6u];
+    s->base = beat_samples() / SL_DEN[(uint32_t)t->p[P_SLRATE] % 6u];   /* ((2.5, #107) the sequencer's quarter) */
     s->len = swing_step_len(t, s->base, s->idx);   /* core.h, as seq.c step_samples */
     s->pos = 0;
     s->bit = (uint8_t)((sl_pattern(t) >> s->idx) & 1u);
@@ -172,7 +173,7 @@ static void slicer_track(const track_t *t, int32_t *b, uint32_t n)
     while (i < n) {
         uint32_t m;
         if (s->pos >= s->len)
-            sl_enter(t, s);
+            AUDIO_FAR(sl_enter)(t, s);
         m = s->len - s->pos;
         if (m > n - i)
             m = n - i;
@@ -193,7 +194,7 @@ static __attribute__((noinline)) void slicer_track_sd(const track_t *t, int32_t 
     while (i < n) {
         uint32_t m;
         if (s->pos >= s->len)
-            sl_enter(t, s);
+            AUDIO_FAR(sl_enter)(t, s);
         m = s->len - s->pos;
         if (m > n - i)
             m = n - i;

@@ -211,11 +211,13 @@ static void fm1_main(void)
     master_boot();
     kb_boot_hold = 1;                         /* #137: no notes from the keys before the UI (seq.c keyboard_block) */
 #if FELUCCA_CPU2
+    cpu2_move();                              /* ((2.5) every FM-1 on 2 CORES once: ui.c) */
     if (!bootguard.failed && CPU2_SET) {
         /* (Skiff 1.3, as Felucca 1.6.1) the second core (hal/fm1_cpu1.h; fx.c mix_block hands it tracks), at power-on,
          * before the audio and the timers (started later it never reaches its entry) and before fm1_guard_lock_top
          * (its entry word is at the top of RAM). It starts in the chip's ROM: the PC limits open meanwhile. MENU > CPU
-         * 1 CORE (the default), a crash in the last boot's first 30 s, or no answer: never started, one core */
+         * 1 CORE ((2.5) the SMK-37's default), a crash in the last boot's first 30 s, or no answer: never started, one
+         * core */
         fm1_guard_pc_open();
         fm1_cpu1_start();
         fm1_guard_enable(FM1_GUARD_PC);

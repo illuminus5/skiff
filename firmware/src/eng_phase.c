@@ -226,7 +226,7 @@ static inline __attribute__((always_inline)) void phase_loop(track_t *t, voice_t
         if (fg)     /* (the blocker's step of a full-scale swing, +-65534, and SUB's 25400 on it: s x amp would wrap
                      * 32 bits past 65538; FOLD 0 stays within 58167) */
             s = clamp(s, -65535, 65535);
-        out[i] += voice_amp(s, m, i) << 1;
+        out[i] += voice_amp2(s, m, i);
     }
     v->ph[0] = ph0;
     v->ph[1] = ph1;

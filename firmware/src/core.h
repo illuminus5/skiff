@@ -8,7 +8,10 @@
 #include <stdint.h>
 
 /* ------------------------------------------------------------ sizes --- */
-#define NVOICE 8                 /* voices per part, and the budget shared by all parts */
+#define NVOICE 16                /* voices per part ((2.5) 16: a chord's tails and the next chord, 8 before); the budget
+                                  * shared by all parts: VOICES_1CORE, VOICES_2CORE */
+#define VOICES_1CORE 8u          /* (2.5) the shared budget with one core (NVOICE's 8 before) */
+#define UNI_NV 8u                /* (2.5) UNISON's voices at most (mono_play: its spread and level as before) */
 #define NTRK 6                   /* tracks (the formats and the protocol count these): every track is a part;
                                   * (Skiff phase 6) T5 and T6 light (NHEAVY) */
 #define NPART NTRK               /* synth parts: tracks 1..NTRK */
@@ -26,18 +29,20 @@
 #define C1_RUN(fn, arg) 0                         /* hand it fn(arg): 1 = taken */
 #define C1_WAIT() 0                               /* wait for it: 0 = done */
 #endif
-/* (Skiff 1.3) the voices that sound at once across the tracks (voice.c voice_room, voice_alloc): NVOICE with one core;
- * VOICES_2CORE while the second core runs (C1_ON: MENU > CPU 2 CORES and it answered), the room its render gives. A
- * track still has NVOICE of its own (track_t.v); audio.c's shedding still guards the load either way */
+/* (Skiff 1.3) the voices that sound at once across the tracks (voice.c voice_room, voice_alloc): VOICES_1CORE with one
+ * core; VOICES_2CORE while the second core runs (C1_ON: MENU > CPU 2 CORES and it answered), the room its render gives
+ * ((2.5) 16, 12 before). A track still has NVOICE of its own (track_t.v); audio.c's shedding still guards the load
+ * either way */
 #ifndef VOICES_2CORE
-#define VOICES_2CORE 12u
+#define VOICES_2CORE 16u
 #endif
 #if FELUCCA_CPU2
-#define VOICE_BUDGET (C1_ON() ? VOICES_2CORE : NVOICE)
+#define VOICE_BUDGET (C1_ON() ? VOICES_2CORE : VOICES_1CORE)
 #else
-#define VOICE_BUDGET NVOICE
+#define VOICE_BUDGET VOICES_1CORE
 #endif
-_Static_assert(NTRK <= 8 && NPART < NVOICE, "a track mask is a uint8_t; each part protects one voice (voice.c)");
+_Static_assert(NTRK <= 8 && NPART < VOICES_1CORE && VOICES_2CORE <= NVOICE * NPART,
+               "a track mask is a uint8_t; each part protects one voice (voice.c)");
 #define NSTEP 64
 #define HALF_FRAMES 128          /* I2S half buffer: 2.9 ms at 44.1 kHz (a key waits 0..1 half, then plays 1 half later) */
 #define DAC_TICKS 544u           /* TIMER4 ticks per I2S frame (24 MHz / 44,117.6 Hz): (2.2) MIDI OUT's times (usb.c mo) */
@@ -69,7 +74,8 @@ _Static_assert(NTRK <= 8 && NPART < NVOICE, "a track mask is a uint8_t; each par
 /* ------------------------------------------------------- parameters --- */
 enum {
     F_INT, F_PCT, F_BIPCT, F_TIME, F_LFOHZ, F_CUTOFF, F_DB, F_SEMI, F_ENUM, F_BPM, F_NOTE,
-    F_ONOFF, F_OCT, F_STEPS, F_ST16   /* (Skiff U1) F_ST16: 0..127, 64 = 0, 3/16 semitone a step (DRUM's TUNE) */
+    F_ONOFF, F_OCT, F_STEPS, F_ST16,  /* (Skiff U1) F_ST16: 0..127, 64 = 0, 3/16 semitone a step (DRUM's TUNE) */
+    F_SHAPE                           /* (2.5) the FILTR insert's SHAPE: LP (0) .. BP (64) .. HP (127), "30 BP" between */
 };
 
 /* (Skiff 2.0) 16 bytes, its fields in this order (the initializers' too): a unit is one of the few a descriptor names
@@ -81,8 +87,9 @@ typedef struct {
     uint8_t fmt;
     uint8_t unit;               /* F_INT / F_ENUM optional unit: U_CT, U_ST, U_HZ, 0 none */
 } param_desc_t;
-enum { U_NONE, U_CT, U_ST, U_HZ };
-#define PD_UNIT_OF(d) ((d)->unit == U_CT ? "ct" : (d)->unit == U_ST ? "st" : (d)->unit == U_HZ ? "Hz" : (const char *)0)
+enum { U_NONE, U_CT, U_ST, U_HZ, U_MS };     /* ((2.5) U_MS: STRUM's; 0 reads OFF) */
+#define PD_UNIT_OF(d) ((d)->unit == U_CT ? "ct" : (d)->unit == U_ST ? "st" : (d)->unit == U_HZ ? "Hz" : \
+                       (d)->unit == U_MS ? "ms" : (const char *)0)
 
 enum {                          /* per-track parameters */
     P_LEVEL,
@@ -123,6 +130,8 @@ enum {                          /* per-track parameters */
                                                 * lpan_render): stored ids 135..142, after the engine values' (sid_p) */
     P_FOLLOW, P_FMODE, P_FNOTE,                /* (2.1) chord follow (follow.c): the track whose chords it follows, how,
                                                 * by which of their notes; stored ids 143..145 */
+    P_STRUM, P_SDIR,                           /* (2.5, the user's 7B) SCL > CHORD's STRUM (ms) and DIR (DOWN UP ALT,
+                                                * voice.c strum_*); stored ids 146, 147 */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
     P_COUNT
 };
@@ -143,8 +152,11 @@ enum {                          /* global parameters */
                                  * (fx.c cho_mode). Were G_DRLVL / G_DRREV, the GM drum part's level and reverb send
                                  * (inert since 1.0): an import of a format before SKF3 reads them as those
                                  * (project.c proj_drums_to_part), then sets them 0 (proj_import) */
+    G_DMODE,                    /* (2.5) the DELAY's MODE (DM_*, fx.c): MONO (every project before), STEREO (new ones), PING; the
+                                 * chorus too in the stereo ones. GSID 27: SKF4 holds it, the fixed layouts don't */
     G_COUNT
 };
+enum { DM_MONO, DM_STEREO, DM_PING };   /* G_DMODE */
 
 /* stored parameters of an older layout -> today's P_* order. A store keeps np = the P_COUNT it was
  * written with; common parameters are only ever added just before P_E0, so the first np - 8 are
@@ -591,6 +603,20 @@ static inline uint32_t swing_step_len(const track_t *t, uint32_t base, uint32_t 
     int32_t sw = track_swing(t) * (int32_t)base / 250;
     return base + (uint32_t)((idx & 1u) ? -sw : sw);
 }
+
+/* (2.5, #107) the quarter note in samples: a whole number of 24-sample units, so every DIV (1/4 .. 1/32, 1/8T, 1/16T,
+ * the SLICER's 1/32T) and a MIDI clock pulse (a 24th) is a whole number of samples. Before, each DIV's length was
+ * rounded on its own (at 120 BPM a 1/16 was 5512 samples, a 1/8 11025): a 1/16 track gained 2 samples a beat on a 1/8
+ * one and met it after ~30 minutes. Now the tracks, the click, the launch points, CLOCK OUT, the ARP, LFO SYNC and the
+ * SLICER divide one quarter and stay together. The tempo is within 12 samples a quarter (0.11 % at 240 BPM, 0.03 %
+ * at 120), under the unit's own clock error (~0.04 %) */
+#define QUARTER24(q) (((q) + 12u) / 24u * 24u)
+#ifdef FS                                              /* (felucca_tables.h; some host tests take core.h without it) */
+static inline uint32_t bpm_quarter(uint32_t bpm)
+{
+    return ((uint32_t)FS * 60u + bpm * 12u) / (bpm * 24u) * 24u;
+}
+#endif
 
 /* ----------------------------------------------------------- system --- */
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */

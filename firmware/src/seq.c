@@ -1238,6 +1238,7 @@ static void seq_start(void)
         t->rskip_n = 0;
         t->rh_n = 0;
         t->rat_left = 0;
+        sq[i].alt = 0;                             /* ((2.5) STRUM ALT: DOWN first, every time from PLAY) */
         if (t->p[P_LSYNC] && (t->p[P_LTRIG] || ENGINES[t->engine]->oneshot))   /* (#16) LFO 2 FREE + SYNC: in time */
             t->lfo_ph = (uint32_t)t->p[P_LPHASE] << 25;   /* with the bars from PLAY ((2.2, #94) a kit's too: its LFO
                                                            * runs free, no note restarts it) */
@@ -1325,6 +1326,7 @@ static void seq_stop(void)
 {
     uint32_t i;
     song.playing = 0;
+    free_stop();                                   /* ((2.5) take.c: what is played from now: a free take */
     thr_out = 0;                                   /* (Skiff) the throws back at once (throw.c) */
     cin_left = 0;                                  /* (a count-in: cancelled, nothing recorded) */
     cin_flush = 0;
@@ -1351,19 +1353,21 @@ static void seq_stop(void)
  * moved on, silently, to where pos 16ths put it: its steps (N_DIV in 48ths of a quarter: DIV_48) in its direction, its
  * passes (TAKES, the trig conditions), a step part-way waiting for the next; the click, the launch points and the beat
  * with them. SONG lists stay on their entries. ponytail: the straight grid (a swung step lands a few ms off until the
- * next); PING / RAND walk their cycle, the rest of a long way skipped in whole cycles. DIV_48: voice.c */
-static __attribute__((noinline)) void seq_locate(uint32_t pos)
+ * next); PING / RAND walk their cycle, the rest of a long way skipped in whole cycles. DIV_48: voice.c.
+ * (2.5) at: each track's own place, in 48ths of a quarter (SPP: pos's for all; SHIFT + PLAY on SONG: each where its
+ * list is then, bank.c song_from); a track at 0 as PLAY left it */
+static __attribute__((noinline)) void seq_locate_at(const uint32_t *at, uint32_t pos)
 {
     uint32_t i, k, rem, adv, len, per, u;
     seq_start();
-    if (!pos)
-        return;
     for (i = 0; i < NTRK; i++) {
         track_t *t = &trk[i];
+        if (!at[i])
+            continue;
         u = DIV_48[(uint32_t)t->p[P_SDIV] % 10u];
         len = t->p[P_SLEN] > 0 ? (uint32_t)t->p[P_SLEN] : 1u;
-        k = pos * 12u / u;
-        rem = pos * 12u % u;
+        k = at[i] / u;
+        rem = at[i] % u;
         adv = k + (rem != 0u);                      /* (the steps begun: the last one sounds from the next) */
         per = t->p[P_DIR] == DIR_PING && len > 1u ? (2u * len - 2u) * len : len;   /* (the state's cycle, its passes) */
         take_pass[i] = (uint16_t)(adv / per * (per / len));
@@ -1377,11 +1381,34 @@ static __attribute__((noinline)) void seq_locate(uint32_t pos)
         }
         t->seq_pos = rem ? rem * div_samples((uint32_t)t->p[P_SDIV]) / u : 0x7FFFFFFFu;
     }
+    if (!pos)
+        return;
     clk_step = (pos - 1u) & 15u;                    /* (the click's next 1/16: pos's) */
     clk_pos = div_samples(2);
     launch_steps = pos;
     beat_n = (uint8_t)((pos >> 2) & 3u);
     beat_pos = (pos & 3u) * div_samples(2);
+}
+static __attribute__((noinline)) void seq_locate(uint32_t pos)
+{
+    uint32_t at[NTRK], i;
+    for (i = 0; i < NTRK; i++)
+        at[i] = pos * 12u;
+    seq_locate_at(at, pos);
+}
+/* (2.5) SHIFT + PLAY on SONG (bank.c song_from): each track's place (48ths) and the song's (16ths) for the PLAY request
+ * that follows (sl_on, until a start uses it: seq_go; a PLAY press or a stop from the main loop drops it) */
+static uint32_t sl_at[NTRK] __attribute__((section(".pool"))), sl_pos __attribute__((section(".pool")));
+static volatile uint8_t sl_on __attribute__((section(".pool")));
+/* PLAY's start (events_block, the count-in's end): from the top, or there. Not inlined: events_block and cin_block keep
+ * their shape (tests/target_budget.py reads their loops from the layout) */
+static __attribute__((noinline)) void seq_go(void)
+{
+    if (sl_on) {
+        sl_on = 0;
+        seq_locate_at(sl_at, sl_pos);
+    } else
+        seq_start();
 }
 
 /* play one step: TIE extends, REST releases, NOTE (re)triggers its notes, then its lane hits (their GM
@@ -1900,7 +1927,7 @@ static __attribute__((noinline)) void cin_block(uint32_t n)
         click_req = (uint8_t)((cin_total - cin_left) % 4u ? 1u : 2u);
         return;
     }
-    seq_start();
+    seq_go();                                      /* ((2.5) SONG's entry too: counted in, then from there) */
     cin_flush = 1;
 }
 /* the count-in's kept notes onto step 1, which has just started (events_block, after seq_tick): as if played now */
@@ -1993,7 +2020,7 @@ static __attribute__((noinline)) void events_block(uint32_t n)
         else if (cin_bars && song.rec && !song.playing)
             cin_begin();                            /* recording from stop: the count-in first */
         else
-            seq_start();
+            seq_go();                               /* ((2.5) from the top, or SONG's entry: seq_go) */
         transport_req = 0;
     } else if (transport_req == 2u) {
         seq_stop();
@@ -2046,6 +2073,8 @@ static __attribute__((noinline)) void events_block(uint32_t n)
         t->armp = t->p[P_AMODE];
         t->aholdp = t->p[P_AHOLD];
     }
+    strum_tick(n);                                    /* ((2.5) a strum's notes whose time came; this block's kept */
+    sq_in = 1;                                        /* for strum_flush, at the end (voice.c)) */
     kb_ped_block(pr);                                 /* (the keys held: the hold's end, another track, a panic) */
     keyboard_block();
     while (mi_r != mi_w) {                            /* USB-MIDI (and TRS) in */
@@ -2091,4 +2120,6 @@ static __attribute__((noinline)) void events_block(uint32_t n)
     }
     if (song.playing)
         song.tick++;
+    strum_flush();                                    /* ((2.5) this block's notes of a strum: ordered, timed) */
+    sq_in = 0;
 }

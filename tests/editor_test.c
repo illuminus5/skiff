@@ -10,9 +10,9 @@ static unsigned char host_samples[3][0x14000];
 #ifndef FELUCCA_CDC
 #define FELUCCA_CDC 1                                    /* (as the firmware: MENU > USB SERIAL switches the console) */
 #endif
-/* (Skiff 2.0) the MENU settings an editor is offered: 17; without the console (FELUCCA_CDC=0, a release) 16, no USB
- * SERIAL (the 10th): item i is the 17's MENU_I(i) */
-#define MENU_NI (18u - !FELUCCA_CDC)
+/* (Skiff 2.0) the MENU settings an editor is offered: 18 ((2.5) 19: KEEP SENDS); without the console (FELUCCA_CDC=0,
+ * a release) one less, no USB SERIAL (the 10th): item i is the full list's MENU_I(i) */
+#define MENU_NI (19u - !FELUCCA_CDC)
 #define MENU_I(i) (FELUCCA_CDC || (i) < 9u ? (i) : (i) + 1u)
 #define main hostsim_main
 #include "hostsim.c"
@@ -209,7 +209,7 @@ static int preferences(void)
         host_wire[n - 9 - 23] == 0 &&                        /* (no bank since 1.0.3) */
         host_wire[n - 9 - 22] == 0x53 && host_wire[n - 9 - 21] == 1 && host_wire[n - 9 - 20] == 3 &&
         host_wire[n - 9 - 19] == 0x50 && host_wire[n - 9 - 18] == 1 && host_wire[n - 9 - 17] == 3 &&   /* FM6 v2: no bank, preset patches */
-        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == MENU_NI &&   /* MENU settings: 18 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD; (2.0) RETURN) */
+        host_wire[n - 9 - 16] == 0x4E && host_wire[n - 9 - 15] == 1 && host_wire[n - 9 - 14] == MENU_NI &&   /* MENU settings: 19 items ((Skiff U2) STYLE, FX LATCH gone; #27 PLAYHEAD; (2.0) RETURN; (2.5) KEEP SENDS) */
         host_wire[n - 9 - 13] == 0x52 && host_wire[n - 9 - 12] == 1 && host_wire[n - 9 - 11] == 4 &&   /* RATCH */
         host_wire[n - 9 - 10] == 0x4C && host_wire[n - 9 - 9] == 1 && host_wire[n - 9 - 8] == 1 &&   /* 1.1 parameter locks */
         host_wire[n - 9 - 7] == 0x54 && host_wire[n - 9 - 6] == 1 && host_wire[n - 9 - 5] == 0x30 &&  /* (Skiff phase 6) T5, T6 */
@@ -928,17 +928,17 @@ static uint32_t menu_set(uint32_t id, int32_t v)            /* -> rc; host_wire[
 }
 static int menu_protocol(void)
 {
-    static const char *const WANT[18][2] = {   /* ((Skiff U2) STYLE, id 1, and FX LATCH, id 7, retired) */
+    static const char *const WANT[19][2] = {   /* ((Skiff U2) STYLE, id 1, and FX LATCH, id 7, retired) */
         {"THEME", 0}, {"LARGE", "OFF,ON"}, {"ANIM", "ON,OFF"}, {"LEDS", "OFF,DIM LO,DIM HI,INV"},
         {"HOLD", "0.3 s,0.4 s,0.5 s,0.6 s"}, {"KNOB ACCEL", "OFF,ON"}, {"BPM LOCK", "OFF,ON"},
         {"SPEAKER EQ", "FLAT,LOWCUT,BASS+"}, {"USB LEVEL", "MASTER,FIXED"}, {"USB SERIAL", "ON,OFF"},
         {"CLICK", "OFF,REC,ON"}, {"CLICK LEVEL", "LOW,MID,HIGH"}, {"COUNT-IN", "OFF,1 BAR,2 BARS"},   /* (1.1: appended) */
         {"RESTORE LAST", "ON,OFF"}, {"SCALE LEDS", "OFF,ON"},                                        /* (1.2) */
         {"SCREEN OFF", "NEVER,5 MIN,15 MIN,30 MIN,60 MIN"}, {"PLAYHEAD", "THEME,LINE"},   /* ((Skiff #27) id 19) */
-        {"RETURN", "SNAP,1 BEAT,1 BAR"}};                                                   /* ((2.0, D 2A) id 20) */
-    static const int32_t DEF[18] = {-1, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0, 2};   /* (COLOR: the default palette) */
-    static const uint8_t TAB[18] = {0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 2, 2, 2, 3, 1, 0, 0, 1};   /* DISPLAY CONTROL AUDIO SYSTEM */
-    static const uint8_t ID[18] = {0, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20};   /* (1, 7, 18: none here) */
+        {"RETURN", "SNAP,1 BEAT,1 BAR"}, {"KEEP SENDS", "OFF,ON"}};   /* ((2.0, D 2A) id 20; (2.5) id 21) */
+    static const int32_t DEF[19] = {-1, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0, 2, 0};   /* (COLOR: the default palette) */
+    static const uint8_t TAB[19] = {0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 2, 2, 2, 3, 1, 0, 0, 1, 1};   /* DISPLAY CONTROL AUDIO SYSTEM */
+    static const uint8_t ID[19] = {0, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21};   /* (1, 7, 18: none here) */
     static const char *const TABN[4] = {"DISPLAY", "CONTROL", "AUDIO", "SYSTEM"};
     int bad = 0, ok = 1;
     uint32_t i, k, n;
@@ -969,7 +969,7 @@ static int menu_protocol(void)
         }
     }
     if (jf) { fprintf(jf, "]\n"); fclose(jf); }
-    bad += check("MENU_DESC: 18 items (1.0.4's 12 in the menu's order less STYLE and FX LATCH, then 1.1's CLICK, CLICK LEVEL, COUNT-IN, 1.2's RESTORE LAST, SCALE LEDS, SCREEN OFF, (Skiff #27) PLAYHEAD, (2.0) RETURN), ids 0, 2..6, 8..17, 19, 20, names, defaults", ok);
+    bad += check("MENU_DESC: 19 items (1.0.4's 12 in the menu's order less STYLE and FX LATCH, then 1.1's CLICK, CLICK LEVEL, COUNT-IN, 1.2's RESTORE LAST, SCALE LEDS, SCREEN OFF, (Skiff #27) PLAYHEAD, (2.0) RETURN, (2.5) KEEP SENDS), ids 0, 2..6, 8..17, 19..21, names, defaults", ok);
     bad += check("MENU_DESC (1.0.5): after the names each item's tab, index and name (DISPLAY CONTROL AUDIO SYSTEM)", ok);
     {   /* an older editor reads the names and stops: the tab is past them, nothing it reads moved */
         uint32_t m = menu_desc(3, &it), p = 14, q;
@@ -1020,12 +1020,13 @@ static int menu_protocol(void)
     ok &= menu_set(19, 1) == 3 && ui_ph_line == 1u;    /* ((Skiff #27) PLAYHEAD LINE) */
     favorites.factory[15][24] = 0xA5u;                  /* ((2.0) RETURN: a byte bank.c freed, a unit past its first */
     ok &= menu_set(20, 0) == 3 && ret_mode() == RET_SNAP;   /* boot; SNAP) */
+    ok &= menu_set(21, 1) == 3 && (MIDI_BYTE & 32u);   /* ((2.5) KEEP SENDS ON: [15][17] bit 5) */
     for (i = 0; i < MENU_NI; i++) {                     /* MENU_DESC reads them back */
-        static const int32_t SET[18] = {2, 1, 1, 1, 3, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 0};
+        static const int32_t SET[19] = {2, 1, 1, 1, 3, 1, 1, 2, 1, 0, 2, 0, 2, 1, 1, 2, 1, 0, 1};
         menu_desc(i, &it);
         ok &= it.value == SET[MENU_I(i)];
     }
-    bad += check("MENU_SET: every setting applied as the menu does (palette, EQ, USB LEVEL, CLICK, COUNT-IN at once, RESTORE LAST, SCALE LEDS, SCREEN OFF, PLAYHEAD, (2.0) RETURN), read back", ok);
+    bad += check("MENU_SET: every setting applied as the menu does (palette, EQ, USB LEVEL, CLICK, COUNT-IN at once, RESTORE LAST, SCALE LEDS, SCREEN OFF, PLAYHEAD, (2.0) RETURN, (2.5) KEEP SENDS), read back", ok);
     ok = menu_set(3, 0) == 3 && !(ui_prefs & PREF_ANIM_OFF) && (ui_prefs & PREF_LARGE) && menu_set(10, 0) == 3 &&
          !fx_usb_fixed;
     bad += check("MENU_SET: a flag back to its default leaves the other flags", ok);

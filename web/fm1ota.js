@@ -181,7 +181,8 @@ export class Updater {
     for (const input of this.access.inputs.values()) {
       this.seen.add(`${input.name || "?"}${input.state === "disconnected" ? " (disconnected)" : ""}`);
       if (input.state === "disconnected") continue;
-      if (!/fm-1|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi/i.test(input.name || "")) continue;   // never probe other gear
+      // never probe other gear ((2.5, #83) "FMini-1 Update": macOS's name for the SMK-37's update loader)
+      if (!/fm-1|fmini|smk|elite|mke-p37|starry|felucca|ota|composite|sinco|usb-midi/i.test(input.name || "")) continue;
       const output = outs.find((o) => o.name === input.name && o.state !== "disconnected");
       if (!output) continue;
       try { await input.open(); await output.open(); } catch (_) { continue; }

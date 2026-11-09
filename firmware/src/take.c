@@ -23,6 +23,33 @@ static volatile uint16_t take_lost[NTRK];             /* 1 + the latest pass of 
 static uint16_t take_p0[NTRK] __attribute__((section(".pool")));   /* (Skiff phase 5) the pass each track's pattern came
                                                        * in after (launch.c launch_step: a song's repeats count from it) */
 
+/* (2.5) FREE TAKES: what is played on a track while the transport is stopped (take_note's callers: the keys and their
+ * chords, MIDI, the arp), each note's on and off with its time (fm1_ms / 2): SHIFT + SAVE stopped (ui_take.c
+ * free_open) guesses the tempo, the length and the first beat and puts it into the track. FREE_EV entries (as many
+ * notes, on and off, as half of them), the oldest overwritten; only those since the last stop count (seq_stop:
+ * free_n0). While a picker is open (free_hold) nothing is logged and its PLAY's stop moves nothing. An entry: the time
+ * (15 bits: round in 65 s) | the note << 15 | its velocity << 22 (0: its end) | the track << 29. In the pool (.bss and
+ * the RAM code's room are tight): 2 KiB */
+#define FREE_EV 512u
+static uint32_t free_ev[FREE_EV] __attribute__((section(".pool")));
+static volatile uint32_t free_n;                      /* entries ever written (the slot: n % FREE_EV) */
+static uint32_t free_n0;                              /* the first one since the last stop */
+static volatile uint8_t free_hold;                    /* a picker open (ui_take.c) */
+static void free_note(const track_t *t, uint32_t note, uint32_t vel)   /* (audio ISR) */
+{
+    if (free_hold)
+        return;
+    free_ev[free_n % FREE_EV] = ((fm1_ms >> 1) & 0x7FFFu) | (note & 127u) << 15 | (vel & 127u) << 22 |
+                                (trk_index(t) & 7u) << 29;
+    RING_PUBLISH();
+    free_n++;
+}
+static void free_stop(void)                           /* the transport stopped (seq_stop): a new free take from here */
+{
+    if (!free_hold)
+        free_n0 = free_n;
+}
+
 /* PLAY (seq_start): a new log */
 static void take_clear(void)
 {
@@ -55,8 +82,12 @@ static __attribute__((noinline)) void take_note(track_t *t, uint32_t note, uint3
 {
     uint32_t pass, step, i;
     int32_t feel;
-    if (!song.playing || rec_on(t))
-        return;                                       /* (stopped, or REC records it itself) */
+    if (!song.playing) {
+        free_note(t, note, vel);                      /* ((2.5) stopped: a free take's) */
+        return;
+    }
+    if (rec_on(t))
+        return;                                       /* (REC records it itself) */
     step = take_stamp(t, &pass, &feel);
     i = take_ev_n % TAKE_EV;
     if (take_ev_n >= TAKE_EV && take_ev[i].pass + 1u > take_lost[take_ev[i].trk % NTRK])

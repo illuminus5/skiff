@@ -146,7 +146,7 @@ static void smp_sine(int32_t *out, uint32_t n, const vmod_t *m, int32_t d16, int
     int32_t s = *y;
     for (i = 0; i < n; i++, p += inc) {
         s += mulq15((sine_i(p) >> 1) - s, lp);
-        out[i] += voice_amp(s, m, i) << 1;
+        out[i] += voice_amp2(s, m, i);
     }
     *ph = p;
     *y = s;
@@ -252,7 +252,7 @@ static __attribute__((noinline)) void sample_declick(voice_t *v, int32_t *out, u
     int32_t off = v->s[5];
     uint32_t i;
     for (i = 0; i < n && off; i++) {
-        out[i] += voice_amp(off, m, i) << 1;
+        out[i] += voice_amp2(off, m, i);
         off -= (off >> 5) + (off > 0);
     }
     v->s[5] = off;
@@ -300,7 +300,7 @@ static void sample_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, cons
         if (drv)
             s = softclip(s + (((s >> 2) * (drv * 150)) >> 11));   /* = s * drv * 600 / 32768, no overflow */
         v->s[7] += mulq15(s - v->s[7], lp);           /* gentle tone control (CUT) */
-        out[i] += voice_amp(v->s[7], m, i) << 1;
+        out[i] += voice_amp2(v->s[7], m, i);
         if (v->s[6])
             break;
     }

@@ -56,10 +56,10 @@ static int lfo2(void)
     ui_power_on();
     t = &trk[0];
     song.g[G_BPM] = 120;
-    t->p[P_LSYNC] = 5;                                  /* 1/4: a beat, 22050 samples at 120 BPM */
+    t->p[P_LSYNC] = 5;                                  /* 1/4: a beat, 22056 samples at 120 BPM (2.5) */
     t->p[P_LRATE] = 0;                                  /* (RATE's slowest: nothing it does would wrap here) */
     t->lfo_ph = 0;
-    cyc = (uint32_t)FS * 60u / 120u;
+    cyc = bpm_quarter(120u);                            /* ((2.5) the quarter, core.h) */
     for (n = 0; n < 8u * cyc / CTL; n++) {             /* eight beats */
         old = t->lfo_ph;
         lfo_block(t);
@@ -476,7 +476,7 @@ static int momentary(void)
     btn_up(B_LFO); frame();
     bad += check("  OCT+ with LFO held keeps them (no octave shift); LFO let go then changes nothing",
                  ok && *p0 != v0 && ui.home);
-    go_title("REVERB"); frame();
+    go_page(GR_REVERB); frame();
     g0 = song.g[G_RSIZE];
     btn_down(B_LFO); frame();
     kt(EN_K2, 9);
@@ -917,7 +917,8 @@ static int env_sync(void)
     ok &= n >= 650u && n <= 720u;
     song.g[G_BPM] = 60;                                 /* half the tempo: twice the time */
     esync_coef(t);
-    ok &= t->esync_k[0] * 2u >= ((1u << 24) * CTL / 44100u) * 2u - 2u && t->esync_k[0] <= (1u << 24) * CTL / 44100u + 1u;
+    ok &= t->esync_k[0] * 2u >= ((1u << 24) * CTL / bpm_quarter(60u)) * 2u - 2u &&   /* ((2.5) the quarter x24) */
+          t->esync_k[0] <= (1u << 24) * CTL / bpm_quarter(60u) + 1u;
     t->p[P_ESYNC] = 0;
     song.g[G_BPM] = 120;
     go_title("LFO 2");                                  /* ((2.0, D 1A) ENV DEST went into MOD: its SYNC on LFO 2) */

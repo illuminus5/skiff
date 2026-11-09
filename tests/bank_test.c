@@ -680,22 +680,20 @@ static int live(void)
     ok &= sounds(86);
     bad += check("  a pattern playing backwards (D) starts from its last step", ok);
 
-    for (bpm = 120; bpm < 240u; bpm++) {          /* a tempo where 1/32's steps round shorter than half 1/16's */
-        song.g[G_BPM] = (int16_t)bpm;
-        if (8u * div_samples(3) < 4u * div_samples(2))
-            break;
-    }
+    bpm = 128;                                    /* (a tempo where 2.2's 1/32 steps rounded short of the 1/16's, 4
+                                                   * samples a beat; 2.5's quarter divides exactly, #107) */
+    song.g[G_BPM] = (int16_t)bpm;
     lv_start(LAUNCH_BAR);
-    t->p[P_SDIV] = 3;                             /* W at 1/32: ahead of the bar lines counted, 4 samples a beat */
+    t->p[P_SDIV] = 3;                             /* W at 1/32 */
     transport_req = 1;
     events_block(1);
     lv_next(40);
-    ok = bpm < 240u && bank_switch(0, 2) == 0;
+    ok = 8u * div_samples(3) == 4u * div_samples(2) && bank_switch(0, 2) == 0;
     lv_next(23);
     ok &= sounds(40 + 63 % 12) && bank_next(0) == 2u;
-    lv_next(1);                                   /* 1/32 step 65: bar 3, 32 samples before its line */
+    lv_next(1);                                   /* 1/32 step 65: bar 3, on its line */
     ok &= sounds(80);
-    bad += check("  BAR: a 1/32 track (its steps rounded short: ahead of the bars counted) comes in on the bar", ok);
+    bad += check("  BAR: a 1/32 track (its steps a whole share of the quarter, #107) comes in on the bar", ok);
     song.g[G_BPM] = 120;
 
     lv_start(LAUNCH_LOOP);

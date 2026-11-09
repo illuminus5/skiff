@@ -123,11 +123,18 @@ static inline int32_t amp_at(const vmod_t *m, uint32_t i)
     return m->amp0 + ((x + ((x >> 31) & (CTL - 1))) >> CTL_LOG2);
 }
 
-/* a voice's sample s (Q15) at the amplitude ramp's sample i, scaled to the voice level (VOICE_FS);
- * engines whose signal peaks near half scale add it << 1 */
+/* a voice's sample s (Q15) at the amplitude ramp's sample i, scaled to the voice level (VOICE_FS); voice_amp2: twice
+ * that, for engines whose signal peaks near half scale. ((2.5, #110) The level VOICE_FS goes into the amplitude, so
+ * the signal is cut to Q15 once, rounded, the doubling inside the cut: the two floors and the << 1 of before left a
+ * fading note in steps of 2, its error tied to the note. amp <= 32767 -> amp' <= VOICE_FS; |s| < 2^16 as before:
+ * |s * amp'| < 2^31) */
 static inline int32_t voice_amp(int32_t s, const vmod_t *m, uint32_t i)
 {
-    return mulq15(mulq15(s, amp_at(m, i)), VOICE_FS);
+    return (s * ((amp_at(m, i) * VOICE_FS) >> 15) + (1 << 14)) >> 15;
+}
+static inline int32_t voice_amp2(int32_t s, const vmod_t *m, uint32_t i)
+{
+    return (s * ((amp_at(m, i) * VOICE_FS) >> 15) + (1 << 13)) >> 14;
 }
 
 /* a level lv (0..127, square law: 127 as it is, 64 a quarter) on the block's amplitude ramp, not per sample: m itself

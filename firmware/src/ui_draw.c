@@ -564,6 +564,8 @@ static int card_dead(const page_t *pg, uint32_t c)
         ((uint32_t)t->p[P_FOLLOW] - 1u >= NTRK || (uint32_t)t->p[P_FOLLOW] - 1u == song.sel % NTRK ||
          (id == P_FNOTE && t->p[P_FMODE] == FM_FIT)))   /* FIT takes the whole chord: NOTE nothing) */
         return 1;
+    if (id == P_SDIR && !t->p[P_STRUM])                 /* ((2.5) STRUM OFF: its DIR does nothing) */
+        return 1;
     return pg->scope == SC_ENGINE && t->eng_req % NENGINES == ENGI_DRUM && id == P_E6 &&
            drum_kit_plays(t->p[P_E0]) != DK_STD;
 }
@@ -623,11 +625,27 @@ static void draw_foot(void)
     const char *ename = e->name;
     int32_t x, ly = foot_line_y();                     /* (BLOCKS: the one line) */
     int tiles = !ui.home && !grid_on() &&              /* ((Skiff 2.0) NOTES, FEEL, PATTERN: their hints; (issue #3) not */
-                (pg->graph == GR_ROLL || pg->graph == GR_FEEL || pg->graph == GR_STEPS);   /* under HOME's */
+                (pg->graph == GR_ROLL || pg->graph == GR_FEEL || pg->graph == GR_STEPS ||   /* under HOME's; (2.5) */
+                 pg->graph == GR_DELAY);                                                    /* GLO > DELAY's MODE */
     int hints = act_cols() || ((grid_on() || tiles) && !ui_hints_off);   /* (the line says them, not the
                                                        * sound; (Skiff U4) MENU > HINTS OFF: the sound) */
     uint32_t ret = mom_down() && mom_held(0) ? 1u + ret_mode() : 0u;   /* ((2.0, D 2A) MOMENTARY: how its values */
                                                        /* come back, OCT+ KEEP, for the whole line */
+    if (fr.on) {                                       /* ((2.5) a FREE TAKE's picker: its keys, as a layer's footer */
+        khint_t kh[3] = {{KC_OCTUP, "KEEP"}, {KC_OCTDN, "BACK"}, {KC_PLAY, song.playing ? "STOP" : "LISTEN"}};
+        sig = 0xF7EE5u + (uint32_t)song.playing * 31u;
+        if (!ui.force && sig == ui.foot_sig)
+            return;
+        ui.foot_sig = sig;
+        cv_begin(240, foot_h(), T_BG);
+        if (ux.neon)
+            ne_rule(0, 1);
+        if (ux.quark)
+            qk_rule(0);
+        cv_key_row(8, 232, ly - KC_TY, kh, 3, 7u, T_BG);
+        cv_blit(0, foot_y());
+        return;
+    }
     sound_name(t, pn);
     if (ui.home)
         ti[0] = 0;                                     /* ((Skiff U4, L5) the header names the page: here only where it */
@@ -651,13 +669,16 @@ static void draw_foot(void)
         sig += str_hash(str_hash(act_ready() ? 7u : 3u, ha), hb) + (uint32_t)ui.act2 * 7717u + (uint32_t)ui.ev_del * 1931u;
         if (pg->graph == GR_SONG)                      /* ((Skiff phase 5) SONG's: the whole of it, EDIT's; (2.0, #30) */
             sig += str_hash(5u, song_act_name()) + (uint32_t)bank_used(song.sel, sg.entry) * 6007u +   /* the entry's */
+                   ent_at48(song.sel % NTRK, sg.entry % NENT) * 13u +   /* ((2.5, 2B) its bars) */
+                   ent_len48(song.sel % NTRK, sg.entry % NENT) * ent_reps(song.sel % NTRK, sg.entry % NENT) * 7u +
                    (uint32_t)lists.snd[song.sel % NTRK][sg.entry % NENT][0] * 131u +                     /* sound */
                    (uint32_t)lists.snd[song.sel % NTRK][sg.entry % NENT][1] * 7u + up_gen * 0x3BD1u;
     }
     if (grid_on())
         sig += 0x51EDu + (uint32_t)black_held(GK_ACC) * 977u;
-    if (tiles)                                         /* (Skiff U1) the REC hint comes and goes with the arming */
-        sig += ((song.rec >> song.sel) & 1u) * 4421u;
+    if (tiles)                                         /* (Skiff U1) the REC hint comes and goes with the arming; */
+        sig += ((song.rec >> song.sel) & 1u) * 4421u + (uint32_t)(pg->graph == GR_ROLL && sel_note(t)) * 7351u +   /* (2.5) */
+               nsel.a1 * 131u;                                             /* the delete hint with a note there */
     if (ui.ml.on) {                                    /* ((1.3) MIDI LEARN's line) */
         char ln[24];
         ml_line(ln);
@@ -692,12 +713,25 @@ static void draw_foot(void)
         khint_t kh[1] = {{KC_OCTUP, song_act_name()}};   /* ((Skiff U2) CLEAR: KNOB 2's, no EDIT) */
         uint32_t n = 1u;
         int32_t r = foot_hint_r(ti), w = kh_w(kh[0].key, kh[0].act);
-        char sn[24];
+        char sn[40], so[24];
+        uint32_t ek = song.sel % NTRK, ee = sg.entry % NENT, el = ent_len48(ek, ee) * ent_reps(ek, ee), ea;
         cv_key_row(8, 8 + w < r ? 8 + w : r, ly - KC_TY, kh, n,
                    (act_ready() ? 1u : 0u) | (bank_used(song.sel, sg.entry) ? 2u : 0u), T_BG);
-        str_cpy(sn, "SOUND ", sizeof sn);              /* ((2.0, #30, the user's pick 2A) no pick: the entry's sound */
-        esnd_name(lists.snd[song.sel % NTRK][sg.entry % NENT], sn + 6);   /* named after it) */
-        if (!song_pick() && sn[6] && 8 + w + 10 < r)
+        str_cpy(so, "SOUND ", sizeof so);              /* ((2.0, #30, the user's pick 2A) no pick: the entry's sound */
+        esnd_name(lists.snd[ek][ee], so + 6);           /* named after it) */
+        sn[0] = 0;
+        if (el) {                                       /* ((2.5, the user's 2B) its bars in the song, before it */
+            ea = ent_at48(ek, ee);
+            str_cpy(sn, "BARS ", sizeof sn);
+            fmt_int(sn + 5, (int32_t)(ea / 192u) + 1);
+            str_cpy(sn + str_len(sn), "-", sizeof sn - str_len(sn));
+            fmt_int(sn + str_len(sn), (int32_t)((ea + el + 191u) / 192u));
+            if (so[6])
+                str_cpy(sn + str_len(sn), "  ", sizeof sn - str_len(sn));
+        }
+        if (so[6])
+            str_cpy(sn + str_len(sn), so, sizeof sn - str_len(sn));
+        if (!song_pick() && sn[0] && 8 + w + 10 < r)
             cv_free_text(8 + w + 10, ly, &AF_S, sn, T_MID, T_BG, r - (8 + w + 10));
     } else if (act_cols()) {                          /* the OCT+ / OCT- hint ((Skiff U2) EDIT's NAME / DELETE gone) */
         char ha[24], hb[16];
@@ -734,15 +768,14 @@ static void draw_foot(void)
     } else if (tiles && !ui_hints_off) {               /* (Skiff 2.0) NOTES, FEEL: PRESETS the cursor (SHIFT + PRESETS, the
                                                         * selection: SHIFT's map); NOTES' keys (REC off: they pick, on:
                                                         * they write); PATTERN's PRESETS */
-        if (pg->graph == GR_STEPS) {
-            cv_key_hint(8, ly - KC_TY, KC_PRESETS, "DIR", 1, T_BG);
+        if (pg->graph == GR_STEPS || pg->graph == GR_DELAY) {
+            cv_key_hint(8, ly - KC_TY, KC_PRESETS, pg->graph == GR_DELAY ? "MODE" : "DIR", 1, T_BG);
         } else {
-#if BOARD_SMK37
-            x = cv_key_hint(8, ly - KC_TY, KC_K4, "STEP", 1, T_BG) + 10;   /* (K4 is PRESETS) */
-#else
-            x = cv_key_hint(8, ly - KC_TY, KC_PRESETS, "STEP", 1, T_BG) + 10;
-#endif
-            if (pg->graph == GR_ROLL)
+            x = cv_key_hint(8, ly - KC_TY, KC_PRESETS, "STEP", 1, T_BG) + 10;   /* (the SMK-37's K4: gfx.c kc_name) */
+            if (pg->graph == GR_ROLL && sel_note(t))   /* ((2.5, the user's 4A) a note there: how it goes, for */
+                cv_free_hint(x, ly, (song.rec >> song.sel) & 1u ? "[EDIT] DELETE" : "SHIFT + [EDIT] DELETE", T_MID,
+                             T_BG, foot_hint_r(ti) - x);   /* KEYS'; armed: EDIT alone, the cursor's step) */
+            else if (pg->graph == GR_ROLL)
                 cv_key_hint(x, ly - KC_TY, KC_KEYS, (song.rec >> song.sel) & 1u ? "WRITE" : "PICK", 1, T_BG);
         }
     }
@@ -797,12 +830,32 @@ static void engine_columns(void)
     draw_column(2, "FAV", preset_favorite() ? "ON" : "OFF", "", VR_LIVE, -1, ICON_X_STAR);
     draw_column(3, "", "", "", VR_THEME, -1, ICON_NONE);
 }
+/* (2.5) a FREE TAKE's picker (ui_take.c), its four knobs as a page's cards: the guess's BPM (the gauge: which of the
+ * guesses), the BARS, which note is the 1, the TEMPO (SET: the song's BPM the guess's; an external clock: KEEP only) */
+static void fr_columns(void)
+{
+    char val[12];
+    fmt_int(val, fr.bpm[fr.ci]);
+    draw_column(0, "GUESS", val, "BPM", VR_LIVE, fr.nc > 1u ? (int32_t)fr.ci * 1000 / (int32_t)(fr.nc - 1u) : -1,
+                ICON_RATE);
+    fmt_int(val, FR_BARS[fr.bi]);
+    draw_column(1, "BARS", val, "", VR_LIVE, (int32_t)fr.bi * 1000 / 3, ICON_LENGTH);
+    str_cpy(val, "NOTE ", sizeof val);
+    fmt_int(val + 5, fr.start + 1u);
+    draw_column(2, "FROM", val, "", fr.nst > 1u ? VR_LIVE : VR_DIM,
+                fr.nst > 1u ? (int32_t)fr.start * 1000 / (int32_t)(fr.nst - 1u) : -1, ICON_PHASE);
+    draw_column(3, "TEMPO", fr.set ? "SET" : "KEEP", "", song.g[G_CLOCK] ? VR_DIM : VR_LIVE, fr.set ? 1000 : 0, ICON_TEMPO);
+}
 static void draw_columns(void)
 {
     uint32_t c;
     char val[12];
     const char *unit;
     (void)motion_mask(song.sel, card_mot_mask);       /* (PLAY OFF: no scan) */
+    if (fr.on) {
+        fr_columns();
+        return;
+    }
     if (ui.home) {
         for (c = 0; c < 4u; c++) {
             int16_t *vp;
@@ -1110,8 +1163,12 @@ static void draw_columns(void)
                             project_used((uint32_t)song.g[G_SLOT] - 1u) ? VR_THEME : VR_DIM, ICON_AUTO);
             continue;
         }
-        if (cur_page()->graph == GR_SLOTS && c == 2u && !project_used((uint32_t)song.g[G_SLOT] - 1u)) {
-            draw_act_column(2, "NEW", VR_THEME, ICON_AUTO);   /* ((1.2.1, #6) an empty slot: a blank project) */
+        if (cur_page()->graph == GR_SLOTS && c == 2u) {   /* ((2.5, the user's 3A) KNOB 3: LOAD, NEW ((1.2.1, #6) */
+            uint32_t a = proj_k3();                       /* an empty slot's first), CLEAR SONG, CLEAR TRACKS: */
+            if (a >= PK3_SONG)                            /* CLEAR over what goes */
+                draw_column(2, "CLEAR", a == PK3_SONG ? "SONG" : "TRACKS", "", VR_ACCENT, -1, ICON_AUTO);
+            else
+                draw_act_column(2, a == PK3_LOAD ? "LOAD" : "NEW", VR_THEME, ICON_AUTO);
             continue;
         }
         if ((cur_page()->graph == GR_LANES || cur_page()->graph == GR_LMIX) && c == 0u)   /* (LANE: above) */
@@ -1300,6 +1357,14 @@ static void confirm_text(char *a, char *b)
         a[18] = (char)('A' + (k & 3u));
         if (!project_name(k & 3u, b))                   /* the project's name */
             b[0] = 0;
+        break;
+    case CF_CLEAR_SONG:                                 /* ((2.5, 3A) SAVE > PROJECT's KNOB 3) */
+        str_cpy(a, "CLEAR THE SONG?", 24);
+        str_cpy(b, "its lists; the patterns stay", 40);
+        break;
+    case CF_CLEAR_TRKS:
+        str_cpy(a, "CLEAR ALL TRACKS?", 24);
+        str_cpy(b, "the patterns stay in PATTERNS", 40);
         break;
     case CF_RESET_SET:                                  /* ((Skiff U4, A3) MENU > SYSTEM > RESET SETTINGS) */
         str_cpy(a, "RESET SETTINGS?", 24);

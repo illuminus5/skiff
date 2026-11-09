@@ -21,7 +21,7 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
          "px_string_excite", "px_string_run", "px_symp_run",
          "dv_metal_run", "dv_kick_run", "dv_snare_run", "dv_clap_run", "dv_hat_run", "dv_tom_run",   # drum_voice.c
          "dv_rim_run", "dv_bell_run", "dv_cym_run", "dv_out", "dv_metal_mix",
-         "slicer_track",
+         # ((2.5) slicer_track: inlined into mix_part, which runs from RAM (fx.c AUDIO_RAM, flatten): counted there)
          "slice_render", "slc_rev",                          # SLICE (eng_slice.c): the render, the reverse windows
          "fm1_alnk0_irq", "fm1_timer5_irq",               # the audio ISR; TIMER5: the key / LED scan (hal/fm1_input.h)
          "events_block", "keyboard_block",                 # ((2.2) a block's events, the keys' changes: out of the audio
@@ -43,8 +43,12 @@ FUNCS = ["analog_render", "digital_render", "digital_render_legacy", "digital_re
                                                   # phase 9) CHORUS MODE / FEEDBACK (fx.c)
          "mix_part", "mix_split",                 # (Skiff 1.3) a track's block (fx.c), on either core; the split
          "track_insert", "ins_drive", "ins_swept",   # (Skiff 1.3) FX > INSERT (fx.c), on a track that uses one
+         "ins_filter",                               # ((2.5) its FILTR)
+         "strum_tick", "strum_flush",                # ((2.5) SCL > CHORD's STRUM, voice.c: each block's start and end)
          "mix_spread", "esync_coef", "mod_depth",   # (Skiff 1.3) SPREAD (fx.c), ENV SYNC (voice.c), MOD DEPTH (mod.c)
          "smx_render",                           # (Skiff, #21) a user sample's sound with its own sends (fx.c)
+         "smx_right", "dly_mono", "dly_stereo", "cho_st", "perf_pre_st",   # ((2.5) the DELAY MODE: a user sample's right
+                                                 # send, MONO's line, STEREO / PING's, the stereo chorus, THROW / DUB in stereo)
          "lpan_render", "lpan_mix",              # (2.0, #36) a kit's lane panned: its voice, the mix (voice.c, fx.c)
          "drum_smp"]                             # (2.0, #35) a user kit's lane (eng_drum.c)
 # built only with FELUCCA_FM4=1 (DIGITAL, src/eng_digital.c; not in the default build, so not in BUDGET): absent,

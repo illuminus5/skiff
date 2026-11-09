@@ -358,9 +358,60 @@ static int cc_map_test(void)
     bad += check("not armed: the CC is the new value, no event", trk[0].p[P_E4] == 77 && motion.count == 1u);
     return bad;
 }
+/* (2.5, #111) the tempo a clock shows: steady but jittery (each pulse +-3 ms: the master, USB, a render it waits for),
+ * a pulse lost, a new tempo, then 16ths swung 60:40 (as some masters send their clock). BPM settles and stays (2.2
+ * read a 16th at a time: 125..131 with the jitter, 110 at the lost pulse, 100 and 150 in turn with the swing), a real
+ * change shows within three beats, and the beat the tempo's followers use stays within 0.5 % of the master's */
+static uint32_t tj_seed;
+static int32_t tj(int32_t a)                        /* -a..a, a fixed sequence */
+{
+    tj_seed = tj_seed * 1103515245u + 12345u;
+    return (int32_t)((tj_seed >> 16) % (uint32_t)(2 * a + 1)) - a;
+}
+/* beats of clock at bpm from us0 (us): each pulse at its ms +-jit; swing: the first 16th's share of each 8th in % (50
+ * straight); lose: the pulse (1 = the first) left out, 0 none. BPM's lowest and highest at every pulse from beat
+ * `from` on; returns the time after the last pulse */
+static uint64_t tempo_run(uint64_t us0, uint32_t bpm, uint32_t beats, int32_t jit, uint32_t swing, uint32_t lose,
+                          uint32_t from, int32_t *lo, int32_t *hi)
+{
+    uint64_t eighth = 30000000ull / bpm, t = us0;
+    uint32_t p;
+    *lo = 999; *hi = 0;
+    for (p = 0; p < beats * 24u; p++) {
+        if (p + 1u != lose)
+            clock_packet(2, 0xF8, (uint32_t)((int64_t)(t / 1000u) + tj(jit)));
+        t += eighth * (p % 12u < 6u ? swing : 100u - swing) / 600u;
+        if (p >= from * 24u) {
+            if (song.g[G_BPM] < *lo) *lo = song.g[G_BPM];
+            if (song.g[G_BPM] > *hi) *hi = song.g[G_BPM];
+        }
+    }
+    return t;
+}
+static int clock_tempo_test(void)
+{
+    int bad = 0; int32_t lo, hi; uint64_t t; uint32_t beat = (uint32_t)FS * 60u / 128u;
+    tj_seed = 1u;
+    clock_setup(2); clock_packet(2, 0xFA, 1000);
+    t = tempo_run(1000000ull, 128, 16, 3, 50, 0, 8, &lo, &hi);
+    bad += check("(2.5, #111) TRS clock at 128 BPM, each pulse +-3 ms: 128 once settled, and it stays (2.2: 125..131)",
+                 lo == 128 && hi == 128 && (midi_beat_samples > beat ? midi_beat_samples - beat : beat - midi_beat_samples) <= beat / 200u);
+    t = tempo_run(t, 128, 8, 3, 50, 4u * 24u + 7u, 0, &lo, &hi);
+    bad += check("  a pulse lost on the way: still 128 (2.2: 110 for a 16th)", lo == 128 && hi == 128);
+    t = tempo_run(t, 100, 8, 0, 50, 0, 3, &lo, &hi);
+    bad += check("  the master to 100: shown within three beats, then steady", lo == 100 && hi == 100);
+    for (uint32_t b = 0; b < 24u; b++)               /* a ramp: a BPM up every 4 beats (each beat < half a pulse off) */
+        t = tempo_run(t, 100u + b / 4u, 1, 2, 50, 0, 0, &lo, &hi);
+    t = tempo_run(t, 106, 8, 2, 50, 0, 0, &lo, &hi);
+    bad += check("  a ramp from 100 to 106, +-2 ms: followed, 106 at its end", song.g[G_BPM] == 106 && lo >= 104);
+    clock_setup(2); clock_packet(2, 0xFA, 1000);
+    tempo_run(1000000ull, 120, 12, 0, 60, 0, 1, &lo, &hi);
+    bad += check("  16ths swung 60:40 at 120: 120 from the first beat on (2.2: 100 and 150 in turn)", lo == 120 && hi == 120);
+    return bad;
+}
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + cc_map_test();
+              arp_ext_stop_test() + usb_burst_test() + route_test() + cc_map_test() + clock_tempo_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }

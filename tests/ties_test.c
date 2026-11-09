@@ -98,7 +98,7 @@ static int sequencer(void)
     for (c_end_tie = pos; gated(t, C4) && pos < 6u * l; c_end_tie = pos)
         run_to(t, &pos, pos + CTL, on);
     bad += check("  C4 ends where the same note as a TIE chain does (half a step after the last step's GATE)",
-                 c_end == c_end_tie && c_end >= 4u * l - CTL && c_end <= 4u * l + CTL);
+                 c_end == c_end_tie && c_end >= 4u * l - CTL && c_end <= 4u * l + 2u * CTL);   /* (in blocks: (2.5) 4 l off their grid) */
 
     t = overlap(V_POLY);
     t->step[2].probability = 101;                      /* (E4's step: never plays) */

@@ -2,14 +2,14 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* FELUCCA memory map.
  * Code + constants execute in place from XIP (app.bin offset 0 = 0x02000120).
- * 0x01C00000..0x01C06000 holds .ram_text (code that must run while the flash
+ * 0x01C00000..0x01C07F00 holds .ram_text (code that must run while the flash
  * is busy: the flash driver; then, from _rt_hot, Skiff's .ram_hot: audio code kept out of the XIP cache, which may
  * call XIP code, since the audio ISR never runs with the flash busy (felucca.c AUDIO_RAM); both inside the PC
  * guard's RAM window, fm1_guard.h); (Skiff 1.3) then .c1_text, the second core's waiting loop (hal/fm1_cpu1.h: an
  * idle core 1 never fetches from the flash; the PC window covers it, it calls only its job); .ramx follows it there (Skiff: zero-initialised data,
- * the take log and the undo copy: the region's rest was unused); 0x01C06000..0x01C08000
- * stays for RAM-run debug.
- * RAM  : .data/.bss (96 KiB)
+ * the take log and the undo copy: the region's rest was unused). (2.5) RAMTEXT ends at 0x01C07F00, where crt0's STATUS
+ * words are (it took the 0x01C06000.. gap kept for RAM-run debug, unused).
+ * RAM  : .data/.bss (92 KiB; (2.5) 4 KiB of its spare went to the POOL)
  * POOL : big zero-initialised buffers (FX lines, canvases), section .pool
  * STACKS with 256-byte guard bands (Skiff: the main loop's 11.75 KiB, about 3x the deepest use measured in
  * the emulator, 4.1 KiB; its other 12 KiB went to the POOL; the interrupts' 7.75 KiB as they were: they carry USB
@@ -19,9 +19,9 @@
 MEMORY
 {
     XIP    (rx)  : ORIGIN = 0x02000120, LENGTH = 0x8DFBC
-    RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x6000
-    RAM    (rwx) : ORIGIN = 0x01C08000, LENGTH = 96K
-    POOL   (rw)  : ORIGIN = 0x01C20000, LENGTH = 0x57000
+    RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x7F00
+    RAM    (rwx) : ORIGIN = 0x01C08000, LENGTH = 92K
+    POOL   (rw)  : ORIGIN = 0x01C1F000, LENGTH = 0x58000
     NOINIT (rw)  : ORIGIN = 0x01C7C000, LENGTH = 0x3D20
 }
 SECTIONS

@@ -124,16 +124,17 @@ static uint64_t render_fork(const scen_t *sc, int dual, const char *mask, uint32
 
 static int heavy_only(uint32_t e) { return e == ENGI_PHYS || e == ENGI_GRAIN; }   /* (not on T5, T6: NHEAVY) */
 
-/* (Skiff 1.3) the voice budget (core.h VOICE_BUDGET): 8 across the tracks on one core, VOICES_2CORE while the second
- * core runs; four POLY tracks of three notes each. Run with BUDGET=1, built without -DVOICES_2CORE=8 (run_tests.sh) */
+/* (Skiff 1.3) the voice budget (core.h VOICE_BUDGET): VOICES_1CORE (8) across the tracks on one core, VOICES_2CORE
+ * ((2.5) 16) while the second core runs; six POLY tracks of three notes each (18). Run with BUDGET=1, built without
+ * -DVOICES_2CORE=8 (run_tests.sh) */
 static int voice_budget(void)
 {
-    uint32_t pass, k, i, n[2], want = VOICES_2CORE < 12u ? VOICES_2CORE : 12u;
+    uint32_t pass, k, i, n[2], want = VOICES_2CORE < 18u ? VOICES_2CORE : 18u;
     int32_t o[2 * CTL];
     for (pass = 0; pass < 2u; pass++) {
         host_tracks_init();
         c1h_off = !pass;
-        for (k = 0; k < 4u; k++) {
+        for (k = 0; k < NPART; k++) {
             host_preset(&trk[k], 0u, 1u);           /* (ANALOG SOFT PAD: POLY) */
             for (i = 0; i < 3u; i++)
                 trk_note_on(&trk[k], 48u + 12u * k + 4u * i, 100);
@@ -142,8 +143,8 @@ static int voice_budget(void)
         n[pass] = voices_busy();
     }
     printf("dualcore: voice budget: %u voices on one core, %u with the second (VOICES_2CORE %u)   %s\n", n[0], n[1],
-           (unsigned)VOICES_2CORE, n[0] == NVOICE && n[1] == want ? "ok" : "FAIL");
-    return !(n[0] == NVOICE && n[1] == want);
+           (unsigned)VOICES_2CORE, n[0] == VOICES_1CORE && n[1] == want ? "ok" : "FAIL");
+    return !(n[0] == VOICES_1CORE && n[1] == want);
 }
 
 int main(void)
