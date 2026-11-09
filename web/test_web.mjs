@@ -1114,6 +1114,10 @@ async function editorLists() {
   ok(E.apcPorts(mk2)[0].name === "APC mini mk2 Control" && E.apcPorts(mk2)[1].name === "APC mini mk2 Control", "apc: its Control port, not Notes");
   ok(!E.apcPorts(access(["X0X FM-1"])) && E.portPairs(mk2).length === 1 && E.portPairs(mk2)[0][0].name === "X0X FM-1",
      "apc: none without it; never taken for the unit");
+  const win = { inputs: new Map([["i2", port("MIDIIN2 (APC mini mk2)")], ["i1", port("APC mini mk2")]]),
+                outputs: new Map([["o2", port("MIDIOUT2 (APC mini mk2)")], ["o1", port("APC mini mk2")]]) };
+  ok(E.apcPorts(win) && E.apcPorts(win)[0].name === "APC mini mk2" && E.apcPorts(win)[1].name === "APC mini mk2",
+     "apc: Windows' names, its second port (MIDIIN2) listed first: the first port, paired by its name");
   const act = (st, n, v, page = 0) => JSON.stringify(E.apcAction([st, n, v], page));
   ok(act(0x90, 56, 127) === '{"do":"entry","k":0,"e":0}' && act(0x90, 5, 127) === '{"do":"entry","k":5,"e":7}', "apc: top left T1 A; bottom of column 6 T6 H");
   ok(act(0x90, 49, 127, 1) === '{"do":"entry","k":1,"e":9}', "apc: page I..P: T2's second row is J");

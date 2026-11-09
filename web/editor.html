@@ -1115,10 +1115,16 @@ function apcNear(s) {
   }
   return best;
 }
+/* its Control port: the first input with an output of its name ((2.5) Windows names the second port, Notes', "MIDIIN2
+   (APC mini mk2)" and "MIDIOUT2 (APC mini mk2)": it never pairs, whichever Chrome lists first) */
 function apcPorts(access) {
   const free = (p) => p.state !== "disconnected" && APC_PORT.test(p.name || "") && !/notes/i.test(p.name);
-  const i = [...access.inputs.values()].find(free), o = i && [...access.outputs.values()].find((x) => free(x) && x.name === i.name);
-  return o ? [i, o] : null;
+  const outs = [...access.outputs.values()].filter(free);
+  for (const i of access.inputs.values()) {
+    const o = free(i) && outs.find((x) => x.name === i.name);
+    if (o) return [i, o];
+  }
+  return null;
 }
 /* what a message from it asks for (null: nothing) */
 function apcAction([st, d1, d2], page) {
