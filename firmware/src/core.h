@@ -57,6 +57,13 @@ _Static_assert(NTRK <= 8 && NPART < VOICES_1CORE && VOICES_2CORE <= NVOICE * NPA
 #define FELUCCA_FM4 0            /* the DIGITAL engine (eng_digital.c, four-operator FM): kept in the tree, not built
                                   * by default; replaced by FM6, its sounds convert (fm4_convert.c) */
 #endif
+/* Skiff: opt-in calibration experiment; default builds preserve existing mixes. */
+#ifndef FELUCCA_ENGINE_BALANCE
+#define FELUCCA_ENGINE_BALANCE 0
+#endif
+#if FELUCCA_ENGINE_BALANCE != 0 && FELUCCA_ENGINE_BALANCE != 1
+#error "FELUCCA_ENGINE_BALANCE must be 0 or 1"
+#endif
 #ifndef FELUCCA_LEGACY
 #define FELUCCA_LEGACY 0         /* (2.0, Tier B: design/TIER_B.md 10) the formats of before and their conversions: projects
                                   * FUN1..FUN9, SKF1, SKF2 (project.c, bank.c proj_migrate), user presets 1..3 and DIGITAL

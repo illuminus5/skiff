@@ -689,3 +689,16 @@ read every 400 ms while it is there. No firmware of its own and no setting: it w
 
 **Still open:**
 - the 20 MHz LCD clock, `LCD_BAUD=2`, to try on hardware.
+
+
+## Experimental engine output balance
+
+`FELUCCA_ENGINE_BALANCE=1` is a build-time listening experiment, off by default.
+It applies fixed, attenuation-only engine output trims after the track's original
+DRIVE/INSERT, LEVEL and PAN. Dry samples retain fractional bits to the Q22 master;
+ordinary and per-sound sends receive the same trim. Raw engines, envelopes,
+velocity, FM operator levels and stored sounds are unchanged. Enabled builds
+change existing mixes; disabling the flag restores the original rendering. No
+project format or setting changes. These provisional gains balance factory
+preset medians, not every preset or arbitrary user sample. See
+[the calibration notes](docs/ENGINE_BALANCE.md) for measurements and known limits.
