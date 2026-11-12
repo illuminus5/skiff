@@ -1122,15 +1122,25 @@ const APC = { MUTE: 100, PAGE: 112, PLAY: 119, FADER: 48, FULL: 0x96, KEPT: 0x92
 /* the velocities' colours (Akai's APC mini mk2 protocol v1.0). Its SysEx colours aren't used: even values reportedly
    turn a pad off */
 const APC_PALETTE = "0000001e1e1e7f7f7fffffffff4c4cff0000590000190000ffbd6cff5400591d00271b00ffff4cffff0059590019190088ff4c54ff001d5900142b004cff4c00ff000059000019004cff5e00ff1900590d0019024cff8800ff5500591d001f124cffb700ff990059350019124cc3ff00a9ff0041520010194c88ff0055ff001d590008194c4cff0000ff000059000019874cff5400ff1900640f0030ff4cffff00ff590059190019ff4c87ff005459001d220013ff150099350079510043640003390000573500547f0000ff00454f2500cc7f7f7f202020ff0000bdff2dafed0664ff09108b0000ff8700a9ff002aff3f00ff7a00ffb21a7d402100ff4a0088e10672ff1500ff003bff2659ff7138ffcc5b8aff3151c6877fe9d31dffff005dff7f00b9b00090ff00835d07392b00144c100d503815152a16205a693c1ca8000ade513dd86a1cffe1269ee12f67b50f1e1e30dcff6b80ffbd9a99ff8e66ff404040757575e0ffffa000003500001ad000074200b9b0003f3100b35f004b1502";
-/* the velocity nearest a colour as an editor's token has it (not #rrggbb: white) */
+/* a #rrggbb's hue (0..360), saturation and value (0..1) */
+function apcHsv(x) {
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16)), hi = Math.max(r, g, b), d = hi - Math.min(r, g, b);
+  let h = !d ? 0 : hi === r ? (g - b) / d : hi === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(h * 60 + 360) % 360, hi ? d / hi : 0, hi / 255];
+}
+/* the velocity whose hue is nearest a colour as an editor's token has it, among the palette's full, saturated ones (the
+   table's pale ones light the pads nearly white; the brightness is the status's). Not #rrggbb, or a grey: white; black: off */
 function apcNear(s) {
   const m = /^#([0-9a-f]{6})$/i.exec(String(s).trim());
   if (!m) return APC.WHITE;
-  const part = (x, i) => parseInt(x.slice(i, i + 2), 16);
+  const [h, sat, val] = apcHsv(m[1]);
+  if (val < 0.1) return 0;
+  if (sat < 0.2) return APC.WHITE;
   let best = APC.WHITE, least = Infinity;
   for (let v = 0; v < 128; v++) {
-    let d = 0;
-    for (let i = 0; i < 6; i += 2) d += (part(m[1], i) - part(APC_PALETTE, v * 6 + i)) ** 2;
+    const [h2, s2, v2] = apcHsv(APC_PALETTE.slice(v * 6, v * 6 + 6));
+    if (s2 < 0.9 || v2 < 0.95) continue;
+    const d = Math.min(Math.abs(h - h2), 360 - Math.abs(h - h2));
     if (d < least) { least = d; best = v; }
   }
   return best;

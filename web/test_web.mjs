@@ -1130,11 +1130,12 @@ async function editorLists() {
   const list = { tracks: [{ cur: 0, next: 2, ent: ent({ 0: { pat: 1 }, 1: { pat: 2 }, 2: { pat: 3 }, 3: { pat: 65 }, 8: { pat: 4 } }) }] };
   const perf = { last: 1, scenes: 3, tracks: [{ muted: true, staged: 0 }, { muted: false, staged: 2 }, { muted: false, staged: 0 }] };
   const t1 = E.apcNear("#ff5a36");
-  ok(t1 === 4 && E.apcNear(" #22C3B4 ") === 90 && E.apcNear("#00ff00") === 21 && E.apcNear("#000000") === 0 && E.apcNear("oops") === A.WHITE,
-     "apc: an editor colour as the palette's nearest (Akai's table: 4 #FF4C4C, 21 #00FF00)");
+  ok(t1 === 60 && E.apcNear(" #22C3B4 ") === 33 && E.apcNear("#9580ff") === 80 && E.apcNear("#00ff00") === 21 && E.apcNear("#000000") === 0 &&
+     E.apcNear("#808080") === A.WHITE && E.apcNear("oops") === A.WHITE,
+     "apc: an editor colour as the palette's saturated hue nearest it (Akai's table: 60 #FF1500, 33 #00FF99, 80 #3F00FF), a grey white");
   let m = E.apcLeds(list, perf, 0, true, [t1]);
   const led = (n) => m.get(n).join();
-  ok(led(56) === `${A.FULL},${A.GREEN}` && led(48) === `${A.KEPT},4` && led(40) === `${A.BLINK},${A.GREEN}` && led(32) === `${A.REST},4` && led(24) === `${A.FULL},0`,
+  ok(led(56) === `${A.FULL},${A.GREEN}` && led(48) === `${A.KEPT},${t1}` && led(40) === `${A.BLINK},${A.GREEN}` && led(32) === `${A.REST},${t1}` && led(24) === `${A.FULL},0`,
      "apc: on green, kept 50 % of its track's colour, next blinking, a REST 25 %, empty dark");
   ok(led(57) === `${A.FULL},0`, "apc: a track the reply hasn't: dark");
   ok(led(62) === `${A.KEPT},${A.WHITE}` && led(54) === `${A.FULL},${A.GREEN}` && led(46) === `${A.FULL},0`, "apc: a scene kept white at 50 %, the last green, none dark");
