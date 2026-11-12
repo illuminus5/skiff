@@ -2672,8 +2672,10 @@ static void sk_sea(void)
 static void graph_scope(uint16_t c)
 {
     static int16_t snap[SCOPE_N];
-    uint32_t w = scope_w, i, trig = 0;
+    uint32_t w, i, trig = 0;
     int32_t cy = (int32_t)cv_h / 2, py = cy, x, peak = 1500, a = cv_h >= H_GRAPH ? 46 : cy - 6;   /* (LARGE: the strip) */
+    CAST_READ();                                     /* (Skiff Studio: the sound read here, the copy's at the same block) */
+    w = scope_w;
     if (cv_h >= H_GRAPH && (ux.quark || ux.crypt || ux.skiff)) {   /* (2.5) the tracks' levels: their themes' own */
         scope_levels();
         if (ux.quark)

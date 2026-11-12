@@ -116,12 +116,17 @@ static void fm1_irq_off(void) {}
 static void fm1_irq_on(void) {}
 
 /* ----------------------------------------------------------- the screen --- */
+#ifndef WEB_LCD_HOOK
+#define WEB_LCD_HOOK(npx) ((void)0)      /* ((Skiff Studio) the cast's copy: a piece's pixels, as the unit's LCD sends them */
+#endif
 static uint16_t web_fb[240 * 240];       /* RGB565 as the panel gets it (high byte first) */
 static uint32_t web_draws;
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;
     uint16_t sw = (uint16_t)((c >> 8) | (c << 8));
+    CAST(cast_px(x | y << 8 | w << 16 | h << 24, c, 0, 0u));   /* ((Skiff Studio) as the unit's lcd.c) */
+    WEB_LCD_HOOK(w * h);
     for (j = 0; j < h && y + j < 240u; j++)
         for (i = 0; i < w && x + i < 240u; i++)
             web_fb[(y + j) * 240u + x + i] = sw;
@@ -133,6 +138,8 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
     for (j = 0; j < h && y + j < 240u; j++)
         for (i = 0; i < w && x + i < 240u; i++)
             web_fb[(y + j) * 240u + x + i] = p[j * w + i];
+    CAST(cast_px(x | y << 8 | w << 16 | h << 24, 0u, p, w * h));
+    WEB_LCD_HOOK(w * h);
     web_draws++;
 }
 static void lcd_sync(void) {}
@@ -208,8 +215,9 @@ static struct { uint8_t p3_rst, wdt_con; uint32_t rst_src; } fm1_boot;
 uint32_t _data_start[1], _data_end[1], _data_load[1], _bss_start[1], _bss_end[1];
 uint32_t _pool_start[1], _pool_end[1], _rt_start[1], _rt_end[1], _rt_load[1], _ramx_start[1], _ramx_end[1];
 static uint32_t web_master_adc = 700;   /* MASTER, 0..1023 as the ADC reads it */
+static int32_t web_batt_adc = 620;      /* the battery's reading ((Skiff Studio) the cast's copy: the unit's) */
 enum { FM1_ADC_BATT = 3, FM1_ADC_MASTER = 4 };
-static int32_t fm1_adc_read(uint32_t ch) { return ch == FM1_ADC_MASTER ? (int32_t)web_master_adc : 620; }
+static int32_t fm1_adc_read(uint32_t ch) { return ch == FM1_ADC_MASTER ? (int32_t)web_master_adc : web_batt_adc; }
 static void fm1_adc_init(void) {}
 static void fm1_timer5_ack(void) {}
 static void fm1_timer5_start(void (*isr)(void), uint32_t prio) { (void)isr; (void)prio; }
@@ -340,6 +348,7 @@ static void web_frame(void)
     if (b > 0)
         song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
     master_poll();
+    ui_cpu = (uint8_t)(song.cpu_q8 * 100u / 256u);   /* (main.c: the MENU's load, one value a frame) */
     felucca_dbg.ui_frames++;
     ui_input();
     settings_poll();
@@ -417,6 +426,38 @@ EXPORT void web_boot(void)
 {
     if (!web_booted)
         web_power_on();
+}
+/* (Skiff Studio) a unit's backup (the editor's, fm1backup.js: its objects) into this flash as the unit keeps it, so a
+ * copy boots as the unit does after the cast's restart: on an empty unit (web_nor_erase, web_boot) each object into
+ * web_obj_buf(), then web_restore_object(id, size); then this NOR (web_nor) into a fresh instance, which boots from
+ * it. The current music (id 0) is the autosave: the cast's restart stores it first. 0 = written */
+static uint8_t web_obj[96u * 1024u];
+EXPORT uint8_t *web_obj_buf(void) { return web_obj; }
+EXPORT int32_t web_restore_object(uint32_t id, uint32_t n)
+{
+    if (n > sizeof web_obj)
+        return -1;
+    if (!n || id == 8u)                            /* (empty; 8: the retired FM6 bank, always empty) */
+        return 0;
+    if (id == 0u)
+        return st_save(OBJ_AUTOSAVE, web_obj, n);
+    if (id == 1u)
+        return st_save(OBJ_SETTINGS, web_obj, n);
+    if (id >= 2u && id <= 5u)
+        return st_save(OBJ_PROJECT0 + id - 2u, web_obj, n);
+    if (id == 6u || id == 7u)
+        return st_save(OBJ_UPRESET0 + id - 6u, web_obj, n);
+    if (id == 9u) {
+        memcpy(&upf, web_obj, n < sizeof upf ? n : sizeof upf);
+        return upf_save() == 2;
+    }
+    if (id >= 16u && id < 32u)
+        return bank_restore(id - 16u, web_obj, n);
+    if (id >= 32u && id < 32u + SMP_USER_SLOTS && n <= SMP_USER_SIZE) {   /* (a slot's flash as the unit has it) */
+        memcpy(nor + SMP_USER_BASE + (id - 32u) * SMP_USER_SIZE, web_obj, n);
+        return 0;
+    }
+    return -1;
 }
 
 /* input, by the printed labels: buttons bit b = B_FX .. B_OCTUP (panel.c), keys bit k = key k (F3 .. G5),

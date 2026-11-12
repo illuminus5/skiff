@@ -23,6 +23,7 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 
 enum { ED_KIT_GET = 74, ED_KIT_PUT };                 /* (Skiff W3) the DRUM-X kit (INFO 4B 01 8) */
 enum { ED_SMP_MIX = 81 };                             /* (Skiff, #21) a user slot's sounds' LEVEL REV DLY (INFO 57 01 bit 5) */
+enum { ED_CAST = 83 };                                /* (Skiff Studio) the cast (cast.c; INFO 59 01) */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -429,6 +430,10 @@ static int ed_args_ok(uint32_t cmd, const uint8_t *a, uint32_t n)
         return ed_song_args_ok(cmd, a, n);
     case ED_KIT_GET:                                   /* (Skiff W3) a lane; a lane and its 15 values, each in range */
         return n == 1u && a[0] < 8u;
+#if FELUCCA_CAST
+    case ED_CAST:
+        return n == 1u;
+#endif
     case ED_KIT_PUT: {
         uint32_t i;
         if (n != 16u || a[0] >= 8u || a[1] > 3u || a[2] > DXF_HP || a[3] > 1u || a[4] > 3u || a[5] > 1u)
@@ -509,6 +514,9 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     if ((cmd >= ED_SMP_BEGIN && cmd <= ED_SMP_INFO) || (cmd >= ED_BACKUP_LIST && cmd <= ED_BACKUP_PUT))
         autosave_hold();                                /* (a transfer: no autosave meanwhile, project.c) */
     ed_begin(cmd);
+#if FELUCCA_CAST
+    if (cmd == ED_CAST) { cast_cmd(a[0]); ed_send(); return; }
+#endif
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_backup_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_fm6_handle(cmd, a, na)) { ed_send(); return; }
@@ -555,9 +563,13 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             0x49, 1, P_COUNT & 127u, P_COUNT >> 7, P_E0 & 127u, P_E0 >> 7,   /* (Skiff 1.3) wide ids: P_COUNT and
                                          * P_E0 in two bytes; a track id from 128 on as scope 2 (ED_TID), a motion
                                          * record's from 128 on with bit 6 of its step byte */
-            0x58, 1, ED_SONG2};                         /* (2.0) the song's LIST2, NEW, COPY+, CHAIN, ONCE, the pool's
+            0x58, 1, ED_SONG2,                          /* (2.0) the song's LIST2, NEW, COPY+, CHAIN, ONCE, the pool's
                                                          * EMPTY, CLEAR UNUSED (editor_song.c; last: an editor before
                                                          * reads up to 49 01 only) */
+#if FELUCCA_CAST
+            0x59, 1, 1,                                 /* (Skiff Studio) the cast, cmd 83 (cast.c) */
+#endif
+        };
         ed_str("FELUCCA " FELUCCA_VERSION, 24);
         ed_b(NENGINES);
         ed_b(P_COUNT > 127u ? 127u : P_COUNT);            /* ((1.3) more: INFO 49 01) */
@@ -982,9 +994,11 @@ static void ed_service(void)
     const uint8_t *p;
     uint32_t n;
     ed_sync();                                             /* v2 pushes (while watched) */
+    CAST(cast_flush());                                    /* (Skiff Studio) the cast out */
     if (!ota_frame_get(&p, &n) || n < 4u || p[0] != ED_HDR0 || p[1] != ED_HDR1 || p[2] != ED_HDR2)
         return;
     ed_w.last_ms = fm1_ms;                                 /* any request keeps WATCH alive */
+    CAST(cast_rec('R', p[3], 0u));                         /* (the copy runs the same request here) */
     if (p[3] >= ED_SMP_BEGIN) {                            /* large frames: handled in place, then freed */
         if (p[3] == ED_SMP_MIX && n > 4u)
             ed_smp_mix(p, n);                              /* ((#21) ed_smp_mix) */

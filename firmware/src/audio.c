@@ -66,6 +66,7 @@ static void shed_voice(void)
 {
     uint32_t p, i;
     voice_t *best = 0;
+    CAST(cast_ev('s'));                                 /* (Skiff Studio: the copy can't know the unit's load) */
     for (p = 0; p < NPART; p++)
         for (i = 0; i < NVOICE; i++) {
             voice_t *v = &trk[p].v[i];

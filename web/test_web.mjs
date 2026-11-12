@@ -1759,7 +1759,7 @@ async function editorSessions() {
     req: { info: () => "info", project: () => "project", smpInfo: () => "sample", dump: () => "dump" },
     paramKeys: noop, libAdopt: () => { adoptStarted?.(); return adopted || Promise.resolve(); },
     buildUI: () => { shown++; }, renderPanels: noop, loadSteps: noop, loadStepsIfShown: noop, readMenu: noop, readTransport: noop, readProj: noop,
-    startWatch: async () => false, renderLive: noop, renderLib: noop,
+    startWatch: async () => false, renderLive: noop, renderLib: noop, scrLoaded: noop,
     renderBank: noop, renderSysinfo: noop, sayK: noop, report: noop, syncPreferences: noop,
   });
   const oldRelease = S.beginBusy();
@@ -1820,7 +1820,7 @@ function editorTabs() {
   const tabs = [...html.matchAll(/<button role="tab" data-tab="(\w+)"/g)].map((x) => x[1]);
   const panels = [...html.matchAll(/<section class="panel" id="p-(\w+)" data-tab="(\w+)"/g)].map((x) => [x[1], x[2]]);
   const TABS = JSON.parse((/const TABS = (\[[^\]]*\]);/.exec(html) || [])[1] || "[]");
-  ok(tabs.length === 9 && js(tabs) === js(TABS) && js(panels.map((x) => x[1])) === js(TABS) && panels.every(([a, b]) => a === b),
+  ok(tabs.length === 10 && js(tabs) === js(TABS) && js(panels.map((x) => x[1])) === js(TABS) && panels.every(([a, b]) => a === b),
     `editor: ${tabs.length} tabs, one panel each (${tabs.join(" ")})`);
   ok(/localStorage\.setItem\(TAB_KEY/.test(html) && /try \{ localStorage/.test(html) && /history\.replaceState\([^)]*"#" \+ name\)/.test(html)
     && /addEventListener\("hashchange"/.test(html), "editor: last tab in localStorage (try/catch) and in the URL hash");

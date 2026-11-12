@@ -4,10 +4,14 @@
  * 70 % of the knob, until the main loop's first read after the splash, then a 1/8-per-frame glide from mid-scale:
  * the keys, live from the audio ISR at once, sounded loud under the splash with the knob turned down).
  * master_knob: the pot x16, smoothed per UI frame (master_poll) */
+#ifndef CAST
+#define CAST(x) ((void)0)                                /* ((Skiff Studio) core.h's cast hook: a test without core.h) */
+#endif
 static int32_t master_knob = 512 * 16;
 static void master_poll(void)
 {
     int32_t a = fm1_adc_read(FM1_ADC_MASTER);
+    CAST(cast.madc = a);                                /* (Skiff Studio: the frame's reading, cast_frame) */
     if (a >= 0) {
         master_knob += (a * 16 - master_knob) / 8;
         song.master_q12 = master_of_pot((uint32_t)(master_knob / 16));

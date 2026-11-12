@@ -11,6 +11,13 @@
 #define LCD_BAUD 4u                /* lsb/(BAUD+1): 4 = 12 MHz */
 #endif
 
+#if FELUCCA_CAST
+static void cast_px(uint32_t xywh, uint32_t c, const uint16_t *p, uint32_t n);   /* ((Skiff Studio) cast.c: the frame's */
+#define LCD_CAST(x, y, w, h, c, p, n) cast_px((x) | (y) << 8 | (w) << 16 | (h) << 24, (c), (p), (n))   /* pixels hashed */
+#else
+#define LCD_CAST(x, y, w, h, c, p, n) ((void)0)
+#endif
+
 static uint8_t lcd_small[64];
 static uint8_t lcd_busy;           /* a lcd_data DMA may still run; CS is low */
 
@@ -69,6 +76,7 @@ static uint16_t lcd_fillbuf[240];
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, n, k, sw = (uint16_t)((c >> 8) | (c << 8));
+    LCD_CAST(x, y, w, h, c, 0, 0u);
     if (!w || !h || x >= 240u || y >= 240u)
         return;
     if (x + w > 240u)
@@ -89,10 +97,11 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *px)
 {
-    if (!w || !h)
-        return;
-    lcd_window(x, y, x + w - 1u, y + h - 1u);
-    lcd_data(px, w * h * 2u);
+    if (w && h) {
+        lcd_window(x, y, x + w - 1u, y + h - 1u);
+        lcd_data(px, w * h * 2u);
+    }
+    LCD_CAST(x, y, w, h, 0u, px, w * h);       /* (hashed while the DMA sends them) */
 }
 
 /* ST7789V init: reset, then 16-bit colour, scan direction and IPS inversion;

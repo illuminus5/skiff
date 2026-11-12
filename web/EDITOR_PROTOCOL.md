@@ -1135,3 +1135,65 @@ device gone at ~0.3 s, the MIDI port gone at ~0.57 s and back at ~1.15 s; ON -> 
 at ~0.6 s while the MIDI port was not seen to disappear at all (so do not wait for a disconnect event: after
 a real change, wait ~1.5 s and open again). What the editor sends in that window is lost, `WATCH` ends with the
 bus reset (send `INFO` and `WATCH` again after reconnecting), and a backup in progress answers rc 5 (stale).
+
+## Cast (83; Skiff Studio, a prototype)
+
+The cast lets a copy of Skiff in the browser (the web build, as Try Skiff) follow the unit exactly: the unit sends
+what its main loop and its audio ISR take, stamped, and the copy does the same at the same moments, so it draws the
+same screen and plays the same sound (`firmware/src/cast.c`; the copy: `web/emu/cast_follow.c`).
+FM-1 builds only for now (`FELUCCA_CAST`); INFO advertises `59 01 01`. Firmware without the tag answers no 83.
+
+| cmd | Request args | Reply args |
+| --- | --- | --- |
+| 83 CAST | op: 0 stop, 1 start (only while `WATCH`ed), 2 restart the unit and cast from its first frame | op, the cast on (0/1), rc (op 2: 1 = the music is not stored yet: the device stores it, ask again) |
+
+**Records.** While it casts, the device pushes one frame per record, `F0 7D 46 4C 53 seq w0 w1 w2 w3 F7`: `seq`
+counts 0..63 (a gap means a lost frame: resync), each word a u32 (5 bytes of 7 bits, LSB first). `w0` is TIMER4's
+ticks (24 MHz) when the record was put, `w1` the audio blocks rendered since power-on (24 bits; one block is 32
+samples) | the record's type << 24, `w2` and `w3` its own:
+
+| type | `w2`, `w3` | put |
+| --- | --- | --- |
+| `B` begin | ms, the MASTER knob (x16) \| the layout (4; 3 without `C`'s sound or the scope's `P`) << 24 \| bit 31 with the second core running | at the start (op 1) |
+| `F` frame | the battery's reading \| MASTER's << 11 (each 11 bits, signed) \| the MENU's CPU load (%) << 22, the ms (`fm1_ms`) it read | a main-loop frame starts, after its readings |
+| `P` piece | its index in the frame (0: the draw begins, main.c before `ui_draw`; then each canvas, gfx.c `cv_begin`, and (layout 4) each read of the sound by the scope, ui_graph.c `graph_scope`), - | the draw or a piece begins and the audio ran since the `F` or the last `P` |
+| `e` drawn | the frame's pixels, hashed (FNV-1a: each fill's place and colour, each blit's place and pixels, as `lcd.c` sends them), - | the frame is drawn: the main loop reads the panel again |
+| `T` take | buttons \| buttons pressed << 14 (bit = matrix id), keys \| the pass << 27 (5 bits) | ui_input saw the panel change, or took edges |
+| `U` struck | the keys struck it took | after a `T`, when it took any |
+| `K` knob | role (`EN_*`) \| the pass << 8 (8 bits), steps | panel_enc took the knob's own detents |
+| `N` keys | keys, buttons | the audio ISR saw the keys change (keyboard_block) |
+| `M` MIDI | the USB-MIDI packet, its ms \| source << 24 | the audio ISR took a message (USB or TRS) |
+| `R` request | the editor command | the main loop takes an editor request (the copy runs the same request) |
+| `C` check | a hash of the music and the UI, (layout 4) the last 512 samples of the sound (the scope's, oldest first, FNV-1a \| 1; 0: the audio ran since the `F`, not taken) | once a second, after an `F` |
+| `s`, `o` | - | the audio shed a voice (CPU load); MIDI IN overflowed |
+
+`seq` 127 instead: the device's ring (64 records) overflowed and the cast stopped; start it again (and resync). The
+device sends between frames and between the pieces of a frame's drawing, about three records at a time.
+
+The pass is ui_input's pass count (every call of it): the `T`, `U` and `K` records one pass took share it.
+
+**Replaying.** The copy starts from the same state (at power-on: op 2, then the same stored data, and USB power: the
+header's battery shows the bolt). It renders until its block count is a record's (the main loop sees whole halves:
+4 blocks), sets its clock to the record's ticks (`fm1_ms` from them, each `F` giving the exact one), and does what the
+record says: at block b the `N` and `M` records of b (the keys and buttons the ISR sees, the MIDI it takes); an `s`
+sheds a voice at the next half's start, as the ISR does; at an `F` its readings, the `C` check, then the frame, with
+the `T`, `U`, `K` records of its pass applied first; between `F` and `e` no panel read; after `e`, main.c's wait loop:
+a panel read at every millisecond and after every audio half (once the ISR is done: the `F`'s CPU load gives its
+share of the half), until 15 ms after the `F` (a slower frame: none), each pass
+that took something (its records, grouped by their pass) at its own block. At an `e` the copy compares its frame's
+pixel hash, at a `C` its music and UI hash. At an `R` the copy runs the same request: the page logs every frame it
+sends after its `CAST 1` frame (the unit takes those with the cast on, each with an `R`), and the copy runs the next
+logged frame of the `R`'s command (earlier ones never reached the unit) through the unit's own `editor.c`, in a frame
+before its panel read, else in the wait loop: what the page changes, the copy changes too.
+
+The copy is the editor's Screen tab (`web/editor.html`): `felucca_cast.wasm`, built by `web/emu/build.sh` from
+`web/emu/cast_follow.c` (the web build with `editor.c` and `cast.c`), fed the records and the page's frames as they come
+(`web/emu/cast_test.mjs` feeds it a recording the same way).
+
+**Restart (op 2).** Once the reply has gone, the device resets itself (the boot guard told it is no failed boot) and
+keeps its splash for up to 10 s until an editor sends `WATCH` and `CAST 1`; the cast then begins before the first
+frame. The music is the stored one: op 2 answers rc 1 (and stores it) while it isn't. This restart loads the music
+before the audio ISR first runs (a normal power-on starts the sound first), as the copy does: so from block 0 both
+have the same LFOs and the same shared random generator. The copy's sound is then the firmware's, sample for sample,
+as fm1emu runs the binary; on an FM-1 itself the HALL reverb comes out slightly different (found 2026-11-11, cause
+open), which shows only where the screen draws the sound (the scopes).

@@ -229,6 +229,7 @@ static void frame(void)
 {
     host_ticks += 16000u;
     fm1_ms += 16u;
+    ui_cpu = (uint8_t)(song.cpu_q8 * 100u / 256u);   /* (main.c: the MENU's load, taken at each frame's start) */
     ui_input();
     ui_draw();
 }
@@ -1686,6 +1687,7 @@ static int test_menu_tabs(void)
     ui.menu_sel = MI_CPU;
 #if FELUCCA_CPU2
     song.cpu_q8 = 36;
+    frame();                                            /* (the load the MENU shows: taken at a frame's start) */
     ok &= str_eq(menu_vname(MI_CPU, 0), "1 CORE 14 %");
     {
         uint32_t s0;
@@ -1708,6 +1710,7 @@ static int test_menu_tabs(void)
     }
     press(B_OCTDN);
     song.cpu_q8 = 36;
+    frame();
     ok &= !CPU2_SET && str_eq(menu_vname(MI_CPU, 0), "1 CORE 14 %");
     song.cpu_q8 = 0;
     song.g[G_TUNE] = 0;

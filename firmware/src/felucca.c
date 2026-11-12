@@ -51,6 +51,10 @@
 #if FELUCCA_OTA && !FELUCCA_FLASH
 #error "FELUCCA_OTA needs FELUCCA_FLASH"
 #endif
+#ifndef FELUCCA_CAST
+#define FELUCCA_CAST (FELUCCA_OTA && !BOARD_SMK37)   /* (Skiff Studio) the cast (cast.c): the FM-1's (the SMK's keybed,
+                                                      * pads, faders and wheels are not in it yet) */
+#endif
 #ifndef FELUCCA_CPU2
 #define FELUCCA_CPU2 1           /* (Skiff 1.3, as Felucca 1.6.1) 1: the second core is built in and renders some tracks when
                                   * MENU > SYSTEM > CPU is 2 CORES (BETA; 1 CORE by default: as 1.2; hal/fm1_cpu1.h, fx.c
@@ -106,6 +110,14 @@ static inline __attribute__((always_inline)) void *audio_far(void *p) { void *vo
 /* ----------------------------------------------------- base, display --- */
 #include "libc.c"
 #include "lcd.c"
+#if FELUCCA_CAST                 /* (Skiff Studio) gfx.c cv_begin: a piece of the frame begins (cast.c cast_piece) */
+static void cast_piece(void);
+#define GFX_HOOKS 0
+#define GFX_HOOK_TEXT(x0, y0, x1, y1, s, flags) ((void)0)
+#define GFX_HOOK_BLIT(x, y, r0) ((void)0)
+#define GFX_HOOK_BEGIN() cast_piece()
+#define GFX_HOOK_PIXELS(n) ((void)0)
+#endif
 #include "gfx.c"
 
 /* ----------------------------------------------------------- sound --- */
@@ -157,4 +169,7 @@ static inline __attribute__((always_inline)) void *audio_far(void *p) { void *vo
 #include "smk_ui.c"              /* the SMK-37's own controls: pads, faders, wheels, pedal, < >, KEY VELOCITY */
 #endif
 #include "master.c"              /* the MASTER pot (#137: read before the audio starts) */
+#if FELUCCA_CAST
+#include "cast.c"                /* (Skiff Studio) the cast: a copy of Skiff in the browser follows this unit */
+#endif
 #include "main.c"

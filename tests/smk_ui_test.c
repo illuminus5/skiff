@@ -254,6 +254,7 @@ static void frame(void)
     host_ticks += 16000u;
     fm1_ms += 16u;
     fm1_in.frames += 10u;
+    ui_cpu = (uint8_t)(song.cpu_q8 * 100u / 256u);   /* (main.c: the MENU's load, taken at each frame's start) */
     ui_input();
     smk_ui_frame();
     ui_leds();

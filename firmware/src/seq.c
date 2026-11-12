@@ -1157,6 +1157,7 @@ static __attribute__((noinline)) void keyboard_block(void)
     ch = cur ^ kb_prev;                           /* keys also sound while entering steps */
     if (!ch)
         return;
+    CAST(cast_rec('N', cur, fm1_in.buttons));    /* (Skiff Studio: the keys and buttons this block sees) */
     if (kb_boot_hold) {                           /* #137: under the splash; their release is silent too */
         for (k = 0; k < 27u; k++)
             if ((ch & cur) >> k & 1u)
@@ -2004,6 +2005,7 @@ static __attribute__((noinline)) void events_block(uint32_t n)
 {
     uint32_t i, pr, ord, seq_n = n, pulse;
     uint32_t clock_mode = (uint32_t)song.g[G_CLOCK];
+    CAST_BLOCK();                                     /* (Skiff Studio: the block count the cast's stamps use) */
     if (midi_clock.mode != clock_mode) {
         seq_stop();
         memset(&midi_clock, 0, sizeof midi_clock);
@@ -2037,6 +2039,7 @@ static __attribute__((noinline)) void events_block(uint32_t n)
     pr = panic_req;
     panic_req = 0;
     if (midi_in_overflow) {                            /* a lost note-off must never leave a held note */
+        CAST(cast_ev('o'));
         mi_r = mi_w;
         memset(midi_sel_on, 0, sizeof midi_sel_on);
         memset(midi_ch, 0, sizeof midi_ch);
@@ -2083,6 +2086,7 @@ static __attribute__((noinline)) void events_block(uint32_t n)
         uint32_t d1 = (pkt >> 16) & 0x7Fu, d2 = (pkt >> 24) & 0x7Fu;
         uint32_t source = midi_in_source[at] ? midi_in_source[at] : 1u, ms = midi_in_ms[at];
         mi_r++;
+        CAST(cast_rec('M', pkt, ms | (uint32_t)midi_in_source[at] << 24));
         if (status >= 0xF8u) {
             if (clock_mode == source) {
                 if (status == 0xF8u)

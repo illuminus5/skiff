@@ -265,7 +265,7 @@ static const char *menu_vname(uint32_t row, uint32_t v)
     case MI_RETURN: return RET_N[v % 3u];
     case MI_TUNE: case MI_CPU: {                       /* "+12 CT"; the audio's share of each half-buffer ("14 %") */
         static char b[20] __attribute__((section(".pool")));
-        int32_t c = row == MI_TUNE ? (int32_t)v - 50 : (int32_t)(song.cpu_q8 * 100u / 256u);
+        int32_t c = row == MI_TUNE ? (int32_t)v - 50 : (int32_t)ui_cpu;
         b[0] = row == MI_TUNE && c > 0 ? '+' : 0;
         b[1] = 0;
 #if FELUCCA_CPU2

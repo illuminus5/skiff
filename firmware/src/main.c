@@ -152,6 +152,18 @@ static void boot_leds(void)
         fm1_led_anim_start(settings_leds == LEDS_DIM || settings_leds == LEDS_DIM_LO);
 }
 
+/* the last session's music, and the unit's CLOCK MIDI IN TUNE over it; ((Skiff Studio) a cast's restart: before the audio
+ * ISR first runs, fm1_main: one copy of it for the two places) */
+#if FELUCCA_CAST
+__attribute__((noinline))
+#endif
+static void boot_music(void)
+{
+    unit_g_adopt = ui_set_rev < 2u;           /* (Skiff U3, R8) the first boot: the session's CLOCK MIDI IN TUNE .. */
+    autosave_boot(boot_clean);                /* (1.2) the last session's music, under the splash */
+    unit_g_boot();                            /* .. become the unit's; later the unit's are put back over it (ui.c) */
+}
+
 static void fm1_main(void)
 {
     uint32_t ms;
@@ -234,6 +246,11 @@ static void fm1_main(void)
     boot_leds();
     timer5_start();
     fm1_guard_lock_top();
+    if (CAST_AUDIO_LATE())                    /* (Skiff Studio) restarted for a cast: the music in before the audio ISR
+                                               * first runs (the interrupts, next), as the copy in the browser starts:
+                                               * halves rendered with felucca_init's sounds moved the LFOs and the shared
+                                               * generator where the copy can't follow (core.h) */
+        boot_music();
     fm1_irq_enable_all();
     fm1_delay_ms(30);
 #ifndef FM1_OCT_BOTH
@@ -251,13 +268,13 @@ static void fm1_main(void)
 #if FELUCCA_LEGACY
     proj_migrate(boot_clean);                 /* (Skiff phase 5) projects of before: SKF2, their tracks patterns */
 #endif
-    unit_g_adopt = ui_set_rev < 2u;           /* (Skiff U3, R8) the first boot: the session's CLOCK MIDI IN TUNE .. */
-    autosave_boot(boot_clean);                /* (1.2) the last session's music, under the splash */
-    unit_g_boot();                            /* .. become the unit's; later the unit's are put back over it (ui.c) */
+    if (!CAST_AUDIO_LATE())                   /* (Skiff Studio: a cast's restart has it in already, above) */
+        boot_music();
     for (ms = 0; ms < 400u; ms += 10u) {      /* the splash; the pot followed (MIDI IN plays under it) */
         fm1_delay_ms(10);
         master_poll();
     }
+    CAST(cast_boot_hold());                   /* (Skiff Studio) restarted for a cast: the splash until it starts */
     kb_boot_hold = 0;
     lcd_fill(0, 0, 240, 240, T_BG);
     scrn.idle = fm1_ms;                        /* (MENU > SCREEN OFF: from here) */
@@ -291,8 +308,10 @@ static void fm1_main(void)
             int32_t b = fm1_adc_read(FM1_ADC_BATT);     /* battery: slow IIR */
             if (b > 0)
                 song.batt_raw = song.batt_raw ? song.batt_raw + (b - song.batt_raw) / 32 : b;
+            master_poll();
+            ui_cpu = (uint8_t)(song.cpu_q8 * 100u / 256u);   /* (the MENU's load: one value a frame) */
+            CAST(cast_frame(b));                        /* (Skiff Studio: a frame starts, with the readings it took) */
         }
-        master_poll();
         {   /* OCT- + OCT+ held 5 s: enter UBOOT with RAM intact (debug / update); a countdown
              * shows from 2 s over the whole screen (the menu and the dialogs too: ui_draw), letting
              * go cancels it */
@@ -364,7 +383,9 @@ static void fm1_main(void)
 #if BOARD_SMK37
         padled_flush();                               /* the pads' colours, between LCD transfers (lcd.c) */
 #endif
+        CAST(cast_piece());                           /* (Skiff Studio: the draw begins, piece 0: what changed is read now) */
         ui_draw();
+        CAST(cast_rec('e', cast.px, 0u));             /* (Skiff Studio: drawn, its pixels' hash; the panel is read again) */
         felucca_dbg.stage = 9;
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */
             ui_input();

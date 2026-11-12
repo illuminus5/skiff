@@ -578,6 +578,8 @@ typedef struct {
 
 static track_t trk[NTRK];        /* the instrument: six parts */
 static song_t song;
+static uint8_t ui_cpu;           /* the load (%) the MENU shows: taken at each frame's start (main.c), so a frame draws one
+                                  * value ((Skiff Studio) the cast's F tells the copy) */
 /* the selected track. (Skiff 2.0) A pointer kept with song.sel, so a use is a load, not song.sel times the track's
  * size: song.sel is only ever set through sel_set (the tests too) */
 static track_t *tsel = trk;
@@ -620,6 +622,57 @@ static inline uint32_t bpm_quarter(uint32_t bpm)
 
 /* ----------------------------------------------------------- system --- */
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */
+/* (Skiff Studio) the cast (cast.c): what the main loop and the audio ISR take, stamped, so that a copy of Skiff in the
+ * browser takes the same at the same moments and draws the same screen. Its hooks are CAST(..): nothing without
+ * FELUCCA_CAST. Its state is in .pool (off the audio ISR's merged globals) */
+#ifndef FELUCCA_CAST
+#define FELUCCA_CAST 0
+#endif
+#if FELUCCA_CAST
+#define CAST_N 64u                         /* the ring, records (a power of 2) of four words */
+static struct {
+    uint8_t on, seq;                       /* on: 1 casting, 2 the ring overflowed (the copy must resync) */
+    uint8_t pass;                          /* ui_input's passes, counted (T and K say which pass took them) */
+    uint16_t pc;                           /* the frame's canvas pieces begun (cast_piece) */
+    uint32_t pb;                           /* the blocks at the frame's F or its last P */
+    uint32_t px;                           /* the pixels sent since the frame began, hashed (lcd.c cast_px; e says it) */
+    uint32_t w, r;                         /* records put, records sent */
+    uint32_t blocks;                       /* audio blocks since power-on (events_block) */
+    int32_t madc;                          /* MASTER's last reading (master_poll) */
+    uint32_t lb, ln, chk, reboot;          /* the buttons and keys last told, the last check's ms, a restart's ms | 1 */
+    uint32_t q[CAST_N * 4u];
+} cast __attribute__((section(".pool")));
+static void cast_rec(uint32_t type, uint32_t a, uint32_t b);   /* a record, stamped (cast.c) */
+#define cast_ev(type) cast_rec((type), 0u, 0u)
+static void cast_take(uint32_t pressed, uint32_t struck);
+static void cast_frame(int32_t batt);
+static void cast_px(uint32_t xywh, uint32_t c, const uint16_t *p, uint32_t n);
+static void cast_piece(void);
+static void cast_flush(void);
+static void cast_cmd(uint32_t op);
+static void cast_boot_hold(void);
+#if FELUCCA_WEB
+static void web_cast_block(void);          /* (the browser's copy: what the unit's ISR took at this block) */
+#define CAST_BLOCK() (cast.blocks++, web_cast_block())
+#else
+#define CAST_BLOCK() (cast.blocks++)
+#endif
+#define CAST(x) (x)
+#ifndef CAST_READ                          /* (the sound read in the middle of a piece, ui_graph.c's scope: stamped too) */
+#define CAST_READ() cast_piece()
+#endif
+#ifndef CAST_AUDIO_LATE                    /* (main.c) restarted for a cast: the music in before the audio ISR first runs,
+                                            * as the copy's: halves rendered before it, with felucca_init's sounds, moved
+                                            * the LFOs and the shared generator (rng) where the copy can't follow */
+static int cast_audio_late(void);
+#define CAST_AUDIO_LATE() cast_audio_late()
+#endif
+#else
+#define CAST(x) ((void)0)
+#define CAST_BLOCK() ((void)0)
+#define CAST_READ() ((void)0)
+#define CAST_AUDIO_LATE() 0
+#endif
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
 #define BOOTGUARD_MAGIC 0x42475244u
