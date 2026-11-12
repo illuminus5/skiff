@@ -265,6 +265,14 @@
   .wells label { display: grid; justify-items: center; gap: 2px; font-size: 11px; color: var(--dim); }
   .wells input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--line); background: none; }
   .wellbox { margin-top: 10px; }
+  /* (Skiff Studio) the Screen tab: the FM-1's 240 x 240 screen as large as the page allows, sharp pixels; tap: full */
+  #scr-status { color: var(--dim); margin-left: 6px; }
+  #scr-status.bad { color: var(--rec); }
+  #scr-wrap { display: grid; place-items: center; margin-top: 8px; }
+  #scr-screen { width: min(100%, calc(100vh - 220px)); min-width: 240px; aspect-ratio: 1; background: black;
+                image-rendering: pixelated; border-radius: 6px; cursor: zoom-in; }
+  #scr-wrap:fullscreen { background: black; }
+  #scr-wrap:fullscreen #scr-screen { width: min(100vw, 100vh); border-radius: 0; cursor: zoom-out; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -294,6 +302,7 @@
       <button role="tab" data-tab="library" data-t="library" data-ic="symbol_books"></button>
       <button role="tab" data-tab="samples" data-t="samples" data-ic="symbol_waves"></button>
       <button role="tab" data-tab="projects" data-t="projects" data-ic="symbol_folder"></button>
+      <button role="tab" data-tab="screen" data-t="tabScreen" data-ic="symbol_eye"></button>
       <button role="tab" data-tab="settings" data-t="tabSettings" data-ic="symbol_cog"></button>
     </nav>
     <div class="trackbar" id="trackbar" hidden><span class="dim" data-t="track"></span><span class="seg" id="trackbtns" role="group"></span></div>
@@ -470,6 +479,14 @@
     </div>
   </section>
 
+  <section class="panel" id="p-screen" data-tab="screen" hidden>
+    <h2 data-t="scrTitle" data-ic="symbol_eye"></h2>
+    <p class="dim" data-t="scrHelp"></p>
+    <p class="bar"><button id="scr-start" data-t="scrStart"></button> <button id="scr-stop" data-t="scrStop" disabled></button>
+      <span id="scr-status" role="status" aria-live="polite"></span></p>
+    <div id="scr-wrap"><canvas id="scr-screen" width="240" height="240"></canvas></div>
+  </section>
+
   <section class="panel" id="p-settings" data-tab="settings" data-dev hidden>
     <div class="groups" id="setgroups"></div>
     <div class="group" id="device-display" hidden style="margin-top:12px">
@@ -506,7 +523,7 @@ const CMD = { INFO: 1, GET: 2, SET: 3, DUMP: 4, DESC: 5, STEP_GET: 6, STEP_SET: 
   UI_STATE: 34, UI_SET: 35, UI_PALETTES: 36, FAV_GET: 37, FAV_SET: 38, COLORS: 39,
   MOTION: 64, BACKUP_LIST: 65, BACKUP_GET: 66, BACKUP_PUT: 67,
   FM6_GET: 68, FM6_PUT: 69, FM6_LIST: 70, FM6_ERASE: 71, MENU_DESC: 72, MENU_SET: 73, KIT_GET: 74, KIT_PUT: 75, TRANSPORT: 76, PROJ_NAME: 77, POOL: 78, LIST: 79, PERFORM: 80,
-  SMP_MIX: 81, LIST2: 82 };
+  SMP_MIX: 81, LIST2: 82, CAST: 83 };
 /* frames the device sends on its own (while WATCH is on); never replies */
 const PUSH = new Set([CMD.CHANGED, CMD.RELOAD, CMD.STEP_CHANGED, CMD.TRACK_CHANGED]);
 /* user preset bank: name 1..12 printable ASCII, a 16-step pattern of (note, flags 1 acc 2 slide 4 tie) */
@@ -688,6 +705,7 @@ const parse = {
                                                      4 PERFORM, (#21) 5 SMP_MIX, (2.0, #25) 6 a step's ties */
     o.song2 = 0;                                  /* (2.0, INFO 58 01 caps) bit 0: LIST2, NEW, COPY+, CHAIN, ONCE, the pool's
                                                      EMPTY and CLEAR UNUSED */
+    o.cast = 0;                                   /* (Skiff Studio, INFO 59 01 caps) bit 0: the cast (cmd 83), the Screen tab */
     for (const p of [8, 11]) if (o.motionMax && trailer[p] === 0x46 && trailer[p + 1] === 1) {   /* for the editor's */
       o.fm6 = { factory: trailer[p + 2], bank: trailer[p + 3], caps: 0 };                         /* PRESET / G_ENGSEL */
       if (trailer[p + 4] === 0x53 && trailer[p + 5] === 1) o.syncCaps = trailer[p + 6] & 3;
@@ -710,7 +728,8 @@ const parse = {
         o.pe0 = trailer[r + 4] | trailer[r + 5] << 7;
         r += 6;
       }
-      if (trailer[r] === 0x58 && trailer[r + 1] === 1) o.song2 = trailer[r + 2] & 127;   /* (2.0) the song's, last */
+      if (trailer[r] === 0x58 && trailer[r + 1] === 1) { o.song2 = trailer[r + 2] & 127; r += 3; }   /* (2.0) the song's */
+      if (trailer[r] === 0x59 && trailer[r + 1] === 1) o.cast = trailer[r + 2] & 127;   /* (Skiff Studio) the cast, last */
     }
     o.light = o.light || { tracks: 0, engines: 0 };   /* the tracks that may not play some engines, and those engines */
     return o;
@@ -1070,6 +1089,7 @@ function replyMatches(cmd, args, a) {
     case CMD.TRACK_MIX: case CMD.TRACK_DUMP: return a[0] === args[0];
     case CMD.WATCH: return (a[0] & 1) === (args[0] & 1);   /* bit 1: v4 firmware only */
     case CMD.TRACK_STEP: case CMD.TRACK_PARAM: return a[0] === args[0] && a[1] === args[1];
+    case CMD.CAST: return a.length === 3 && a[0] === args[0];   /* (op, on, rc; a record is 21 bytes: Link.onCast) */
     default: return true;
   }
 }
@@ -1178,6 +1198,7 @@ class Link {
     this.onTimeout = opts.onTimeout || (() => {});
     this.onPush = opts.onPush || (() => {});
     this.onGap = opts.onGap || (() => {});         /* (ms) nothing was sent for that long (WATCH may have ended) */
+    this.onCast = opts.onCast || (() => {});       /* (Skiff Studio) a cast record (21 bytes) or its overflow (127) */
   }
   get idle() { return !this.cur && !this.q.length; }
   hasQueued(key) { return this.q.some((r) => r.key === key); }
@@ -1228,6 +1249,7 @@ class Link {
   receive(data) {
     const f = unframe(data);
     if (!f) return;                                  /* not ours (notes, clock, other SysEx) */
+    if (f.cmd === CMD.CAST && (f.a.length === 21 || (f.a.length === 1 && f.a[0] === 127))) { this.onCast(f.a); return; }
     if (PUSH.has(f.cmd)) { this.onPush(f); return; }
     const c = this.cur;
     if (!c || f.cmd !== c.cmd || !replyMatches(c.cmd, c.args, f.a)) { this.onUnknown(f); return; }
@@ -3415,7 +3437,7 @@ const GLYPH = {
   ui_knob: 0xEA70, symbol_keyboard: 0xEABC, symbol_effector: 0xEAB7, symbol_echo: 0xEAB5, symbol_spring: 0xEAD1,
   symbol_tuning: 0xEAA7, control_arrow_up_down: 0xEACF, symbol_grid: 0xEABA, symbol_cog: 0xEA46,
   function_filter_hpf_peak: 0xEA9E, ui_slider_vertical: 0xEA73, symbol_books: 0xEADC, control_rec_f: 0xEA09, control_stop_f: 0xEA0F, control_play_f: 0xEA07,
-  symbol_pan: 0xEA53, control_speaker_mute: 0xEAEB,
+  symbol_pan: 0xEA53, control_speaker_mute: 0xEAEB, symbol_eye: 0xEA2F,
   waveform_sine: 0xEA85, waveform_triangle_ac: 0xEA89, waveform_sawtooth_ac: 0xEA81, waveform_square: 0xEA87,
   waveform_pulse_quarter: 0xEA7F, waveform_pulse_eighth: 0xEA7B, waveform_noise_step: 0xEA79,
   waveform_noise_white: 0xEA7A, waveform_harmonic: 0xEAC5,
@@ -3576,6 +3598,20 @@ const TEXT = {
     badEngine: "このファームウェアにないエンジンです: ", flashFail: "書き込みに失敗しました（rc {rc}）",
     installer: "インストーラー",
     tabSeq: "シーケンサー", tabTracks: "ミキサー", tabSettings: "設定",   /* ((Skiff W5) the device's MIXER) */
+    /* (Skiff Studio) the Screen tab */
+    tabScreen: "画面", scrTitle: "本体の画面",
+    scrHelp: "スタートを押すとバックアップを取ってから FM-1 を再起動し、同じ瞬間から本体の画面をここに映します。曲はそのまま残ります。画面をタップすると全画面になります。",
+    scrStart: "スタート", scrStop: "ストップ", scrNeedDev: "先に FM-1 を接続してください。",
+    scrNeedFw: "このファームウェアは画面を送れません。画面タブには FM-1 の Skiff 2.6 以降が必要です（SMK-37 はまだ対応していません）。",
+    scrBackup: "FM-1 のバックアップ中… ", scrRestart: "FM-1 を再起動しています。触らないでください…",
+    scrWait: "FM-1 を待っています…", scrFollow: "FM-1 に合わせて表示しています（ずれなし）。フレームの {pct} % が完全に一致。",
+    scrOut: "FM-1 とずれました（チェック {n} / {m}）。スタートでやり直してください。",
+    scrOverflow: "FM-1 の送るデータが USB に収まらず、画面が止まりました。スタートでやり直してください。",
+    scrBehind: "表示が遅れすぎました。スタートでやり直してください。", scrLost: "FM-1 との接続が切れました。",
+    scrStopped: "止めました。スタートでもう一度映せます。", scrNoStart: "画面の送信が始まりませんでした。もう一度スタートしてください。",
+    scrNoStore: "FM-1 が曲を保存できませんでした。鍵盤から手を離して、もう一度スタートしてください。",
+    scrNoBack: "再起動のあと FM-1 が戻りませんでした。もう一度スタートしてください。",
+    scrNoCopy: "画面のコピーを読み込めませんでした: ",
     needDevice: "FM-1 を接続すると編集できます。", smpNone: "このファームウェアにはユーザーサンプルのスロットがありません。",
     bankConnect: "FM-1 を接続すると本体のユーザープリセットも扱えます。", bankNone: "このファームウェアにはユーザープリセットがありません。",
     mixer: "ミキサー", mixHelp: "本体の MIXER ページと同じ全トラック。フェーダーはレベル。パンはどのトラックも選択を変えずに書き込みます（0.8 のファームウェアでは一瞬そのトラックを選びます）。REC は本体での録音待機の表示です。",
@@ -3716,6 +3752,20 @@ const TEXT = {
     badEngine: "This firmware has no such engine: ", flashFail: "Write failed (rc {rc})",
     installer: "Installer",
     tabSeq: "Sequencer", tabTracks: "Mixer", tabSettings: "Settings",   /* ((Skiff W5) the device's MIXER) */
+    /* (Skiff Studio) the Screen tab */
+    tabScreen: "Screen", scrTitle: "The FM-1's screen",
+    scrHelp: "Start takes a backup of your FM-1, then restarts it, so that this copy starts at the same moment and shows its screen here as it changes. Your music is kept. Tap the screen for full screen.",
+    scrStart: "Start", scrStop: "Stop", scrNeedDev: "Connect your FM-1 first.",
+    scrNeedFw: "This firmware can't send its screen. The Screen tab needs Skiff 2.6 or later on an FM-1 (the SMK-37 can't send it yet).",
+    scrBackup: "Taking a backup of your FM-1… ", scrRestart: "Restarting your FM-1. Please don't touch it…",
+    scrWait: "Waiting for your FM-1…", scrFollow: "Following your FM-1, in step. {pct} % of frames exactly alike.",
+    scrOut: "This copy is out of step with your FM-1 ({n} of {m} checks). Press Start to begin again.",
+    scrOverflow: "Your FM-1 had more to send than USB could carry, so the screen stopped. Press Start to begin again.",
+    scrBehind: "The copy fell too far behind. Press Start to begin again.", scrLost: "Your FM-1 was disconnected.",
+    scrStopped: "Stopped. Press Start to show your FM-1's screen again.", scrNoStart: "The screen didn't start. Press Start again.",
+    scrNoStore: "Your FM-1 didn't store its music. Let go of the keys and press Start again.",
+    scrNoBack: "Your FM-1 didn't come back after its restart. Press Start again.",
+    scrNoCopy: "The screen's copy didn't load: ",
     needDevice: "Connect the FM-1 to edit.", smpNone: "This firmware has no user sample slots.",
     bankConnect: "Connect the FM-1 to see its user presets too.", bankNone: "This firmware has no user presets.",
     mixer: "Mixer", mixHelp: "Every track of the device's MIXER page. The fader is the level. Pan is written to any track without changing the selection (firmware 0.8: by selecting it for a moment). REC shows a track armed for live recording on the device.",
@@ -3748,7 +3798,7 @@ $("lang").addEventListener("click", () => { lang = lang === "ja" ? "en" : "ja"; 
 
 /* ---------------------------------------------------------------- tabs --- */
 /* one panel at a time; the last one is remembered (localStorage) and in the URL hash (#sound ...) */
-const TABS = ["sound", "fm6", "sequencer", "song", "tracks", "library", "samples", "projects", "settings"];
+const TABS = ["sound", "fm6", "sequencer", "song", "tracks", "library", "samples", "projects", "screen", "settings"];
 const TAB_KEY = "felucca-editor-tab";
 const TRACK_TABS = new Set(["sound", "sequencer", "tracks"]);
 let tab = (() => {
@@ -4203,12 +4253,13 @@ async function connect() {
     let input = null, output = null, link = null;
     for (const [i, o] of pairs) {                   /* ((2.0.1, #50) one pair: as before (load asks INFO); more: the
                                                      * first that answers INFO, as the installer's handshake) */
-      const l = new Link((d) => o.send(d), {
+      const l = new Link((d) => { scrSent(d); o.send(d); }, {   /* ((Skiff Studio) the Screen tab's copy runs them too) */
         timeout: 300,
         onUnknown: (f) => console.debug("ignored reply", f),
         onTimeout: () => sayK("noreply"),
         onPush: (f) => onPush(f),
         onGap: () => { rewatch = true; },
+        onCast: (a) => scrRecord(a),
       });
       i.onmidimessage = (e) => l.receive(e.data);
       if (i.open) await i.open().catch(() => {});
@@ -4240,6 +4291,7 @@ async function connect() {
 
 function disconnect(reasonKey = "disconnected") {
   samplesLeave();                                   /* the Samples tab goes: so do the input and the preview */
+  scrDisconnected();                                /* ((Skiff Studio) the Screen tab: stopped, unless it restarted the unit */
   if (dev) {
     dev.link.close();
     dev.input.onmidimessage = null;
@@ -4290,6 +4342,7 @@ async function load(d) {
   try {
     /* the first frame after opening the port can be lost: a few tries */
     d.info = parse[CMD.INFO](await sessionRequest(d, req.info(), { timeout: 500, retries: 3 }));
+    scrLoaded(d);                                   /* ((Skiff Studio) back from the Screen tab's restart: the cast first) */
     $("version").textContent = d.info.version;
     const total = d.info.pcount + d.info.gcount;
     for (let i = 0; i < d.info.pcount; i++) { sayK("reading", `${i + 1}/${total}`); d.pdesc[i] = await getDescOrNull(0, i, d); }
@@ -6810,6 +6863,177 @@ function downloadBytes(name, bytes) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 $("fm6export").addEventListener("click", () => downloadBytes(`${fileSlug(FM6.name(fm6v))}.syx`, FM6.singleSysex(fm6v)));
+
+/* --------------------------------------------------------- (Skiff Studio) the Screen tab --- */
+/* The FM-1's screen, drawn by Skiff itself: felucca_cast.wasm (web/emu/cast_follow.c, beside this page) follows the
+   unit's cast records (cmd 83: firmware/src/cast.c, EDITOR_PROTOCOL.md "Cast"). Start: the unit's backup into one
+   instance's flash, a fresh instance from that flash, then the cast's restart (CAST op 2: the unit stores its music and
+   restarts). The editor reconnects as for any device that comes back, and load() asks for the cast before anything
+   else (scrLoaded: WATCH, CAST op 1), within the 10 s the unit holds its splash. From then on every record goes into
+   the copy, and so does every request this page sends (scrSent): the copy runs it at the unit's R (the unit's
+   editor.c, compiled in), so what the other tabs change, the copy changes too. */
+const scr = { state: "idle", wasm: null, copy: null, queue: [], seq: -1, lost: 0, log: false, pump: 0, timer: 0,
+  draws: -1, sayAt: 0, wake: null };              /* state: idle; prep (backup, restart); back (restarting); start; on */
+const scrCtx = $("scr-screen").getContext("2d"), scrImg = scrCtx.createImageData(240, 240);
+function scrSay(text, bad = false) { $("scr-status").textContent = text; $("scr-status").classList.toggle("bad", bad); }
+function scrButtons() { $("scr-start").disabled = scr.state !== "idle"; $("scr-stop").disabled = scr.state === "idle"; }
+async function scrInstance(wasm) {
+  const { instance } = await WebAssembly.instantiate(wasm, {});
+  instance.exports._initialize();
+  return instance.exports;
+}
+/* the backup's objects into an empty copy's flash (felucca_web.c web_restore_object), and that flash out */
+async function scrFlash(wasm, file) {
+  const a = await scrInstance(wasm);
+  a.web_nor_erase();
+  a.web_boot();
+  for (const o of file.objects) {
+    const b = Uint8Array.from(atob(o.data), (c) => c.charCodeAt(0));
+    new Uint8Array(a.memory.buffer, a.web_obj_buf(), b.length).set(b);
+    const rc = a.web_restore_object(o.id, b.length);
+    if (rc !== 0) throw new Error(`${t("scrNoCopy")}${o.id} (${rc})`);
+  }
+  return new Uint8Array(a.memory.buffer, a.web_nor(), a.web_nor_size()).slice();
+}
+async function scrStart() {
+  const d = dev;
+  if (scr.state !== "idle") return;
+  if (!d || !d.info) { scrSay(t("scrNeedDev"), true); return; }
+  if (!(d.info.cast & 1)) { scrSay(t("scrNeedFw"), true); return; }
+  scr.state = "prep";
+  scrButtons();
+  await op(async () => {                           /* (the editor's polling waits meanwhile) */
+    try {
+      scr.wasm ??= await fetch("felucca_cast.wasm").then((r) => {
+        if (!r.ok) throw new Error(t("scrNoCopy") + r.status);
+        return r.arrayBuffer();
+      });
+      const { captureBackup } = await backupModule();
+      scrSay(t("scrBackup"));
+      const file = await captureBackup((r, o) => sessionRequest(d, r, o), d.info.version,
+        (done, total) => scrSay(t("scrBackup") + Math.floor(100 * done / Math.max(1, total)) + " %"));
+      const nor = await scrFlash(scr.wasm, file);
+      scr.copy = await scrInstance(scr.wasm);
+      scr.copy.web_nor_erase();
+      new Uint8Array(scr.copy.memory.buffer, scr.copy.web_nor(), scr.copy.web_nor_size()).set(nor);
+      scrSay(t("scrRestart"));
+      for (let n = 0; ; n++) {                     /* (rc 1: the music not stored yet) */
+        const a = await sessionRequest(d, [CMD.CAST, [2]], { timeout: 2000, retries: 0 });
+        if (a[2] === 0) break;
+        if (n >= 30) throw new Error(t("scrNoStore"));
+        await sleep(1000);
+      }
+      scr.state = "back";                          /* (the unit restarts: disconnect(), then load() calls scrLoaded) */
+      scr.timer = setTimeout(() => { if (scr.state === "back") scrStop(t("scrNoBack"), false); }, 20000);
+    } catch (e) {
+      scrStop(e.message === "closed" ? t("scrLost") : e.message || String(e), false);
+    }
+  });
+}
+/* load(), right after INFO: back from the restart, the cast before the editor's own reading */
+function scrLoaded(d) {
+  if (scr.state !== "back") return;
+  clearTimeout(scr.timer);
+  scr.state = "start";
+  scrSay(t("scrWait"));
+  (async () => {
+    try {
+      await sessionRequest(d, req.watch(3), { front: true, timeout: 500, retries: 3 });
+      Object.assign(scr, { queue: [], seq: -1, lost: 0, draws: -1, log: false });
+      const a = await sessionRequest(d, [CMD.CAST, [1]], { front: true, timeout: 1000, retries: 2 });
+      if (a[1] !== 1) throw new Error(t("scrNoStart"));
+      scr.state = "on";
+      scr.pump = setInterval(scrPump, 16);
+      requestAnimationFrame(scrDraw);
+      try { scr.wake = await navigator.wakeLock?.request("screen"); } catch (e) { /* no wake lock here */ }
+    } catch (e) {
+      scrStop(e.message === "closed" ? t("scrLost") : e.message || String(e), false);
+    }
+  })();
+}
+/* every frame this page sends (Link): from the CAST op 1 frame on, the unit takes them with the cast on, each with an
+   R: into the copy's queue, in the order sent */
+function scrSent(f) {
+  if (scr.state !== "start" && scr.state !== "on") return;
+  if (!scr.log) {
+    scr.log = f.length === 7 && f[4] === CMD.CAST && f[5] === 1;
+    return;
+  }
+  const c = scr.copy;
+  if (!c || f.length > 702) return;
+  new Uint8Array(c.memory.buffer, c.cf_req_buf(), f.length).set(f);
+  c.cf_req_push(f.length);
+}
+/* a record (its number, four words of 5 x 7 bits) or the unit's overflow (127) */
+function scrRecord(a) {
+  if (scr.state !== "start" && scr.state !== "on") return;
+  if (a.length === 1) { scrStop(t("scrOverflow"), false); return; }
+  if (scr.seq >= 0 && a[0] !== scr.seq) scr.lost++;
+  scr.seq = (a[0] + 1) & 63;
+  const w = new Uint32Array(4);
+  for (let k = 0; k < 4; k++) {
+    const p = 1 + 5 * k;
+    w[k] = (a[p] | a[p + 1] << 7 | a[p + 2] << 14 | a[p + 3] << 21 | a[p + 4] << 28) >>> 0;
+  }
+  scr.queue.push(w);
+}
+function scrPump() {
+  const c = scr.copy;
+  if (!c || scr.state !== "on") return;
+  while (scr.queue.length) {
+    const n = Math.min(64, scr.queue.length), buf = new Uint32Array(c.memory.buffer, c.cf_buf(), 256);
+    for (let i = 0; i < n; i++) buf.set(scr.queue[i], 4 * i);
+    if (c.cf_push(n) !== n) { scrStop(t("scrBehind")); return; }
+    scr.queue.splice(0, n);
+  }
+  c.cf_run();
+  const now = Date.now();
+  if (now - scr.sayAt < 500) return;
+  scr.sayAt = now;
+  const s = (k) => c.cf_stat(k), fr = s(1);
+  if (!s(0)) scrSay(t("scrWait"));
+  else if (s(4)) scrSay(t("scrOut").replace("{n}", s(4)).replace("{m}", s(3)), true);
+  else scrSay(t("scrFollow").replace("{pct}", fr ? Math.floor(100 * (fr - s(2)) / fr) : 100));
+}
+function scrDraw() {
+  const c = scr.copy;
+  if (!c || scr.state !== "on") return;
+  if (tab === "screen" && !document.hidden && c.web_screen_draws() !== scr.draws) {
+    scr.draws = c.web_screen_draws();
+    const fb = new Uint16Array(c.memory.buffer, c.web_screen(), 240 * 240), px = scrImg.data;
+    for (let i = 0; i < 240 * 240; i++) {
+      const v = fb[i], p = ((v >> 8) | (v << 8)) & 0xFFFF;   /* the panel's byte order -> RGB565 */
+      px[i * 4] = ((p >> 11) & 31) * 255 / 31;
+      px[i * 4 + 1] = ((p >> 5) & 63) * 255 / 63;
+      px[i * 4 + 2] = (p & 31) * 255 / 31;
+      px[i * 4 + 3] = 255;
+    }
+    scrCtx.putImageData(scrImg, 0, 0);
+  }
+  requestAnimationFrame(scrDraw);
+}
+async function scrStop(msg, tell = true, bad = true) {
+  const was = scr.state;
+  scr.state = "idle";
+  scr.log = false;
+  clearInterval(scr.pump);
+  clearTimeout(scr.timer);
+  scrButtons();
+  if (msg) scrSay(msg, bad);
+  try { await scr.wake?.release(); } catch (e) { /* gone already */ }
+  scr.wake = null;
+  if (tell && dev && (was === "on" || was === "start"))
+    try { await rq([CMD.CAST, [0]], { timeout: 1000, retries: 0, quiet: true }); } catch (e) { /* the unit ends it with WATCH */ }
+}
+/* disconnect(): the Screen tab stops, unless its own restart is under way */
+function scrDisconnected() {
+  if (scr.state === "prep" || scr.state === "start" || scr.state === "on") scrStop(t("scrLost"), false);
+}
+$("scr-start").addEventListener("click", () => scrStart());
+$("scr-stop").addEventListener("click", () => scrStop(t("scrStopped"), true, false));
+$("scr-screen").addEventListener("click", () =>
+  document.fullscreenElement ? document.exitFullscreen() : $("scr-wrap").requestFullscreen?.());
+scrButtons();
 
 $("connect").addEventListener("click", () => {
   if (dev) { wantConnected = false; disconnect(); } else connect();
