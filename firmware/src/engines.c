@@ -100,6 +100,53 @@ static const engine_t *const ENGINES[NENGINES] = {
 /* a track's engine number as an index (the audio paths: a compare, cheaper than % NENGINES; a bad number: 0) */
 static inline uint32_t eng_idx(uint32_t e) { return e < NENGINES ? e : 0u; }
 
+#if FELUCCA_ENGINE_BALANCE
+/* Skiff: PROVISIONAL attenuation-only output trims, Q15 (32768 = exact unity).
+ * Factory preset median peak-100ms RMS, notes 48/60/72 at velocity 100 (kits:
+ * kick/snare/hat 36/38/42), dry before the master; target about -20 dBFS. Rounded
+ * to 0.5 dB. Preserve musical dynamics: no AGC and no changes to FM operators.
+ * docs/ENGINE_BALANCE.md records the method and limitations. DIGITAL was not
+ * calibrated and stays at unity. PHYS is the reference, also at unity. */
+static const uint16_t ENG_BALANCE_Q15[] = {
+    8231,    /* ANALOG  -12.0 dB */
+    32768,   /* DIGITAL   0.0 dB (retired, not calibrated) */
+    6172,    /* PHASE   -14.5 dB */
+    14637,   /* LOFI     -7.0 dB */
+    7336,    /* SAMPLE  -13.0 dB */
+    6925,    /* VOICE   -13.5 dB */
+    15504,   /* TRIO     -6.5 dB */
+    9235,    /* WHEEL   -11.0 dB */
+    13818,   /* GRAIN    -7.5 dB */
+    32768,   /* PHYS      0.0 dB (reference) */
+    9783,    /* DRUM    -10.5 dB */
+    21900,   /* NOISE    -3.5 dB */
+    16423,   /* FM6      -6.0 dB */
+    18427,   /* SLICE    -5.0 dB */
+    20675    /* DRUM-X   -4.0 dB */
+};
+_Static_assert(NELEM(ENG_BALANCE_Q15) == NENGINES, "one balance trim per stored engine id");
+#endif
+
+/* Skiff: constant output gain, exact unity in compatibility builds. */
+static inline int32_t eng_balance_gain(const track_t *t)
+{
+#if FELUCCA_ENGINE_BALANCE
+    return ENG_BALANCE_Q15[eng_idx(t->engine)];
+#else
+    (void)t;
+    return 32768;
+#endif
+}
+/* SAMPLE's extra sends need the same level, but not another trim on its dry buffer. */
+static inline int32_t eng_balance_level(const track_t *t)
+{
+    int32_t level = LEVEL_Q12[t->p[P_LEVEL] & 127];
+#if FELUCCA_ENGINE_BALANCE
+    level = (level * eng_balance_gain(t) + 16384) >> 15;
+#endif
+    return level;
+}
+
 /* the sample source a track's sound plays that has no data (SAMPLE's SET, GRAIN's SRC, SLICE's SRC: an empty or
  * invalid user slot, a set or PIANO this build lacks): its name (it plays a sine: eng_sample.c smp_sine), 0 = none;
  * *code a small number for it (1.., per engine and source) so the UI says it once (ui_input.c sample_notice) */

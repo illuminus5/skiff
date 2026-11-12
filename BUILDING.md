@@ -73,9 +73,17 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `c
 | `FELUCCA_SLICE` | 1 | the SLICE engine |
 | `FELUCCA_ICONS` | 1 | parameter icons on the knob cards |
 | `FELUCCA_FM4` | 0 | the retired DIGITAL engine (4-operator FM) instead of its FM6 conversion |
+| `FELUCCA_ENGINE_BALANCE` | 0 | experimental, provisional static engine trims; changes existing mixes when enabled ([notes](docs/ENGINE_BALANCE.md)) |
 
 `FELUCCA_USB_LAYOUT` (`0` to `3`, default `0`) picks other USB descriptor layouts for testing; see
 `firmware/src/usb.c`.
+
+For the engine-balance experiment, `FELUCCA_ENGINE_BALANCE=1 ./build.sh` enables
+it. Omit the flag or set it to `0` for the original sound. Do not release this
+experimental calibration without hardware listening and target-budget checks.
+`sh tests/run_engine_balance_tests.sh` builds and compares both host variants,
+without requiring the JieLi toolchain. For the browser emulator use
+`EMU_CFLAGS=-DFELUCCA_ENGINE_BALANCE=1 web/emu/build.sh`.
 
 ## Samples
 

@@ -6,10 +6,11 @@
 #define VOICE_FS 24000           /* per-voice level: one voice peaks near -6 dBFS before the master */
 
 static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }
-/* a * k / 65536 without 64-bit: a up to 2^31, k Q16 */
+/* Skiff: signed a times unsigned Q16 k (0..65536). The target has a native
+ * wide product/shift; this preserves the split product exactly with fewer ops. */
 static inline int32_t mulq16(int32_t a, uint32_t k)
 {
-    return (int32_t)(((a >> 16) * (int32_t)k) + (int32_t)(((uint32_t)(a & 0xFFFF) * k) >> 16));
+    return (int32_t)(((int64_t)a * (int32_t)k) >> 16);
 }
 static inline int32_t clamp(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 
