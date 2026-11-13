@@ -1,11 +1,22 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The firmware side of ota.c (FELUCCA_OTA): clock and watchdog, erases and writes only inside the
- * OTA area, the progress screen, the commit (record into RAM, core reset). The host test
- * (ota_test.c) provides its own. */
+ * OTA area ((Skiff) and the pattern pool, for the way back to V15), the progress screen, the commit (record into
+ * RAM, core reset). The host test (ota_test.c) provides its own. */
 static uint32_t ota_now_ms(void) { return fm1_ms; }
 static void ota_idle(void) { fm1_wdt_feed(); }
+#if OTA_USR
+/* (Skiff) and, for the way back to V15 (ota.c ota_usr_restore), the pattern pool: Skiff's own sectors */
+_Static_assert(OTA_USR_LO == FL_USR_LO && OTA_USR_HI == FL_USR_HI && OTA_POOL_LO == FL_BANK_LO &&
+               OTA_POOL_HI == FL_BANK_HI && BK_MAGIC == 0x31424B53u, "ota.c's V15 USR restore: the pool's sectors");
+static int ota_in_area(uint32_t off, uint32_t n)
+{
+    return FL_IN(off, n, OTA_AREA, OTA_AREA + OTA_AREA_LEN) || FL_IN(off, n, OTA_USR_LO, OTA_USR_HI) ||
+           FL_IN(off, n, OTA_POOL_LO, OTA_POOL_HI);
+}
+#else
 static int ota_in_area(uint32_t off, uint32_t n) { return FL_IN(off, n, OTA_AREA, OTA_AREA + OTA_AREA_LEN); }
+#endif
 static int ota_erase(uint32_t off)
 {
     uint32_t took;
