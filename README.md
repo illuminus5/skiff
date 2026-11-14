@@ -767,8 +767,9 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
   headphone / line out for gear that follows pulses on its audio input. L SYNC puts the pulses on the left and the music,
   summed to mono, on the right: a Teenage Engineering Pocket Operator in **SY4** (or SY5) follows it. R SYNC is the
   other way round. The pulses follow the sequencer (the internal clock or CLOCK USB / TRS), the first with step 1, and
-  only while it plays, so the PO starts and stops with Skiff; 4 ms each, at full level whatever MASTER is. USB audio
-  stays stereo. **SYNC PPQN:** 1–24 pulses a quarter note, 2 by default (the Pocket Operator's and the Volca's). Both
+  only while it plays, so the PO starts and stops with Skiff; 20 ms each at full level (shorter at a high PPQN),
+  whatever MASTER is, and just below zero between them, PocketSync's shape (as JAN3000 found it). USB audio stays
+  stereo. **SYNC PPQN:** 1–24 pulses a quarter note, 2 by default (the Pocket Operator's and the Volca's). Both
   are the unit's, as CLOCK OUT, so loading a project never changes them
 - **USB SERIAL** (2.0: only in a build from source without `--release`, see [BUILDING.md](BUILDING.md)): the serial
   console, a developer tool. A release has none, so the FM-1 is a plain audio + MIDI device and macOS 13–15 see its

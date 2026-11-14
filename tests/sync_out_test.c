@@ -72,7 +72,7 @@ static void edges(const int32_t *x, uint32_t n)
     uint32_t i;
     np = 0; all_level = 1;
     for (i = 0; i < n; i++) {
-        if (x[i] != 0 && x[i] != SY_LEVEL) all_level = 0;
+        if (x[i] != SY_IDLE && x[i] != SY_LEVEL) all_level = 0;
         if (x[i] == SY_LEVEL && (i == 0 || x[i - 1] != SY_LEVEL) && np < MAXP) { at[np] = i; len[np] = 0; np++; }
         if (x[i] == SY_LEVEL && np) len[np - 1]++;
     }
@@ -90,13 +90,13 @@ int main(void)
     n = 6000u * CTL;
     edges(L, n);
     q = 4u * div_samples(2);
-    check("LEFT SYNC: the left channel only 0 and the pulse level", all_level);
+    check("LEFT SYNC: the left channel only the pulse (+full scale) and the idle (-1 %: never 0, the DAC kept live)", all_level);
     ok = np > 4;
     for (i = 0; i < np; i++) ok &= at[i] == i * q / 2u || at[i] == i * q / 2u + 1u;   /* (2 PPQN: every half beat) */
     check("LEFT SYNC, 2 PPQN: the first pulse at sample 0 (step 0), then every half beat, no drift", ok && at[0] == 0);
     ok = 1;
     for (i = 0; i + 1 < np; i++) ok &= len[i] == w;
-    check("each pulse SY_PULSE_MS long", ok);
+    check("each pulse SY_PULSE_MS (20 ms) long at 2 PPQN, 120 BPM", ok && w == FS * 20u / 1000u);
     ok = 1;
     for (i = 0; i < n; i++) ok &= R[i] == (SL[i] + SR[i]) >> 1;
     check("LEFT SYNC: the right channel the stereo music summed to mono", ok);
@@ -118,8 +118,8 @@ int main(void)
         }
         if (k == 24u) {
             ok = 1;
-            for (i = 0; i + 1 < np; i++) ok &= len[i] == (w < q / 24u / 2u ? w : q / 24u / 2u);
-            check("24 PPQN: a pulse high for half its period at most", ok);
+            for (i = 0; i + 1 < np; i++) ok &= len[i] == q / 24u / 2u && q / 24u / 2u < w;
+            check("24 PPQN: a pulse high for half its period (shorter than 20 ms there)", ok);
         }
     }
     fresh(SO_LEFT, 2); run(2000);
