@@ -46,7 +46,8 @@ static void fresh(uint32_t mode, uint32_t ppqn)
     click_req = 0; click_mode = CLICK_OFF; cin_bars = 0; fx_usb_fixed = 0;
     sy_clk = SY_START; sy_hi = 0; sy_at = -1;
     song.g[G_BPM] = 120;
-    host_mset[32u * 15u + 29u] = (uint8_t)(0x80u | mode << 5 | (ppqn - 1u));   /* (as menu_items.c MI_SYNC, MI_PPQN) */
+    host_mset[32u * 15u + 29u] = (uint8_t)(SY_NORMAL | mode << 5 | ((ppqn - 1u) ^ 1u));   /* (as menu_items.c: INVERT
+                                                                                         * OFF, the checks' pulse upward) */
     nb = 0; fm1_ms = 0;
 }
 static void run(uint32_t n)
@@ -80,7 +81,7 @@ static void edges(const int32_t *x, uint32_t n)
 
 int main(void)
 {
-    static int32_t SL[MAXB * CTL], SR[MAXB * CTL], SUL[MAXB * CTL];
+    static int32_t SL[MAXB * CTL], SR[MAXB * CTL], SUL[MAXB * CTL], NL[MAXB * CTL], NR[MAXB * CTL];
     uint32_t i, n = 0, q, ok, w = SY_W, pp, st;
     static const uint8_t PPQNS[] = {1, 2, 3, 4, 5, 7, 12, 24};
 
@@ -102,6 +103,24 @@ int main(void)
     check("LEFT SYNC: the right channel the stereo music summed to mono", ok);
     ok = !memcmp(UL, SUL, sizeof SUL);
     check("USB audio unchanged by the sync", ok);
+    memcpy(NL, L, sizeof NL); memcpy(NR, R, sizeof NR);
+    fresh(SO_LEFT, 2); host_mset[32u * 15u + 29u] &= (uint8_t)~SY_NORMAL; transport_req = 1; run(6000);   /* (INVERT ON) */
+    ok = 1;
+    for (i = 0; i < n; i++) ok &= L[i] == -NL[i] && R[i] == NR[i];
+    check("SYNC INVERT ON (the default): the sync side OFF's upside down (-full, idle +1 %), the music the same",
+          ok && L[0] == -SY_LEVEL && L[n - 1u] == -SY_IDLE);
+    fresh(SO_LEFT, 2); host_mset[32u * 15u + 29u] = 1u << 5; transport_req = 1; run(2000);   /* (only LEFT set: the PPQN
+                                                                                                * and INVERT bits 0) */
+    for (i = 0; i < 2000u * CTL; i++) NL[i] = -L[i];   /* (INVERT ON: upward again for edges) */
+    edges(NL, 2000u * CTL);
+    ok = np >= 5 && all_level && at[0] == 0 && at[1] == q / 2u && at[4] == 2u * q;
+    check("PPQN stored as PPQN - 1 XOR 1: 0 is 2 PPQN (a new unit, RESET SETTINGS)", ok && L[0] == -SY_LEVEL);
+    fresh(SO_STEREO, 2); host_mset[32u * 15u + 29u] |= SY_NORMAL; transport_req = 1; run(500);   /* (on while playing) */
+    host_mset[32u * 15u + 29u] |= (uint8_t)(SO_LEFT << 5); run(1500);
+    edges(L + 500u * CTL, 1500u * CTL);
+    ok = np >= 3;
+    for (i = 0; i < np; i++) ok &= (500u * CTL + at[i]) % (q / 2u) == 0u;   /* (on the eighths from PLAY) */
+    check("SYNC OUT switched on while playing: the pulses on the beat's grid at once", ok);
     for (pp = 0; pp < sizeof PPQNS; pp++) {
         uint32_t k = PPQNS[pp];
         fresh(SO_RIGHT, k); transport_req = 1; run(6000);
@@ -133,7 +152,7 @@ int main(void)
         ok = !memcmp(L, SL, sizeof SL) && !memcmp(R, SR, sizeof SR);
         if (!ok) break;
     }
-    check("a retired STYLE byte (0..3, no mark): NO SYNC, the DAC as it was", ok);
+    check("a retired STYLE byte (0..3): NO SYNC, the DAC as it was", ok);
     printf(bad ? "sync: %d FAILED\n" : "sync: all passed\n", bad);
     return bad != 0;
 }
