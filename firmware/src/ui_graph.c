@@ -574,6 +574,13 @@ static int glow_on(const track_t *t)
 {
     return !nsel.a1 && !nsel.picked && ui.cursor < (uint32_t)t->p[P_SLEN] && step_starts(&t->step[ui.cursor]);
 }
+/* .. and they breathe (the user's ask; as the LEDs, never a hard blink): dimmed 0 .. 56 % toward the panel and back,
+ * ~1.1 s, 8 levels (graph_signature redraws on a level's change); MENU > ANIM OFF: lit */
+static uint32_t pr_breath(void)
+{
+    uint32_t p = fm1_ms % 1100u;
+    return ui_prefs & PREF_ANIM_OFF ? 0u : (p < 550u ? p : 1100u - p) * 8u / 551u;
+}
 /* .. a halo round a note's bar (x, w px: a row's height, a px either side), on every step it goes on */
 static void pr_glow(uint32_t n, int32_t x, int32_t w)
 {
@@ -653,6 +660,8 @@ static void graph_roll(const track_t *t, uint16_t c)
         st = &t->step[s];
         r = sel_step(t, s);                           /* ((2.0) selected: lit; picked notes: only those, over it) */
         col = (r && !nsel.picked) || (!nsel.a1 && si == ui.cursor) ? T_ACCENT : c;
+        if (s == ui.cursor && glow_on(t))             /* ((2.2) the cursor's notes breathe) */
+            col = ux_mix(T_ACCENT, T_SURF, 7 * (int32_t)pr_breath());
         for (k = 0; k < 1u + (uint32_t)(r && nsel.picked); k++) {
             step_t pk = *st;
             uint32_t v;
@@ -1824,6 +1833,8 @@ static uint32_t graph_signature(void)
             pr_follow(t);
             h = (h ^ (proll.lo + 1u)) * 16777619u;
             h = (h ^ pr_held()) * 16777619u;
+            if (glow_on(t))                          /* ((2.2) the cursor's notes breathing) */
+                h = (h ^ (pr_breath() + 1u) * 2246822519u) * 16777619u;
         }
     }
     return h;

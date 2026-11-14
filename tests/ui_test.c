@@ -4051,6 +4051,10 @@ static int test_chord_page(void)
 static int pr_is_bar(uint32_t x, uint32_t y)
 {
     uint16_t c = swap16(host_screen[y * 240u + x]);
+    int32_t k;
+    for (k = 1; k < 8; k++)                           /* ((2.2) the cursor's notes breathing: pr_breath's levels) */
+        if (c == ux_mix(T_ACCENT, T_SURF, 7 * k))
+            return 1;
     return c == T_THEME || c == T_ACCENT || c == T_TEXT || c == T_TRK(song.sel);   /* ((U2) BLOCKS: the track's) */
 }
 static int pr_columns_match(const track_t *t, uint32_t *nbars)
