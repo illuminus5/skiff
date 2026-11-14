@@ -647,12 +647,14 @@ static int lock_ui(void)
     frame();
     for (kn = 0; kn < 27u && kb_map(t, kn) > 127u; kn++)
         ;
-    lk_down(kn);                                         /* (1.2, #133: not armed, a key only plays: no step held) */
-    ok = !ui.entry_open && !lock_held() && !t->step[0].n;
-    turn(EN_K3, 4);
+    t->step[0].note[0] = 30; t->step[0].n = 1; t->step[0].time = ST_NOTE; t->step[0].vel = 96;
+    t->step[1].time = ST_REST;                           /* (one step long: the TIE after it would hold it) */
+    lk_down(kn);                                         /* (1.2, #133: not armed, a key on a step with a note only
+                                                          * plays: no step held; (2.2) an empty one it writes) */
+    ok = !ui.entry_open && !lock_held() && t->step[0].note[0] == 30u;   /* (KNOB 3 here: the note's LENGTH) */
     lk_up(kn);
-    bad += check("the roll, not armed: a key held writes no step and holds none; KNOB 3 locks nothing",
-                 ok && !motion_lock_count(t) && !t->step[0].n && ui.cursor == 0u);
+    bad += check("the roll, not armed, a step with a note: a key held writes nothing and holds none",
+                 ok && !motion_lock_count(t) && t->step[0].n == 1u && t->step[0].note[0] == 30u && ui.cursor == 0u);
     song.rec = 1;                                        /* armed, stopped: step recording */
     lk_down(kn);
     ok = ui.entry_open && lock_held() == 1u && t->step[0].n == 1u;

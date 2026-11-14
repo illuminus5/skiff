@@ -740,8 +740,11 @@ footer p { max-width: 1240px; margin: 6px auto; }
         One detent on, 2 STEPS: the C3 lasts through step 14, one bar on the roll. LENGTH runs from 1 to 99 % of the step, then 1 STEP,
         then 2 to 128 STEPS, each note its own. A long note can go on through steps where other notes start: on a POLY track they sound
         together, on MONO and LEG the newer one takes over.</p>
-      <p>In a chord each note can have its own length. With REC off, a key picks its note in the selection (its row lit on the roll's
-        keyboard strip; the footer says KEYS: PICK), and the knobs move that note alone; the same key again drops it.</p>
+      <p>In a chord each note can have its own length. With REC off, SHIFT + a key picks its note in the selection (its row lit on
+        the roll's keyboard strip), and the knobs move that note alone; SHIFT + the same key again drops it.</p>
+      <p>The notes starting on the cursor's step glow and breathe, their keys lit on the strip (the footer says KEYS: ADD/DEL): with REC off a
+        glowing note's key deletes it, and another key adds its note to the chord, as long as the others (on a MONO track too: the chord is
+        kept, and plays once VOICE is POLY). SAVE held undoes it.</p>
     </li>
     <li class="step" id="steps/velocity">
       <h3>A range</h3>
@@ -2210,7 +2213,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
     <dt id="g-layer">Layer</dt><dd>What a held button lays over the page: FX, GLO, SEL, EDIT, SEQ TOOLS, PERFORM (ARP) and REC (SHIFT + REC). Let go and it's gone; SHIFT + the button keeps it open.</dd>
     <dt id="g-shift">SHIFT</dt><dd><kbd>HOME</kbd> held. Its map shows what every control does on the page, and it changes what some do: SHIFT + SAVE is TAKE.</dd>
     <dt id="g-step">Step</dt><dd>A sixteenth of a bar in a pattern, up to 64 of them. On a drum track's grid the 16 white keys are steps 1–16.</dd>
-    <dt id="g-selection">Selection</dt><dd>What the knobs edit on NOTES and FEEL: the cursor's step, or a range of steps (SHIFT + <kbd>PRESETS</kbd>). With REC off a key picks one of its notes. SHIFT + OCT− and OCT+ copy and paste it, SHIFT + EDIT deletes it.</dd>
+    <dt id="g-selection">Selection</dt><dd>What the knobs edit on NOTES and FEEL: the cursor's step, or a range of steps (SHIFT + <kbd>PRESETS</kbd>). With REC off SHIFT + a key picks one of its notes (a key alone on the cursor's step adds or deletes its note). SHIFT + OCT− and OCT+ copy and paste it, SHIFT + EDIT deletes it.</dd>
     <dt id="g-pattern">Pattern</dt><dd>A track's notes exactly as they play: its steps, each note's own length, LENGTH, DIV, SWING, GATE, direction, automation and locks. Kept by itself; 64 of them in a pool every project shares.</dd>
     <dt id="g-list">List and entry</dt><dd>Each track has a list of 16 entries, A–P. An entry names a pattern and how many times it plays (REPS). The lists are the song, and PERFORM's keys.</dd>
     <dt id="g-follow">Chord follow</dt><dd>A track on FOLLOW plays in another track's chords. SEL's third page: <a href="#chord-follow">chapter 21</a>.</dd>
@@ -2275,7 +2278,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <tr data-ctrl="PLAY"><th scope="row"><kbd>PLAY</kbd></th><td>Start and stop; green while playing. With <kbd>GLO</kbd> held: from the top. On SONG, SHIFT + PLAY: from the entry <kbd>KNOB 1</kbd> is on.</td><td class="in"></td></tr>
       <tr data-ctrl="REC"><th scope="row"><kbd>REC</kbd></th><td>Arms the selected track; on an armed track, disarms every track. SHIFT + REC: the REC layer.</td><td class="in"></td></tr>
       <tr data-ctrl="OCT-"><th scope="row"><kbd>OCT−</kbd> <kbd>OCT+</kbd></th><td>The octave; both together reset it. In dialogs: back, and do it. SHIFT + OCT− / OCT+ on NOTES and FEEL: copy and paste the selection.</td><td class="in"></td></tr>
-      <tr data-ctrl="KEYS"><th scope="row">The keys</th><td>F3–G5: notes. On NOTES with REC off, a key picks its note in the selection; on a drum grid the white keys are steps 1–16 and the black keys pick the row.</td><td class="in"></td></tr>
+      <tr data-ctrl="KEYS"><th scope="row">The keys</th><td>F3–G5: notes. On NOTES with REC off, a key writes an empty cursor step, adds its note to one with notes or deletes its own there, and SHIFT + a key picks its note in the selection; on a drum grid the white keys are steps 1–16 and the black keys pick the row.</td><td class="in"></td></tr>
     </tbody>
   </table>
 </section>

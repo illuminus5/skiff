@@ -664,8 +664,10 @@ static int test_rec(void)
     frame();
     fm1_in.notes = 0;
     frame();
-    bad += check("#133 STEP, not armed: the key only plays (nothing written, the cursor stays)",
-                 !trk[0].step[0].n && ui.cursor == 0);
+    bad += check("#133 STEP, not armed: ((2.2) playing too) the empty cursor step written, the cursor on",
+                 trk[0].step[0].n == 1 && ui.cursor == 1);
+    step_clear(&trk[0].step[0]);
+    cursor_set(0);
     song.rec = 1;
     song.playing = 0;
     fm1_in.notes = host_notes = 1u << 7;
@@ -4049,6 +4051,10 @@ static int test_chord_page(void)
 static int pr_is_bar(uint32_t x, uint32_t y)
 {
     uint16_t c = swap16(host_screen[y * 240u + x]);
+    int32_t k;
+    for (k = 1; k < 8; k++)                           /* ((2.2) the cursor's notes breathing: pr_breath's levels) */
+        if (c == ux_mix(T_ACCENT, T_SURF, 7 * k))
+            return 1;
     return c == T_THEME || c == T_ACCENT || c == T_TEXT || c == T_TRK(song.sel);   /* ((U2) BLOCKS: the track's) */
 }
 static int pr_columns_match(const track_t *t, uint32_t *nbars)
@@ -4072,7 +4078,8 @@ static int pr_columns_match(const track_t *t, uint32_t *nbars)
     }
     return ok;
 }
-/* 1.2, Discussion #133: step recording on SEQ > STEP. Not armed, the keys only play (being on SEQ writes nothing);
+/* 1.2, Discussion #133: step recording on SEQ > STEP. Not armed, the keys only play ((2.2) an empty cursor step they
+ * write as armed, playing too);
  * REC there arms step recording without starting the transport; armed and stopped a key (keys held together: a
  * chord) writes the cursor step and letting go moves the cursor on one step, wrapping inside LEN; PLAY records live
  * (at the play head, not the cursor). The DRUM grid keeps its own keys (white keys = steps, REC starts PLAY) */
@@ -4092,17 +4099,26 @@ static int test_step_rec(void)
     key_down(7); frame();
     ok = kb_chn[7] != 0u;                                             /* it sounds */
     key_up(7); frame();
-    ok &= !memcmp(before, t->step, sizeof before) && ui.cursor == 3u && !song.rec && !transport_req;
-    bad += check("#133 STEP, not armed, stopped: a key sounds, writes nothing, the cursor stays", ok);
+    ok &= t->step[3].n == 1u && t->step[3].note[0] == kb_map(t, 7) && ui.cursor == 4u && !song.rec && !transport_req;
+    bad += check("#133 STEP, not armed, stopped: a key sounds; (2.2) an empty step it writes, the cursor on", ok);
+    memcpy(t->step, before, sizeof before);
+    cursor_set(3);
+    frame();
     song.playing = 1;
     key_down(7); frame(); key_up(7); frame();
     song.playing = 0;
-    bad += check("#133 STEP, not armed, playing: nothing written either", !memcmp(before, t->step, sizeof before) &&
-                 ui.cursor == 3u);
+    bad += check("#133 STEP, not armed, playing: ((2.2) the empty cursor step written as stopped)",
+                 t->step[3].n == 1u && ui.cursor == 4u);
+    memcpy(t->step, before, sizeof before);
+    cursor_set(3);
+    frame();
     song.rec = 2u;                                                    /* T2 armed, T1 selected */
     key_down(7); frame(); key_up(7); frame();
-    bad += check("#133 another track armed: the selected track's STEP writes nothing",
-                 !memcmp(before, t->step, sizeof before) && ui.cursor == 3u);
+    bad += check("#133 another track armed: the selected track's keys as not armed ((2.2) its empty step written)",
+                 t->step[3].n == 1u && ui.cursor == 4u);
+    memcpy(t->step, before, sizeof before);
+    cursor_set(3);
+    frame();
     song.rec = 0;
     press(B_REC);
     bad += check("#133 REC on STEP arms step recording: stopped, KEYS WRITE STEPS",
@@ -4143,8 +4159,15 @@ static int test_step_rec(void)
     press(B_REC);                                                     /* disarm: the keys only play again */
     memcpy(before, t->step, sizeof before);
     key_down(7); frame(); key_up(7); frame();
-    bad += check("#133 REC again disarms: the keys only play, nothing written",
-                 !song.rec && !memcmp(before, t->step, sizeof before) && ui.cursor == 4u);
+    ok = !song.rec && t->step[4].n == 1u && ui.cursor == 5u;          /* ((2.2) an empty step: written) */
+    memcpy(before, t->step, sizeof before);
+    key_down(7); frame(); key_up(7); frame();
+    ok &= t->step[5].n == 2u && t->step[5].note[0] == before[5].note[0] && t->step[5].note[1] == kb_map(t, 7) &&
+          ui.cursor == 5u;                                            /* ((2.2) a step with a note, MONO too: the key's */
+    key_down(7); frame(); key_up(7); frame();                         /* added; again: deleted) */
+    bad += check("#133 REC again disarms: ((2.2) an empty step written; on one with a note a key adds its note, MONO too, "
+                 "its own deletes it)", ok && t->step[5].n == 1u && t->step[5].note[0] == before[5].note[0] &&
+                 !memcmp(before, t->step, 5u * sizeof before[0]) && ui.cursor == 5u);
     /* the DRUM grid as before: white keys are the steps (armed or not), REC from stop starts PLAY */
     ui_power_on();
     t = TSEL;
@@ -7461,6 +7484,7 @@ static int notes_are(const step_t *s, uint32_t n, const uint8_t *want)
 }
 static void shift_turn(int32_t s) { btn_down(B_HOME); turn(EN_PRESET, s); btn_up(B_HOME); frame(); }
 static void shift_press(uint32_t label) { btn_down(B_HOME); press(label); btn_up(B_HOME); frame(); }
+static void shift_key(uint32_t k) { btn_down(B_HOME); tap_key(k); btn_up(B_HOME); frame(); }   /* ((2.2) a pick) */
 static int test_notes_sel(void)
 {
     static const uint8_t AM7[4] = {57, 60, 64, 67}, BM[4] = {59, 62, 65, 69}, FM7[4] = {53, 57, 60, 64},
@@ -7512,7 +7536,7 @@ static int test_notes_sel(void)
     ok &= !motion_lock_get(t, 0, P_SGATE, &v);         /* (the track's GATE: no lock) */
     bad += check("  LENGTH: 2 STEPS to 3 (a tie more), back to 100 % (its ties gone, a GATE lock), the track's (none)", ok);
     turn(EN_PRESET, 4);
-    tap_key(key_of(60));                               /* C4 picked in Fmaj7 */
+    shift_key(key_of(60));                             /* C4 picked in Fmaj7 ((2.2) SHIFT + its key) */
     ok = nsel.picked && nsel.vp[4] == 1u << 2;
     turn(EN_K1, 1);
     ok &= notes_are(&t->step[4], 4u, FD);
@@ -7598,7 +7622,7 @@ static int test_notes_delete(void)
     song.rec = 0;
     bad += check("  EDIT, REC armed: the cursor step cleared with its notes' ties; SAVE held puts them back", ok);
     cursor_set(0);
-    tap_key(key_of(60));                               /* C4 picked in Am7 (REC off) */
+    shift_key(key_of(60));                             /* C4 picked in Am7 (REC off) */
     shift_press(B_EDIT);
     ok = notes_are(&t->step[0], 3u, AM7_NO_C) && t->step[1].time == ST_TIE && msg_is("DELETED 1 NOTE") && !ui.lock &&
          !ui.home && cur_page()->graph == GR_ROLL;
@@ -7682,7 +7706,7 @@ static int test_notes_overlap(void)
 
     t->step[8] = (step_t){{57, 60, 64, 67}, 4, ST_NOTE, 0, 100};   /* Am7, its C4 picked: two steps of its own */
     cursor_set(8);
-    tap_key(key_of(60));
+    shift_key(key_of(60));
     turn(EN_K3, 64);
     turn(EN_K3, 1);
     ok = notes_are(&t->step[8], 4u, AM7) && t->step[9].time == ST_NOTE && t->step[9].n == 1u &&
@@ -8204,14 +8228,96 @@ static int test_u1(void)
     bad += check("U1: EDIT's step clear is undone by SAVE held; two in a run are one undo", ok);
 
     ui_power_on();
+    my_steps(TSEL);
     go_page(GR_ROLL);
-    ui.msg_t = 0;
+    ui.cursor = 0; ui.msg_t = 0;
+    shift_turn(3);                                       /* ((2.2) a range: the cursor's step alone adds and deletes) */
     fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = 0; frame();
-    ok = msg_is("[REC] WRITE STEPS");
+    ok = msg_is("[REC] REPLACE STEP") && TSEL->step[0].note[0] == 40u && TSEL->step[3].n == 1u && ui.cursor == 3u;
     ui.msg_t = 0;
     fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = 0; frame();
     ok &= !ui.msg_t;                                     /* (now and then: not every key) */
-    bad += check("U1: NOTES's keys not armed: \"[REC] WRITE STEPS\" once a while", ok);
+    bad += check("U1: NOTES's keys not armed, a range with no such note: they write nothing, \"[REC] REPLACE STEP\" once a while", ok);
+
+    {   /* (2.2) not armed: an empty cursor step the keys write, as step entry, stopped or playing; one undo a step */
+        uint32_t n0, k7;
+        ui_power_on();
+        my_steps(TSEL);
+        go_page(GR_ROLL);
+        ui.cursor = 1;
+        k7 = kb_map(TSEL, 7);
+        n0 = undo_n;
+        fm1_in.notes = host_notes = 1u << 7; frame();
+        ok = ui.entry_open && TSEL->step[1].n == 1u && TSEL->step[1].note[0] == k7 && step_on(&TSEL->step[1]);
+        fm1_in.notes = host_notes = 0; frame();
+        ok &= !ui.entry_open && ui.cursor == 2u && undo_n == n0 + 1u && !song.rec;
+        fm1_in.notes = host_notes = 1u << 7; frame(); fm1_in.notes = host_notes = 0; frame();
+        ok &= TSEL->step[2].note[0] == k7 && ui.cursor == 3u && undo_n == n0 + 2u;
+        hold(B_SAVE);
+        ok &= step_on(&TSEL->step[1]) && !TSEL->step[2].n;   /* (the last step written undone, the first kept) */
+        bad += check("2.2: NOTES's keys not armed, stopped: an empty cursor step is written, the cursor on; one undo a step", ok);
+        cursor_set(4);
+        press(B_PLAY);
+        events_block(CTL);
+        ok = song.playing;
+        fm1_in.notes = host_notes = 1u << 7; frame();
+        ok &= ui.entry_open && TSEL->step[4].note[0] == k7;
+        fm1_in.notes = host_notes = 0; frame();
+        ok &= !ui.entry_open && ui.cursor == 5u && TSEL->step[3].note[0] == 43u;
+        bad += check("  playing, not armed: the same at the cursor (not the playhead)", ok);
+        stop_transport();
+    }
+    {   /* (2.2) not armed, the cursor's step with notes: they glow; a key of one deletes it, another adds its note (as
+         * long as the step's first, its values kept), MONO too; one undo a press; SHIFT + a key picks */
+        static const uint8_t CE[2] = {60, 64}, CEG[3] = {60, 64, 67}, CEGB[4] = {60, 64, 67, 71}, EG[2] = {64, 67},
+                             G1[1] = {67};
+        track_t *t;
+        uint32_t n0;
+        ui_power_on();
+        t = TSEL;
+        track_defaults_steps(t);
+        t->p[P_SLEN] = 16;
+        t->p[P_VOICE] = V_POLY;
+        t->step[2] = (step_t){{60, 64}, 2, ST_NOTE, 0, 77};   /* C4 E4, two steps */
+        t->step[3] = (step_t){{0}, 0, ST_TIE, 0, 0};
+        go_page(GR_ROLL); frame();
+        cursor_set(2); frame();
+        ok = glow_on(t);
+        n0 = undo_n;
+        tap_key(key_of(67));
+        ok &= notes_are(&t->step[2], 3u, CEG) && t->step[3].time == ST_TIE && t->step[2].vel == 77u &&
+              msg_is("ADDED G4") && ui.cursor == 2u && undo_n == n0 + 1u;
+        tap_key(key_of(60));
+        ok &= notes_are(&t->step[2], 2u, EG) && t->step[3].time == ST_TIE && msg_is("DELETED C4") && undo_n == n0 + 2u;
+        hold(B_SAVE);
+        ok &= notes_are(&t->step[2], 3u, CEG);
+        bad += check("2.2: NOTES, not armed, a step with notes: a key adds its note (as long, its values), its own deletes it; "
+                     "one undo each", ok);
+        tap_key(key_of(71));
+        tap_key(key_of(74));
+        ok = notes_are(&t->step[2], 4u, CEGB) && msg_is("STEP 3 TAKEN");
+        tap_key(key_of(64)); tap_key(key_of(60)); tap_key(key_of(71));
+        ok &= notes_are(&t->step[2], 1u, G1);
+        tap_key(key_of(67));
+        ok &= step_empty(&t->step[2]) && step_empty(&t->step[3]) && msg_is("DELETED G4") && !glow_on(t);
+        bad += check("  four notes: a fifth refused (STEP n TAKEN); the last one deleted: the step and its tie empty", ok);
+        t->step[2] = (step_t){{60, 64}, 2, ST_NOTE, 0, 77};
+        t->step[3] = (step_t){{0}, 0, ST_TIE, 0, 0};
+        shift_key(key_of(60));
+        ok = nsel.picked && nsel.vp[2] == 1u && notes_are(&t->step[2], 2u, CE) && !ui.menu;
+        tap_key(key_of(67));
+        ok &= notes_are(&t->step[2], 3u, CEG) && !nsel.picked;
+        bad += check("  SHIFT + a key picks its note (no MENU); a key after it adds as before", ok);
+        t->p[P_VOICE] = V_MONO;
+        t->step[2] = (step_t){{60}, 1, ST_NOTE, 0, 77};
+        t->step[3] = (step_t){{0}, 0, ST_TIE, 0, 0};
+        tap_key(key_of(67));
+        ok = t->step[2].n == 2u && t->step[2].note[0] == 60u && t->step[2].note[1] == 67u && t->step[3].time == ST_TIE &&
+             t->step[2].vel == 77u && msg_is("ADDED G4");
+        tap_key(key_of(60));
+        ok &= t->step[2].n == 1u && t->step[2].note[0] == 67u && msg_is("DELETED C4");
+        bad += check("  MONO too: another key's note added (the chord kept), its own deleted", ok);
+    }
 
     ui_power_on();
     btn_down(B_ARP); frames(560);
@@ -8458,7 +8564,8 @@ static int test_u5(void)
     go_page(GR_ROLL); frame();
     btn_down(B_HOME); frames(400);
     shift_map(m);
-    ok &= ui.shift && str_eq(m[0].job, "STEP") && m[0].kind == 1u && str_eq(m[3].job, "PICK") &&
+    ok &= ui.shift && str_eq(m[0].job, "STEP") && m[0].kind == 1u &&
+          str_eq(m[3].job, draw_on(0) ? "WRITE" : "PICK") && str_eq(m[4].job, "REPLACE") &&
           str_eq(m[6].job, "RANGE") && m[6].kind == 2u && str_eq(m[7].job, "COPY") && str_eq(m[8].job, "PASTE");
     press(B_SAVE);                                      /* SHIFT + SAVE: TAKE; the map goes */
     ok &= !ui.shift;

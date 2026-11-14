@@ -370,8 +370,13 @@ the page follows the unit and draws what it draws, and the USB audio stays on (t
 - **NOTES and FEEL** (2.0): two step pages, PRESETS the cursor on both. SEQ › NOTES, the piano roll, edits a
   **selection** as one, the cursor's step or a range (SHIFT + PRESETS): PITCH (along the scale), START, LENGTH and
   VELOCITY. **Notes overlap**, each with its own length (1–99 % of a step, 1 STEP, or 2 to 128 steps): a long note
-  goes on under the notes after it, a chord's notes can end apart, and REC and TAKE record them so; with REC off a
-  key picks one note of a chord. **SHIFT + OCT− / OCT+** copy and paste the selection, **SHIFT + EDIT** deletes it
+  goes on under the notes after it, a chord's notes can end apart, and REC and TAKE record them so. With REC off
+  (2.2), stopped or playing, a key on an empty step writes the note there as step recording does (keys together a
+  chord, the cursor on when you let go); on the cursor's step with notes, which glow and breathe on the roll with their keys lit,
+  a note's own key deletes it and another key adds its note to the chord, as long as the step's first (on
+  MONO too: one note of it sounds until VOICE is POLY); SHIFT + a key picks one note of a chord (in a range, the key alone). REC armed and stopped replaces
+  a step's notes.
+  **SHIFT + OCT− / OCT+** copy and paste the selection, **SHIFT + EDIT** deletes it
   (on the drum grid copy and paste follow the LANE: a figure moved from lane to lane). SEQ › FEEL, 16 tiles, sets
   CHANCE (OFF, 1–100 %, then the trig conditions), RATCHET (×1–4, FLAM), NUDGE and TYPE (accent, slide) on every
   selected step. A new note is 1 STEP long (PATTERN's GATE 100 %); PATTERN's PRESETS turns the direction. (2.5) With a
@@ -550,12 +555,13 @@ by the keys, with what each key is in Skiff.
   lists it picks, (2.5) on DELAY it turns the MODE and on INSERT the MIX (a card says so). With SAVE › PRESETS' LIST
   on a type (BASS, PAD ..) it steps through that type only
 - On NOTES and FEEL, **SHIFT + PRESETS** stretches the selection over a range of steps, **SHIFT + OCT− / OCT+** copy
-  and paste it, **SHIFT + EDIT** deletes it; with REC off a key picks its note in the selection
+  and paste it, **SHIFT + EDIT** deletes it; with REC off **SHIFT + a key** picks its note in the selection, and
+  (2.2) a key writes an empty cursor step, or on one with notes adds its note or deletes its own, playing too
 - (2.5) On SEQ › SONG, **SHIFT + PLAY** plays the song from the entry KNOB 1 is on, **SHIFT + EDIT** empties it
 - On action pages and in dialogs, **OCT+** does it and **OCT−** goes back
 - Hold a step on SEQ › NOTES (on the drum grid its white key; on the piano roll the step you are entering, REC armed
-  and stopped) and turn KNOB 1–4 to lock those parameters on that step: the four of the sound page you were on last
-  (HOME's after HOME)
+  and stopped, or (2.2) REC off on an empty step) and turn KNOB 1–4 to lock those parameters on that step: the four
+  of the sound page you were on last (HOME's after HOME)
 - Save a sound: stop, tap SAVE (USER), pick a slot with KNOB 1, OCT+, name it with the keys, OCT+
 
 ### The FX layer's keys
