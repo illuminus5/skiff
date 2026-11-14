@@ -320,7 +320,7 @@ them. MENU › DISPLAY › PLAYHEAD LINE leaves HOME's playhead a line, without 
 
 The [Skiff Editor](https://illuminus5.github.io/skiff/webapp/editor/) (`web/editor.html`, Chrome or Edge over USB MIDI)
 edits a connected FM-1 live: the sounds and their presets, the steps, the mixer, the Song tab (each track's list, the
-scenes, the pattern pool; an Akai APC mini mk2 plugged into the computer launches them, its LEDs following the FM-1),
+scenes, the pattern pool; an Akai APC mini mk2 plugged into the computer plays them, see below),
 the projects and their names, the DRUM-X kit and the MENU settings, with PLAY, STOP and REC
 at the top. It looks like the unit and follows its THEME, and sets THEME › CUSTOM's colours (Settings › Device
 display). It also keeps a library of sounds on the computer, imports
@@ -330,6 +330,36 @@ levels to each other kept. On 2.0 its Restore converts a backup of before (Skiff
 Felucca) first, and lists what it converted. (2.6) Its Screen tab shows the FM-1's screen as large as the window
 allows, on the computer or on an Android phone or tablet in Chrome with the FM-1 plugged into it: a copy of Skiff in
 the page follows the unit and draws what it draws, and the USB audio stays on (the FM-1 only, for now).
+
+#### The APC mini mk2
+
+An Akai APC mini mk2 plugged into the computer plays the Song tab while the editor is open, whichever tab shows; no
+setting, it works while it is plugged in. Its LEDs show what the FM-1 says, read back about every 400 ms, in the
+tracks' colours of the THEME.
+
+**Song mode** (as it starts):
+
+| Control | Does |
+|---|---|
+| Pads, columns 1–6 | T1–T6's list entries, A at the top (green: playing, blinking: next, the track's colour: kept, dim: a REST) |
+| Pads, columns 7–8 | the scenes 1–8 and 9–16, top down (green: the last recalled) |
+| Bottom buttons 1–6 | T1–T6's MUTE (lit: muted, flashing: staged) |
+| Side buttons 1–2 | the page: entries A–H or I–P |
+| Bottom side button | PLAY |
+| Faders 1–6 | T1–T6's LEVEL (CC7) |
+
+**Drum mode** (SHIFT; SHIFT again back to the song):
+
+| Control | Does |
+|---|---|
+| Bottom buttons 1–6 | first, lit on the DRUM and DRUM-X tracks: press one to show it (each SHIFT, pick again) |
+| Pads | the shown track's 8 lanes, a column each, KICK at the left, BELL at the right: a lane the pattern plays is a red bar as high as its level (a muted one: its bottom pad dim white); they only show |
+| Faders 1–8 | the level of the lane above each |
+| Bottom buttons 1–8 | once a track is shown: the mute of the lane above each (lit: muted; its level comes back) |
+| Bottom side button | PLAY |
+
+The drum mode changes the lanes' levels on any track without selecting it (firmware with TRACK_PARAM); a mute is
+the lane's level at 0, the level before kept by the editor.
 
 <table>
 <tr>
