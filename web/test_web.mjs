@@ -35,7 +35,7 @@ const FW_ROOT = process.env.FELUCCA_ROOT || join(HERE, "..");
 const html = readFileSync(join(HERE, "editor.html"), "utf8");
 const proto = html.slice(html.indexOf("/*PROTO-BEGIN*/"), html.indexOf("/*PROTO-END*/"));
 const E = vm.runInNewContext(proto + `
-;({ frame, unframe, parse, songReply, req, Link, parseWav, resample, normalize, takeSample, kitZones, LANES, portPairs, apcPorts, apcAction, apcLeds, apcNear, APC, autoTrim, zoomView, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
+;({ frame, unframe, parse, songReply, req, Link, parseWav, resample, normalize, takeSample, kitZones, LANES, portPairs, apcPorts, apcAction, apcLeds, apcDrumLeds, apcNear, APC, autoTrim, zoomView, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
    UP, bank, capturePatch, auditionPatch, lightRefuses, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
    mixer, parseNotes, parseHits, hitsText, gridFromSteps, LANE_NOTE, LANE_OF, readDevicePreferences, devicePresetRows, TC_NAMES, engineOrder, ENGINE_ORDER, aliasOf, fmtValue, FM6, enumShown, F,
    FM4, fromDigital, fromPerc, DRUM_KIT_E, DX_KIT_DEF, DX_KITS, DRUMX_PKIT,
@@ -1130,11 +1130,12 @@ async function editorLists() {
   const list = { tracks: [{ cur: 0, next: 2, ent: ent({ 0: { pat: 1 }, 1: { pat: 2 }, 2: { pat: 3 }, 3: { pat: 65 }, 8: { pat: 4 } }) }] };
   const perf = { last: 1, scenes: 3, tracks: [{ muted: true, staged: 0 }, { muted: false, staged: 2 }, { muted: false, staged: 0 }] };
   const t1 = E.apcNear("#ff5a36");
-  ok(t1 === 4 && E.apcNear(" #22C3B4 ") === 90 && E.apcNear("#00ff00") === 21 && E.apcNear("#000000") === 0 && E.apcNear("oops") === A.WHITE,
-     "apc: an editor colour as the palette's nearest (Akai's table: 4 #FF4C4C, 21 #00FF00)");
+  ok(t1 === 60 && E.apcNear(" #22C3B4 ") === 33 && E.apcNear("#9580ff") === 80 && E.apcNear("#00ff00") === 21 && E.apcNear("#000000") === 0 &&
+     E.apcNear("#808080") === A.WHITE && E.apcNear("oops") === A.WHITE,
+     "apc: an editor colour as the palette's saturated hue nearest it (Akai's table: 60 #FF1500, 33 #00FF99, 80 #3F00FF), a grey white");
   let m = E.apcLeds(list, perf, 0, true, [t1]);
   const led = (n) => m.get(n).join();
-  ok(led(56) === `${A.FULL},${A.GREEN}` && led(48) === `${A.KEPT},4` && led(40) === `${A.BLINK},${A.GREEN}` && led(32) === `${A.REST},4` && led(24) === `${A.FULL},0`,
+  ok(led(56) === `${A.FULL},${A.GREEN}` && led(48) === `${A.KEPT},${t1}` && led(40) === `${A.BLINK},${A.GREEN}` && led(32) === `${A.REST},${t1}` && led(24) === `${A.FULL},0`,
      "apc: on green, kept 50 % of its track's colour, next blinking, a REST 25 %, empty dark");
   ok(led(57) === `${A.FULL},0`, "apc: a track the reply hasn't: dark");
   ok(led(62) === `${A.KEPT},${A.WHITE}` && led(54) === `${A.FULL},${A.GREEN}` && led(46) === `${A.FULL},0`, "apc: a scene kept white at 50 %, the last green, none dark");
@@ -1144,6 +1145,27 @@ async function editorLists() {
   ok(led(56) === `${A.KEPT},${A.WHITE}` && m.get(A.PAGE + 1)[1] === 1 && !m.get(A.PLAY)[1], "apc: page I..P shows I..P");
   m = E.apcLeds(null, null, 0, false);
   ok(m.size === 64 + 6 + 2 + 1 && [...m.values()].every((x) => x[1] === 0), "apc: no device: every LED dark");
+  /* SHIFT: the drum mode */
+  const dact = (st, n, v, drum = "lanes") => JSON.stringify(E.apcAction([st, n, v], 0, drum));
+  ok(act(0x90, A.SHIFT, 127) === '{"do":"shift"}' && dact(0x90, A.SHIFT, 127) === '{"do":"shift"}' && act(0x80, A.SHIFT, 0) === "null",
+     "apc: SHIFT pressed toggles, let go nothing");
+  ok(dact(0x90, 0, 127) === "null" && dact(0x90, 63, 127) === "null", "apc drum: the pads only show");
+  ok(dact(0x90, 102, 127, "pick") === '{"do":"drum","k":2}' && dact(0x90, 106, 127, "pick") === "null" && dact(0x90, 113, 127) === "null" &&
+     dact(0x90, 119, 127) === '{"do":"play"}', "apc drum: to pick, bottom button 3 picks T3, the seventh nothing; PLAY");
+  ok(dact(0x90, 100, 127) === '{"do":"lmute","l":0}' && dact(0x90, 107, 127) === '{"do":"lmute","l":7}' && dact(0xB0, 48, 9, "pick") === "null",
+     "apc drum: picked, bottom buttons 1, 8 mute KICK, BELL; to pick, the faders nothing");
+  ok(dact(0xB0, 55, 64) === '{"do":"lane","l":7,"v":64}' && dact(0xB0, 56, 64) === "null", "apc drum: fader 8 BELL's level; 9 nothing");
+  const dr = { drums: 0b100100, k: 2, used: 0b10000011, lv: [127, 64, 127, 127, 127, 127, 127, 0] };
+  m = E.apcDrumLeds(dr, false);
+  const col = (l) => [0, 1, 2, 3, 4, 5, 6, 7].map((r) => led(r * 8 + l));
+  ok(col(0).every((x, r) => x === `${r === 7 ? A.FULL : A.KEPT},${A.RED}`), "apc drum: KICK at 127 a full column, its top 100 %");
+  ok(col(1).every((x, r) => x === (r === 3 ? `${A.FULL},${A.RED}` : r < 3 ? `${A.KEPT},${A.RED}` : `${A.FULL},0`)), "apc drum: SNARE at 64 four pads high");
+  ok(col(2).every((x) => x === `${A.FULL},0`) && led(7) === `${A.REST},${A.WHITE}` && led(15) === `${A.FULL},0`,
+     "apc drum: a lane not struck dark; struck at LEVEL 0 its bottom pad dim");
+  ok(m.get(A.MUTE + 7)[1] === 1 && [0, 1, 2, 3, 4, 5, 6].every((l) => !m.get(A.MUTE + l)[1]), "apc drum: picked, a muted lane's button lit (LEVEL 0)");
+  m = E.apcDrumLeds({ ...dr, k: -1 }, false);
+  ok([...Array(64).keys()].every((n) => !m.get(n)[1]) && m.get(A.MUTE + 2)[1] === 1 && m.get(A.MUTE + 5)[1] === 1 && !m.get(A.MUTE)[1],
+     "apc drum: to pick, the DRUM tracks lit, the pads dark");
 }
 
 /* (2.0, INFO 58 01 01) LIST2 (SONG ONCE, the chains as kept), LIST's 5 0 CHAIN, 6 2 ONCE, 7 NEW, 8 COPY+ (a chain: all

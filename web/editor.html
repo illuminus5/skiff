@@ -1115,22 +1115,32 @@ function portPairs(access) {
    8: scenes 1..8, 9..16, top down; the bottom buttons 1..6: T1..T6's MUTE; the side buttons: the top two the page (A..H,
    I..P), the bottom one PLAY; faders 1..6: T1..T6's LEVEL. It has a port for the pads ("Control") and one for its note
    and drum modes ("Notes"). LEDs: a note-on, the status's channel a pad's brightness or blink, the velocity its colour;
-   a button's velocity 1 on, 2 flashing */
+   a button's velocity 1 on, 2 flashing. SHIFT (it has no LED) turns it into the drum mode and back (apcDrumLeds) */
 const APC_PORT = /apc mini mk2/i;
-const APC = { MUTE: 100, PAGE: 112, PLAY: 119, FADER: 48, FULL: 0x96, KEPT: 0x92, REST: 0x91, BLINK: 0x9E, BTN: 0x90,
-  GREEN: 87, WHITE: 3 };   /* (statuses: 100 %, 50 %, 25 %, blinking 1/4; velocities: the palette's) */
+const APC = { MUTE: 100, PAGE: 112, PLAY: 119, FADER: 48, SHIFT: 122, FULL: 0x96, KEPT: 0x92, REST: 0x91, BLINK: 0x9E, BTN: 0x90,
+  GREEN: 87, WHITE: 3, RED: 5 };   /* (statuses: 100 %, 50 %, 25 %, blinking 1/4; velocities: the palette's) */
 /* the velocities' colours (Akai's APC mini mk2 protocol v1.0). Its SysEx colours aren't used: even values reportedly
    turn a pad off */
 const APC_PALETTE = "0000001e1e1e7f7f7fffffffff4c4cff0000590000190000ffbd6cff5400591d00271b00ffff4cffff0059590019190088ff4c54ff001d5900142b004cff4c00ff000059000019004cff5e00ff1900590d0019024cff8800ff5500591d001f124cffb700ff990059350019124cc3ff00a9ff0041520010194c88ff0055ff001d590008194c4cff0000ff000059000019874cff5400ff1900640f0030ff4cffff00ff590059190019ff4c87ff005459001d220013ff150099350079510043640003390000573500547f0000ff00454f2500cc7f7f7f202020ff0000bdff2dafed0664ff09108b0000ff8700a9ff002aff3f00ff7a00ffb21a7d402100ff4a0088e10672ff1500ff003bff2659ff7138ffcc5b8aff3151c6877fe9d31dffff005dff7f00b9b00090ff00835d07392b00144c100d503815152a16205a693c1ca8000ade513dd86a1cffe1269ee12f67b50f1e1e30dcff6b80ffbd9a99ff8e66ff404040757575e0ffffa000003500001ad000074200b9b0003f3100b35f004b1502";
-/* the velocity nearest a colour as an editor's token has it (not #rrggbb: white) */
+/* a #rrggbb's hue (0..360), saturation and value (0..1) */
+function apcHsv(x) {
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16)), hi = Math.max(r, g, b), d = hi - Math.min(r, g, b);
+  let h = !d ? 0 : hi === r ? (g - b) / d : hi === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(h * 60 + 360) % 360, hi ? d / hi : 0, hi / 255];
+}
+/* the velocity whose hue is nearest a colour as an editor's token has it, among the palette's full, saturated ones (the
+   table's pale ones light the pads nearly white; the brightness is the status's). Not #rrggbb, or a grey: white; black: off */
 function apcNear(s) {
   const m = /^#([0-9a-f]{6})$/i.exec(String(s).trim());
   if (!m) return APC.WHITE;
-  const part = (x, i) => parseInt(x.slice(i, i + 2), 16);
+  const [h, sat, val] = apcHsv(m[1]);
+  if (val < 0.1) return 0;
+  if (sat < 0.2) return APC.WHITE;
   let best = APC.WHITE, least = Infinity;
   for (let v = 0; v < 128; v++) {
-    let d = 0;
-    for (let i = 0; i < 6; i += 2) d += (part(m[1], i) - part(APC_PALETTE, v * 6 + i)) ** 2;
+    const [h2, s2, v2] = apcHsv(APC_PALETTE.slice(v * 6, v * 6 + 6));
+    if (s2 < 0.9 || v2 < 0.95) continue;
+    const d = Math.min(Math.abs(h - h2), 360 - Math.abs(h - h2));
     if (d < least) { least = d; best = v; }
   }
   return best;
@@ -1146,11 +1156,19 @@ function apcPorts(access) {
   }
   return null;
 }
-/* what a message from it asks for (null: nothing) */
-function apcAction([st, d1, d2], page) {
+/* what a message from it asks for (null: nothing); drum: in the drum mode, "pick" its track to pick, "lanes" one
+   picked (its pads show, nothing more) */
+function apcAction([st, d1, d2], page, drum = false) {
   const kind = st & 0xF0;
+  if (kind === 0xB0 && drum) return drum === "lanes" && d1 >= APC.FADER && d1 < APC.FADER + 8 ? { do: "lane", l: d1 - APC.FADER, v: d2 } : null;
   if (kind === 0xB0) return d1 >= APC.FADER && d1 < APC.FADER + 6 ? { do: "level", k: d1 - APC.FADER, v: d2 } : null;
   if (kind !== 0x90 || !d2) return null;
+  if (d1 === APC.SHIFT) return { do: "shift" };
+  if (drum) {
+    if (drum === "pick" && d1 >= APC.MUTE && d1 < APC.MUTE + 6) return { do: "drum", k: d1 - APC.MUTE };
+    if (drum === "lanes" && d1 >= APC.MUTE && d1 < APC.MUTE + 8) return { do: "lmute", l: d1 - APC.MUTE };
+    return d1 === APC.PLAY ? { do: "play" } : null;
+  }
   if (d1 < 64) {
     const c = d1 % 8, row = 7 - (d1 >> 3);
     return c < 6 ? { do: "entry", k: c, e: row + 8 * page } : { do: "scene", s: row + 8 * (c - 6) };
@@ -1182,6 +1200,28 @@ function apcLeds(list, perf, page, playing, tracks = []) {
     m.set(APC.MUTE + k, [APC.BTN, !y ? 0 : y.staged ? 2 : +y.muted]);
   }
   for (let k = 0; k < 2; k++) m.set(APC.PAGE + k, [APC.BTN, list && page === k ? 1 : 0]);
+  m.set(APC.PLAY, [APC.BTN, playing ? 1 : 0]);
+  return m;
+}
+/* the drum mode's LEDs: none picked yet, the bottom buttons 1..6 lit on the DRUM and DRUM-X tracks, the pads dark;
+   one picked, its lanes a column each (KICK at the left, BELL at the right, the fader under it its level): a lane the
+   pattern strikes a red bar as high as its LEVEL (0..127: 0..8 pads, the top one 100 %, under it 50 %), at LEVEL 0 its
+   bottom pad dim white; a lane it doesn't strike dark; the bottom buttons 1..8 its lanes' mutes, lit when muted
+   (LEVEL 0). The bottom side button PLAY. dr: {drums: a bit a track, k: the track shown (-1 none), used: the lanes
+   its pattern strikes, lv: their levels} or none */
+function apcDrumLeds(dr, playing) {
+  const m = new Map(), shown = !!dr && dr.k >= 0 && !!dr.lv, hue = APC.RED;
+  for (let n = 0; n < 64; n++) {
+    const l = n % 8, row = n >> 3, h = shown ? Math.round(dr.lv[l] * 8 / 127) : 0;
+    let led = [APC.FULL, 0];
+    if (shown && dr.used >> l & 1) {
+      if (row < h) led = [row === h - 1 ? APC.FULL : APC.KEPT, hue];
+      else if (!h && !row) led = [APC.REST, APC.WHITE];
+    }
+    m.set(n, led);
+  }
+  for (let k = 0; k < 8; k++)
+    m.set(APC.MUTE + k, [APC.BTN, !dr ? 0 : dr.k >= 0 ? +(shown && dr.lv[k] === 0) : +(k < 6 && !!(dr.drums >> k & 1))]);
   m.set(APC.PLAY, [APC.BTN, playing ? 1 : 0]);
   return m;
 }
@@ -3552,7 +3592,7 @@ const TEXT = {
     sgConfirmEmpty: "パターン {n} を空にしますか？ ステップ、NUDGE、オートメーションが消えます。パターンとそれを使うエントリーは残ります。元に戻せません。",
     sgConfirmUnused: "未使用のパターン {n} 個をクリアしますか？ どこからも使われていません。元に戻せません。",
     sgEmpty: "空です", sgAutoFull: "完了（オートメーションなし: AUTOMATION FULL）", sgStopClear: "停止してからクリアしてください",
-    sgApc: "APC mini mk2 接続中: 1〜6列は T1〜T6 のエントリー、7・8列はシーン、下のボタン1〜6は MUTE、右上の2つはページ（A–H / I–P）、右下は PLAY、フェーダー1〜6は LEVEL",
+    sgApc: "APC mini mk2 接続中: 1〜6列は T1〜T6 のエントリー、7・8列はシーン、下のボタン1〜6は MUTE、右上の2つはページ（A–H / I–P）、右下は PLAY、フェーダー1〜6は LEVEL。SHIFT でドラムモード: 光る下のボタンが DRUM のトラック（押して選ぶ）。選ぶと 8 列が各レーン（左が KICK）で、パターンで鳴るレーンは音量の高さまで赤く光り、その下のフェーダーが音量、下のボタンがミュート。もう一度 SHIFT でソングに戻ります",
     sgFull: "パターンがいっぱいです: プールで未使用のものをクリアしてください", sgFailed: "本体で失敗しました", sgNothing: "クリアするものがありません", sgInUse: "使用中です",
     sgNoFw: "このファームウェアにはソングのコマンドがありません。Skiff を更新してください。",
     confirmSave: "スロット {n} に上書き保存しますか？", confirmLoad: "スロット {n} を読み込みますか？ すべてのトラックの音色とシーケンスが置き換わります（元に戻せません）。",
@@ -3706,7 +3746,7 @@ const TEXT = {
     sgConfirmEmpty: "Empty pattern {n}? Its steps, NUDGEs and automation go; the pattern and the entries naming it stay. It can't be undone.",
     sgConfirmUnused: "Clear the {n} unused patterns? Nothing uses them. It can't be undone.",
     sgEmpty: "Empty", sgAutoFull: "Done, without its automation (AUTOMATION FULL)", sgStopClear: "Stop to clear",
-    sgApc: "APC mini mk2 connected: columns 1–6 T1–T6's entries, columns 7–8 the scenes, bottom buttons 1–6 MUTE, the top two side buttons the page (A–H, I–P), the bottom one PLAY, faders 1–6 LEVEL",
+    sgApc: "APC mini mk2 connected: columns 1–6 T1–T6's entries, columns 7–8 the scenes, bottom buttons 1–6 MUTE, the top two side buttons the page (A–H, I–P), the bottom one PLAY, faders 1–6 LEVEL. SHIFT: the drum mode, the lit bottom buttons the DRUM tracks (press one to show it): its 8 lanes a column each (KICK at the left), a lane the pattern plays lit red as high as its level, the fader under it that level, the button under it its mute; SHIFT again: back to the song",
     sgFull: "Patterns full: clear unused ones in the pool", sgFailed: "Failed on the device", sgNothing: "Nothing to clear", sgInUse: "In use",
     sgNoFw: "This firmware has no song commands: update Skiff.",
     confirmSave: "Overwrite slot {n}?", confirmLoad: "Load slot {n}? The sounds and sequences of every track are replaced (no undo).",
@@ -3950,26 +3990,92 @@ function songOp(r, kind) {
   });
 }
 /* the APC mini mk2 (apcAction, apcLeds): found whenever the ports change; on it, the song is read every APC_POLL ms
-   whichever tab is open, so its LEDs follow the device (the keep-alive's read, more often) */
+   whichever tab is open, so its LEDs follow the device (the keep-alive's read, more often). SHIFT: the drum mode
+   (apcDrumLeds): which tracks are DRUM or DRUM-X read as it starts, a bottom button picks one (each time anew), its
+   steps read then; then its lane levels, 8 of its steps in turn and the transport every APC_POLL ms. A fader sets its
+   lane's level (v4 TRACK_PARAM; the selection stays), a bottom button mutes its lane (LEVEL 0, the level kept to give
+   back); SHIFT again: the song */
 const APC_POLL = 400;
-const apc = { input: null, output: null, page: 0, shown: new Map() };
+const apc = { input: null, output: null, page: 0, shown: new Map(), drum: null, keep: {} };
 const transportPlaying = (s) => (s.pending ? s.pending !== 2 : s.playing || s.counting);
 function apcShow() {
   if (!apc.output) return;
-  const s = dev && dev.song, tr = dev && dev.transport, css = getComputedStyle(document.documentElement);
+  const s = dev && dev.song, tr = dev && dev.transport, css = getComputedStyle(document.documentElement), x = apc.drum;
   const tracks = [1, 2, 3, 4, 5, 6].map((k) => apcNear(css.getPropertyValue(`--t${k}`)));   /* (they follow the THEME) */
+  const playing = !!tr && transportPlaying(tr);
+  const m = x ? apcDrumLeds(x, playing) : apcLeds(s && s.list, s && s.perf, apc.page, playing, tracks);
   try {
-    for (const [n, [st, v]] of apcLeds(s && s.list, s && s.perf, apc.page, tr && transportPlaying(tr), tracks)) {
+    for (const n of apc.shown.keys()) if (!m.has(n)) { apc.output.send([APC.BTN, n, 0]); apc.shown.delete(n); }   /* (the other mode's) */
+    for (const [n, [st, v]] of m) {
       if (apc.shown.get(n) === (st << 8 | v)) continue;
       apc.output.send([st, n, v]);
       apc.shown.set(n, st << 8 | v);
     }
   } catch (e) { console.debug("APC LEDs", e); }   /* (unplugged: onState says so next) */
 }
+/* the drum mode's read (poll: the shown track's levels and the next 8 steps, quiet); a pick or a fader meanwhile
+   (gen) wins */
+async function apcDrumRead(d = dev, poll = false) {
+  const x = apc.drum;
+  if (!x || !d || d !== dev || !d.info || !d.info.ntrk) return;
+  const o = poll ? { quiet: true, retries: 0 } : undefined, rqs = (r) => sessionRequest(d, r, o), gen = x.gen;
+  const isDrum = (t) => ["DRUM", "DRUM-X"].includes(d.info.engines[t.engine]);
+  if (poll && d.info.skiff & 1) { const t = parse[CMD.TRANSPORT](await rqs(req.transport())); if (d === dev) renderTransport(t); }
+  const dumps = [];
+  let drums = x.drums, k = x.k;
+  if (!poll) {
+    for (let j = 0; j < Math.min(6, d.info.ntrk); j++) {
+      dumps[j] = parse[CMD.TRACK_DUMP](await rqs(req.trackDump(j)), d.info);
+      drums = isDrum(dumps[j]) ? drums | 1 << j : drums & ~(1 << j);
+    }
+    if (!(drums >> k & 1)) k = -1;
+  }
+  if (k < 0) { if (apc.drum === x && x.gen === gen) Object.assign(x, { drums, k, lv: null }); apcShow(); return; }
+  const t = dumps[k] || parse[CMD.TRACK_DUMP](await rqs(req.trackDump(k)), d.info);
+  if (!isDrum(t)) { if (apc.drum === x && x.gen === gen) Object.assign(x, { drums: drums & ~(1 << k), k: -1, lv: null }); apcShow(); return; }
+  const len = Math.max(1, Math.min(d.info.nstep, t.p[pSlen()] || 16));
+  const lv = d.info.pe0 >= 91 ? P_LANES.map((id) => t.p[id]) : LANES.map(() => 127);
+  const from = poll ? (x.scan || 0) % len : 0, to = poll ? Math.min(len, from + 8) : len, steps = poll && x.k === k ? x.steps.slice() : [];
+  for (let i = from; i < to; i++) steps[i] = parse[CMD.TRACK_STEP](await rqs(req.trackStep(k, i)));
+  if (apc.drum !== x || x.gen !== gen || d !== dev) return;
+  const used = steps.slice(0, len).reduce((u, s) => u | (s ? stepLanes(s) : 0), 0);
+  Object.assign(x, { drums, k, len, lv, steps, used, scan: to % len });
+  apcShow();
+}
+/* fader l: the shown track's lane l level (P_LN0..7), the latest value only (Link coalesces by key) */
+function apcLane(l, v) {
+  const x = apc.drum, d = dev, k = x.k, id = P_LANES[l];
+  if (!d || !d.v4 || k < 0 || d.info.pe0 < 91) return;
+  if (x.lv) { x.lv[l] = v; x.gen++; apcShow(); }
+  sessionRequest(d, req.trackParam(k, id, v), { key: `apc:${k}:${id}`, quiet: true }).then((a) => {
+    const r = parse[CMD.TRACK_PARAM](a);
+    if (d === dev && k === (d.sel || 0) && d.dump) { d.dump.p[id] = r.value; showValue(key(0, id), r.value, false); }
+  }).catch(() => {});
+}
+/* bottom button l: lane l muted (LEVEL 0) or back to the level it had (127 when it had none here) */
+function apcLaneMute(l) {
+  const x = apc.drum, j = `${x.k}:${l}`;
+  if (!x.lv) return;
+  if (x.lv[l]) { apc.keep[j] = x.lv[l]; apcLane(l, 0); }
+  else apcLane(l, apc.keep[j] || 127);
+}
 function apcPress(data) {
-  const a = apcAction(data, apc.page), caps = dev && dev.info ? dev.info.skiff : 0;
+  const x = apc.drum, a = apcAction(data, apc.page, x && (x.k < 0 ? "pick" : "lanes")), caps = dev && dev.info ? dev.info.skiff : 0;
   if (!a) return;
-  if (a.do === "page") { apc.page = a.page; apcShow(); }
+  if (a.do === "shift") {
+    apc.drum = x ? null : { drums: 0, k: -1, lv: null, steps: [], used: 0, gen: 0 };
+    apcShow();
+    if (apc.drum) op(() => apcDrumRead());
+  } else if (x) {
+    if (a.do === "drum" && x.drums >> a.k & 1) {
+      Object.assign(x, { k: a.k, lv: null, steps: [], used: 0, scan: 0, gen: x.gen + 1 });
+      apcShow();
+      op(() => apcDrumRead());
+    } else if (a.do === "lane") apcLane(a.l, a.v);
+    else if (a.do === "lmute") apcLaneMute(a.l);
+    else if (a.do === "play" && caps & 1) transportOp(1);
+  }
+  else if (a.do === "page") { apc.page = a.page; apcShow(); }
   else if (a.do === "entry" && caps & 8) songOp(lreq(3, a.k, a.e), "list");
   else if (a.do === "scene" && caps & 16) songOp(req.perform(2, a.s), "perf");
   else if (a.do === "mute" && caps & 16) songOp(req.perform(3, a.k), "perf");
@@ -3987,6 +4093,7 @@ function apcAttach() {
     apc.input.onmidimessage = (e) => apcPress(e.data);
     if (apc.input.open) apc.input.open().catch(() => {});
     apc.page = 0;
+    apc.drum = null;
     apc.shown.clear();
     apcShow();
   }
@@ -3994,13 +4101,14 @@ function apcAttach() {
 }
 setInterval(() => {
   const d = dev;
-  if (!apc.input || !d || !d.info || !(d.info.skiff & 28) || busy || !d.link.idle || keepAlive.song) return;
+  if (!apc.input || !d || !d.info || busy || !d.link.idle || keepAlive.song) return;
+  if (apc.drum ? !d.info.ntrk : !(d.info.skiff & 28)) return;
   keepAlive.song = true;
-  readSong(d, false, true).catch(() => {}).finally(() => { keepAlive.song = false; });
+  (apc.drum ? apcDrumRead(d, true) : readSong(d, false, true)).catch(() => {}).finally(() => { keepAlive.song = false; });
 }, APC_POLL);
 window.addEventListener("pagehide", () => {
   if (!apc.output) return;
-  try { for (const n of apcLeds(null, null, 0, false).keys()) apc.output.send([APC.BTN, n, 0]); } catch (e) { /* unplugged */ }
+  try { for (const n of apc.shown.keys()) apc.output.send([APC.BTN, n, 0]); } catch (e) { /* unplugged */ }
 });
 /* a list redrawn keeps the focus on the same control (data-key) */
 function keepFocus(box, draw) {
@@ -4308,6 +4416,7 @@ function disconnect(reasonKey = "disconnected") {
   renderPreferences(true);
   $("version").textContent = "";
   setLabel($("connect"), t("connect"));
+  apc.drum = null;
   apcShow();                                        /* (no device: its LEDs dark) */
   sayK(reasonKey);
 }
