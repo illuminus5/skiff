@@ -1859,8 +1859,8 @@ static void seq_draw(uint32_t pressed)
 /* (2.2) not armed, on the roll, stopped or playing, the cursor's step alone (no range) with notes starting there (they
  * glow, ui_graph.c graph_roll): a key of one of them deletes it, with the steps it goes on (DELETED E4; the step left
  * with nothing: cleared with its locks); another key adds its note (CHRD: its chord) as long as the step's first note,
- * POLY up to 4 (no room on the cursor's step: STEP n TAKEN; later: it ends before), MONO in place of the one there
- * (ADDED E4). The step keeps its values. One undo a press */
+ * up to 4 (no room on the cursor's step: STEP n TAKEN; later: it ends before), (the user's ask) MONO too: the chord is
+ * kept, one note of it sounds until VOICE is POLY (ADDED E4). The step keeps its values. One undo a press */
 static const char STEP_KEYS[] = "STEP NOTE";
 static int keys_on(void)
 {
@@ -1876,7 +1876,6 @@ static void cursor_keys(uint32_t pressed)
     track_t *t = TSEL;
     step_t w[NSTEP], v0;
     uint32_t len = (uint32_t)t->p[P_SLEN], i = ui.cursor, k, j, e, span = 1, add = 0, del = 0, stop = 0, last = 0;
-    int mono = t->p[P_VOICE] && !ENGINES[t->engine]->oneshot;
     int32_t x;
     uint64_t gone = 0;
     char b[24];
@@ -1906,13 +1905,6 @@ static void cursor_keys(uint32_t pressed)
         r = (int32_t)note;
         ch[0] = (uint8_t)note;
         n = kb_solo(t, k) ? 1u : chord_make(t, note, ch, &r, &mask);
-        if (mono) {                                     /* (MONO: the chord's root, in place of the one there) */
-            ch[0] = (uint8_t)clamp(r, 0, 127);
-            n = 1;
-            for (j = w[i].n; j-- > 0u;)
-                if (!step_tied(&w[i], j))
-                    (void)ed_lift(w, len, i, w[i].note[j]);
-        }
         for (fresh = !own_notes(&w[i]), c = 0; c < n; c++) {
             if (note_at(&w[i], ch[c]) >= 0 && !step_tied(&w[i], (uint32_t)note_at(&w[i], ch[c])))
                 continue;                               /* (a chord's note there already) */

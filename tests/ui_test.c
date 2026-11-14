@@ -4158,11 +4158,12 @@ static int test_step_rec(void)
     ok = !song.rec && t->step[4].n == 1u && ui.cursor == 5u;          /* ((2.2) an empty step: written) */
     memcpy(before, t->step, sizeof before);
     key_down(7); frame(); key_up(7); frame();
-    ok &= before[5].note[0] != kb_map(t, 7) && t->step[5].n == 1u && t->step[5].note[0] == kb_map(t, 7) &&
-          ui.cursor == 5u;                                            /* ((2.2) a step with a note, MONO: the key's in */
-    key_down(7); frame(); key_up(7); frame();                         /* place of it; again: deleted) */
-    bad += check("#133 REC again disarms: ((2.2) an empty step written; on one with a note MONO a key's replaces it, its own "
-                 "deletes it)", ok && step_empty(&t->step[5]) && ui.cursor == 5u);
+    ok &= t->step[5].n == 2u && t->step[5].note[0] == before[5].note[0] && t->step[5].note[1] == kb_map(t, 7) &&
+          ui.cursor == 5u;                                            /* ((2.2) a step with a note, MONO too: the key's */
+    key_down(7); frame(); key_up(7); frame();                         /* added; again: deleted) */
+    bad += check("#133 REC again disarms: ((2.2) an empty step written; on one with a note a key adds its note, MONO too, "
+                 "its own deletes it)", ok && t->step[5].n == 1u && t->step[5].note[0] == before[5].note[0] &&
+                 !memcmp(before, t->step, 5u * sizeof before[0]) && ui.cursor == 5u);
     /* the DRUM grid as before: white keys are the steps (armed or not), REC from stop starts PLAY */
     ui_power_on();
     t = TSEL;
@@ -8263,7 +8264,7 @@ static int test_u1(void)
         stop_transport();
     }
     {   /* (2.2) not armed, the cursor's step with notes: they glow; a key of one deletes it, another adds its note (as
-         * long as the step's first, its values kept), MONO in place of it; one undo a press; SHIFT + a key picks */
+         * long as the step's first, its values kept), MONO too; one undo a press; SHIFT + a key picks */
         static const uint8_t CE[2] = {60, 64}, CEG[3] = {60, 64, 67}, CEGB[4] = {60, 64, 67, 71}, EG[2] = {64, 67},
                              G1[1] = {67};
         track_t *t;
@@ -8307,9 +8308,11 @@ static int test_u1(void)
         t->step[2] = (step_t){{60}, 1, ST_NOTE, 0, 77};
         t->step[3] = (step_t){{0}, 0, ST_TIE, 0, 0};
         tap_key(key_of(67));
-        ok = t->step[2].n == 1u && t->step[2].note[0] == 67u && t->step[3].time == ST_TIE && t->step[2].vel == 77u &&
-             msg_is("ADDED G4");
-        bad += check("  MONO: another key's note in place of the one there (as long, its values)", ok);
+        ok = t->step[2].n == 2u && t->step[2].note[0] == 60u && t->step[2].note[1] == 67u && t->step[3].time == ST_TIE &&
+             t->step[2].vel == 77u && msg_is("ADDED G4");
+        tap_key(key_of(60));
+        ok &= t->step[2].n == 1u && t->step[2].note[0] == 67u && msg_is("DELETED C4");
+        bad += check("  MONO too: another key's note added (the chord kept), its own deleted", ok);
     }
 
     ui_power_on();

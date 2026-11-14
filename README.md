@@ -373,8 +373,8 @@ the page follows the unit and draws what it draws, and the USB audio stays on (t
   goes on under the notes after it, a chord's notes can end apart, and REC and TAKE record them so. With REC off
   (2.2), stopped or playing, a key on an empty step writes the note there as step recording does (keys together a
   chord, the cursor on when you let go); on the cursor's step with notes, which glow on the roll with their keys lit,
-  a note's own key deletes it and another key adds its note to the chord, as long as the step's first (MONO: in
-  place of it); SHIFT + a key picks one note of a chord (in a range, the key alone). REC armed and stopped replaces
+  a note's own key deletes it and another key adds its note to the chord, as long as the step's first (on
+  MONO too: one note of it sounds until VOICE is POLY); SHIFT + a key picks one note of a chord (in a range, the key alone). REC armed and stopped replaces
   a step's notes.
   **SHIFT + OCT− / OCT+** copy and paste the selection, **SHIFT + EDIT** deletes it
   (on the drum grid copy and paste follow the LANE: a figure moved from lane to lane). SEQ › FEEL, 16 tiles, sets
