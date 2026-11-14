@@ -341,6 +341,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "(2.5, #110) TAIL: a fading note keeps its shape to the DAC (24 bits) and USB (dithered 16), MASTER 100 % and 25 %" "$OUT/tail_test"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/click_test" tests/click_test.c -lm
     run "metronome and count-in: beats sample for sample (internal and external clock), accent, level, MASTER, not in USB, count-in timing, notes onto step 1" "$OUT/click_test"
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/sync_out_test" tests/sync_out_test.c -lm
+    run "MENU > AUDIO > SYNC OUT: NO SYNC bit for bit (an old STYLE byte too), L / R SYNC mono + pulses, PPQN 1..24 on the grid, the pulse width, none stopped, USB unchanged" "$OUT/sync_out_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test" tests/persistence_test.c -lm
     run "persistence: deferred settings, retry and failed-save rollback; (2.0) a FUN5 slot OLD FORMAT" "$OUT/persistence_test"
     $CC -w $LEGACY -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test_legacy" tests/persistence_test.c -lm

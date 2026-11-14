@@ -23,13 +23,13 @@
 /* (SMK-37 Pro, SMK37_UX.md) KEY VELOCITY in CONTROL (question 8); no LEDS row (button LEDs A: on or off only): MI_LEDS
  * past MI_COUNT, so its setting stays and no tab shows it */
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED, MI_PREVIEW,
-       MI_RETURN, MI_KEEPS, MI_KVEL, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
+       MI_RETURN, MI_KEEPS, MI_KVEL, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_SYNC, MI_PPQN, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
        MI_AUTOCH, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_NOTES, MI_CCOUT, MI_THRU, MI_REMOTE, MI_LEARN,
        MI_LCLEAR, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK, MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT, MI_LEDS MI_SERIAL_OUT };
 static const char *const KVEL_N[SMK_KV_N] = {"DYNAMIC", "SOFT", "HARD", "FIXED 64", "FIXED 100", "FIXED 127"};
 #else
 enum { MI_COLOR, MI_PHEAD, MI_LARGE, MI_ANIM, MI_LEDS, MI_SCROFF, MI_HINTS, MI_HOLD, MI_ACCEL, MI_BPMLOCK, MI_SCLLED,
-       MI_PREVIEW, MI_RETURN, MI_KEEPS, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
+       MI_PREVIEW, MI_RETURN, MI_KEEPS, MI_LOWCUT, MI_USB, MI_CLICK, MI_CLKLVL, MI_COUNTIN, MI_TUNE, MI_SYNC, MI_PPQN, MI_CLOCK, MI_CLKOUT, MI_ROUTE,
        MI_AUTOCH, MI_TCH1, MI_TCH2, MI_TCH3, MI_TCH4, MI_TCH5, MI_TCH6, MI_NOTES, MI_CCOUT, MI_THRU, MI_REMOTE, MI_LEARN,
        MI_LCLEAR, MI_SERIAL_IN MI_RESTORE, MI_CPU, MI_CLK, MI_PANEL, MI_RESET, MI_ABOUT, MI_COUNT MI_SERIAL_OUT };
 #endif   /* ((Skiff U4, A3) HINTS; RESET SETTINGS, a row with no value: its dialog) */   /* ((Skiff U3, R8, R2) CLOCK, MIDI IN, TUNE: the unit's, GLOBAL's and SYSTEM's before; CPU: read) */   /* (1.1: the metronome's rows in
@@ -46,6 +46,7 @@ static const char *const MI_NAME[MI_COUNT] = {"THEME", "PLAYHEAD", "LARGE", "ANI
                                               "KEY VELOCITY",
 #endif
                                               "SPEAKER EQ", "USB LEVEL", "CLICK", "CLICK LEVEL", "COUNT-IN", "TUNE",
+                                              "SYNC OUT", "SYNC PPQN",
                                               "CLOCK", "CLOCK OUT", "MIDI IN", "AUTO CHANNEL",
                                               "T1 CHANNEL", "T2 CHANNEL", "T3 CHANNEL", "T4 CHANNEL", "T5 CHANNEL", "T6 CHANNEL",
                                               "NOTES OUT", "CC OUT", "THRU", "REMOTE", "MIDI LEARN", "LEARN CLEAR",
@@ -79,6 +80,8 @@ static const uint8_t MI_TAB[MI_COUNT] = {
     MTAB_AUDIO, MTAB_AUDIO, MTAB_AUDIO, MTAB_AUDIO, MTAB_AUDIO,             /* SPEAKER EQ, USB LEVEL, CLICK, CLICK LEVEL,
                                                                              * COUNT-IN */
     MTAB_AUDIO,                                                             /* (Skiff U3) TUNE */
+    MTAB_AUDIO, MTAB_AUDIO,                                                 /* SYNC OUT, SYNC PPQN (sync_out.c; AUDIO's
+                                                                             * eight scroll) */
     MTAB_MIDI, MTAB_MIDI, MTAB_MIDI, MTAB_MIDI,                             /* (Skiff U3) CLOCK, ((2.2) CLOCK OUT), MIDI
                                                                              * IN ((1.3) from CONTROL), ((2.2) AUTO
                                                                              * CHANNEL) */
@@ -142,6 +145,13 @@ static const char *const SCROFF_N[5] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "6
 /* (2.0, D 2A) RETURN (ui.c ret_mode): MOMENTARY's values, FX's macros and PERFORM's throws come back at once or over
  * this long; 1 BAR the default */
 static const char *const RET_N[3] = {"SNAP", "1 BEAT", "1 BAR"};
+/* SYNC OUT (sync_out.c SO_*): the line out as it was, or the music in mono on one side and the sync's pulses on the
+ * other (a Pocket Operator's SY4: LEFT); SYNC PPQN 1..24. ui.c ui_sync holds them */
+static const char *const SYNC_N[3] = {"NO SYNC: STEREO", "L SYNC: MONO/SYNC", "R SYNC: SYNC/MONO"};
+static uint32_t sync_get(uint32_t row)                 /* (no mark: NO SYNC, 2 PPQN) */
+{
+    return !(ui_sync & 0x80u) ? (row == MI_SYNC ? 0u : 1u) : row == MI_SYNC ? (ui_sync >> 5 & 3u) % 3u : ui_sync & 31u;
+}
 
 /* MENU > USB SERIAL (#67). The serial console is a developer tool (README: FELUCCA_CDC). ON (the default) presents it,
  * the descriptors byte for byte as before; OFF re-enumerates as audio + MIDI only, device class 0 (the bytes of a
@@ -176,7 +186,7 @@ static uint32_t menu_n(uint32_t row)
     return row == MI_COLOR ? NPALETTES + (uint32_t)cpal_stored() :   /* ((Skiff #27) CUSTOM, while stored) */
            row == MI_LOWCUT || row == MI_RETURN || (row >= MI_CLICK && row <= MI_COUNTIN) ? 3u :
            row == MI_HOLD ? 4u : row == MI_LEDS ? LEDS_COUNT : row == MI_SCROFF ? NELEM(SCROFF_N) :
-           row == MI_CLOCK ? NELEM(N_CLOCK) : row == MI_TUNE ? 101u : row == MI_CPU ? 1u + FELUCCA_CPU2 :
+           row == MI_CLOCK ? NELEM(N_CLOCK) : row == MI_TUNE ? 101u : row == MI_SYNC ? 3u : row == MI_PPQN ? 24u : row == MI_CPU ? 1u + FELUCCA_CPU2 :
            MI_TCH(row) ? 33u : row == MI_LEARN || row == MI_LCLEAR ? 1u :
            row == MI_AUTOCH || row == MI_REMOTE ? 17u : row == MI_NOTES ? 3u :
 #if BOARD_SMK37
@@ -208,6 +218,7 @@ static uint32_t menu_get(uint32_t row)
     case MI_PREVIEW: return PREVIEW_SET ? 1u : 0u;
     case MI_RETURN: return ret_mode();
     case MI_TUNE: return (uint32_t)clamp(song.g[G_TUNE] + 50, 0, 100);
+    case MI_SYNC: case MI_PPQN: return sync_get(row);
 #if FELUCCA_CPU2
     case MI_CPU: return CPU2_SET ? 1u : 0u;            /* ((Skiff 1.3) 1 CORE, 2 CORES (BETA): from the next power-on) */
 #endif
@@ -263,9 +274,10 @@ static const char *menu_vname(uint32_t row, uint32_t v)
     case MI_HINTS: return v & 1u ? "OFF" : "ON";
     case MI_PREVIEW: return v & 1u ? "ON" : "OFF";
     case MI_RETURN: return RET_N[v % 3u];
-    case MI_TUNE: case MI_CPU: {                       /* "+12 CT"; the audio's share of each half-buffer ("14 %") */
+    case MI_SYNC: return SYNC_N[v % 3u];
+    case MI_TUNE: case MI_CPU: case MI_PPQN: {        /* ((SYNC PPQN) "2") */                       /* "+12 CT"; the audio's share of each half-buffer ("14 %") */
         static char b[20] __attribute__((section(".pool")));
-        int32_t c = row == MI_TUNE ? (int32_t)v - 50 : (int32_t)ui_cpu;
+        int32_t c = row == MI_TUNE ? (int32_t)v - 50 : row == MI_PPQN ? (int32_t)v + 1 : (int32_t)ui_cpu;
         b[0] = row == MI_TUNE && c > 0 ? '+' : 0;
         b[1] = 0;
 #if FELUCCA_CPU2
@@ -282,7 +294,7 @@ static const char *menu_vname(uint32_t row, uint32_t v)
         }
 #endif
         fmt_int(b + str_len(b), c);
-        str_cpy(b + str_len(b), row == MI_TUNE ? " CT" : " %", sizeof b - str_len(b));
+        str_cpy(b + str_len(b), row == MI_TUNE ? " CT" : row == MI_PPQN ? "" : " %", sizeof b - str_len(b));
         return b;
     }
     case MI_CLK: {                                     /* ((Skiff) "320 MHZ"; set another way than this power-on runs, as
@@ -337,6 +349,9 @@ static void menu_put(uint32_t row, uint32_t v)
     case MI_AUTOCH: AUTO_BYTE = (uint8_t)((AUTO_BYTE & ~31u) | v); break;
     case MI_REMOTE: CPU2_BYTE = (uint8_t)((CPU2_BYTE & 7u) | v << 3); break;
     case MI_TUNE: song.g[G_TUNE] = (int16_t)((int32_t)v - 50); break;
+    case MI_SYNC: case MI_PPQN:                        /* (the ISR reads it at its next block: sync_out.c) */
+        ui_sync = (uint8_t)(0x80u | (row == MI_SYNC ? v : sync_get(MI_SYNC)) << 5 | (row == MI_PPQN ? v : sync_get(MI_PPQN)));
+        break;
 #if BOARD_SMK37
     case MI_KVEL: SMK_KV_BYTE = (uint8_t)(v % SMK_KV_N); smk_kv_mode = SMK_KV_BYTE; break;
 #endif
@@ -388,6 +403,7 @@ static void settings_reset(void)
     ml_off();
     (void)ml_clear_all();
     menu_put(MI_TUNE, 50);
+    ui_sync = 0;                                       /* (NO SYNC, 2 PPQN) */
     menu_put(MI_HINTS, 0);
     menu_put(MI_PHEAD, 0);
     menu_put(MI_PREVIEW, 0);

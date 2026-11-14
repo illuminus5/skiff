@@ -1211,6 +1211,9 @@ static __attribute__((noinline)) void keyboard_block(void)
     kb_prev = cur;
 }
 
+#include "sync_out.c"                                /* MENU > AUDIO > SYNC OUT: mono and an analog sync on the
+                                                      * line out (audio.c), on the sequencer's grid */
+
 /* -------------------------------------------------------- sequencer --- */
 /* (2.2) MENU > MIDI > CLOCK OUT (ON by default): with the internal clock, MIDI clock out of USB ((SMK-37 Pro) and the
  * TRS jack, as its 1.4 did): Start when the sequencer starts (after a count-in), its first pulse with step 0, then 24 a
@@ -1248,6 +1251,7 @@ static void seq_start(void)
     beat_pos = 0; beat_n = 0;                      /* the ARP LED's beat from the top too */
     launch_steps = 0; launch_pos = CLK_START;      /* (Skiff) the launch points' steps from the top, as the click's */
     clk_pos = CLK_START;                           /* the metronome's first beat with step 0 */
+    sy_clk = SY_START;                             /* (SYNC OUT) the first pulse with step 0 (sync_out.c) */
     song.playing = 1;
     slicer_start();                                /* slicer.c: its step 0 with the sequencer's */
     perf_start();                                  /* perform.c: its 1/16 grid too */
@@ -2110,8 +2114,10 @@ static __attribute__((noinline)) void events_block(uint32_t n)
         seq_tick(&trk[ord & 15u], seq_n);
     if (cin_flush)
         cin_record();
-    if (song.playing)
+    if (song.playing) {
         click_tick(seq_n);
+        sy_tick(seq_n, n);                            /* (SYNC OUT) the analog sync's pulse (sync_out.c) */
+    }
     for (i = 0; i < NPART; i++)
         arp_step(&trk[i], clock_mode ? seq_n : n, clock_mode && song.playing ? seq_n : n);
     if (pulse)
