@@ -10,6 +10,8 @@ static void draw_menu(void);
 static int name_on(void);                              /* NAME (ui_name.c) */
 static int mom_down(void);                             /* MOMENTARY: LFO held where its turns are (ui_input.c) */
 static uint64_t lock_held(void);                       /* parameter locks: the steps held on NOTES (ui_input.c) */
+static int draw_on(int open);                          /* (2.2) NOTES' keys, REC off: an empty step written, */
+static int keys_on(void);                              /* a step with notes added to or deleted from (ui_input.c) */
 static void name_draw(void);
 
 /* --------------------------------------------------------- drawing --- */
@@ -776,7 +778,9 @@ static void draw_foot(void)
                 cv_free_hint(x, ly, (song.rec >> song.sel) & 1u ? "[EDIT] DELETE" : "SHIFT + [EDIT] DELETE", T_MID,
                              T_BG, foot_hint_r(ti) - x);   /* KEYS'; armed: EDIT alone, the cursor's step) */
             else if (pg->graph == GR_ROLL)
-                cv_key_hint(x, ly - KC_TY, KC_KEYS, (song.rec >> song.sel) & 1u ? "WRITE" : "PICK", 1, T_BG);
+                cv_key_hint(x, ly - KC_TY, KC_KEYS, (song.rec >> song.sel) & 1u || draw_on(0) ? "WRITE" :
+                            keys_on() ? "ADD/DEL" : "PICK", 1, T_BG);   /* ((2.2) REC off: an empty step written, a
+                                                                         * step with notes added to or deleted from) */
         }
     }
     {   /* the track's cushion, engine name, sound, page title at the right with its icon before it (MIXER, SONG,

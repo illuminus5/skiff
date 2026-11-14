@@ -568,6 +568,19 @@ static void graph_tiles(const track_t *t, uint16_t c)
             cv_frame(2 + 29 * a, top + TL_P * (int32_t)i - 2, 29 * (b - a) + TL_W + 4, TL_H + 4, T_TEXT);
     }
 }
+/* (2.2) the cursor's step alone, notes starting there: they glow (REC off a key of one deletes it, ui_input.c
+ * cursor_keys) */
+static int glow_on(const track_t *t)
+{
+    return !nsel.a1 && !nsel.picked && ui.cursor < (uint32_t)t->p[P_SLEN] && step_starts(&t->step[ui.cursor]);
+}
+/* .. a halo round a note's bar (x, w px: a row's height, a px either side), on every step it goes on */
+static void pr_glow(uint32_t n, int32_t x, int32_t w)
+{
+    int32_t y = pr_row_y((int32_t)n);
+    if (y >= PR_Y0 && y < PR_Y0 + PR_ROWS * PR_RH)
+        cv_rect(x - 1, y, w + 2, PR_RH, ux_mix(T_ACCENT, T_SURF, 30));
+}
 static void graph_roll(const track_t *t, uint16_t c)
 {
     uint32_t i, k, len = (uint32_t)t->p[P_SLEN], base = ui.bank * 16u, ncol, mask = scale_mask(t), held = pr_held();
@@ -580,6 +593,10 @@ static void graph_roll(const track_t *t, uint16_t c)
         for (k = 0; sel_step(t, i) && k < t->step[i].n; k++)             /* as keys held) */
             if (sel_voice(i, k) && (r = (int32_t)proll.lo + PR_ROWS - 1 - t->step[i].note[k]) >= 0 && r < PR_ROWS)
                 held |= 1u << r;
+    for (k = 0; glow_on(t) && k < t->step[ui.cursor].n; k++)   /* ((2.2) the cursor's notes: their keys lit, */
+        if (!step_tied(&t->step[ui.cursor], k) &&               /* the keys that delete them) */
+            (r = (int32_t)proll.lo + PR_ROWS - 1 - t->step[ui.cursor].note[k]) >= 0 && r < PR_ROWS)
+            held |= 1u << r;
     for (r = 0; r < PR_ROWS; r++) {                 /* rows: the lane, the key, the C names */
         int32_t n = (int32_t)proll.lo + PR_ROWS - 1 - r, y = PR_Y0 + r * PR_RH;
         uint32_t pc = (uint32_t)n % 12u;
@@ -659,15 +676,24 @@ static void graph_roll(const track_t *t, uint16_t c)
                     one.note[0] = st->note[v];
                     one.n = 1;
                     one.hit = 0;
+                    if (b == ui.cursor && glow_on(t))   /* ((2.2) the cursor's, going on) */
+                        pr_glow(st->note[v], x, 11);   /* (not over the bar before) */
                     pr_bars(&one, x - 1, 12, lit || (!nsel.a1 && si == ui.cursor) ? T_ACCENT : c,
                             b < NSTEP && (t->step[b].flags & SF_ACCENT), &y, 1u);
                 }
             }
-            if (s == si)                              /* ((Skiff) where it plays: its NUDGE, inside the grid) */
-                pr_bars(&pk, clamp(x + 2 + st->nudge * PR_CW / 64, PR_X0 + 1, PR_X0 + gw - 10), 9, col,
-                        (st->flags & SF_ACCENT) != 0u, &y, step_ratchet(st));
-            else                                      /* a TIE: the bars on through the gap before */
+            if (s == si) {                            /* ((Skiff) where it plays: its NUDGE, inside the grid) */
+                int32_t bx = clamp(x + 2 + st->nudge * PR_CW / 64, PR_X0 + 1, PR_X0 + gw - 10);
+                for (v = 0; !k && si == ui.cursor && glow_on(t) && v < st->n; v++)
+                    if (!step_tied(st, v))
+                        pr_glow(st->note[v], bx, 9);
+                pr_bars(&pk, bx, 9, col, (st->flags & SF_ACCENT) != 0u, &y, step_ratchet(st));
+            } else {                                    /* a TIE: the bars on through the gap before */
+                for (v = 0; !k && s == ui.cursor && glow_on(t) && v < st->n; v++)
+                    if (!step_tied(st, v))              /* ((2.2) the cursor's, going on) */
+                        pr_glow(st->note[v], x, 11);
                 pr_bars(&pk, x - 1, 12, col, (st->flags & SF_ACCENT) != 0u, &y, 1u);
+            }
         }
         if ((st->flags & SF_SLIDE) && step_ratchet(st) == 1u &&   /* (a ratcheted step never slides out) */
             ns->time == ST_NOTE && ns->n && y >= PR_Y0 && y < ybot) {

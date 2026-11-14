@@ -1856,6 +1856,100 @@ static void seq_draw(uint32_t pressed)
         undo_n--;
     }
 }
+/* (2.2) not armed, on the roll, stopped or playing, the cursor's step alone (no range) with notes starting there (they
+ * glow, ui_graph.c graph_roll): a key of one of them deletes it, with the steps it goes on (DELETED E4; the step left
+ * with nothing: cleared with its locks); another key adds its note (CHRD: its chord) as long as the step's first note,
+ * POLY up to 4 (no room on the cursor's step: STEP n TAKEN; later: it ends before), MONO in place of the one there
+ * (ADDED E4). The step keeps its values. One undo a press */
+static const char STEP_KEYS[] = "STEP NOTE";
+static int keys_on(void)
+{
+    const track_t *t = TSEL;
+    return roll_on() && !nsel.a1 && ui.cursor < (uint32_t)t->p[P_SLEN] && step_starts(&t->step[ui.cursor]);
+}
+static int own_notes(const step_t *s)                   /* (a note starting on s: not one going on through it) */
+{
+    return s->n && step_ties(s) != (1u << s->n) - 1u;
+}
+static void cursor_keys(uint32_t pressed)
+{
+    track_t *t = TSEL;
+    step_t w[NSTEP], v0;
+    uint32_t len = (uint32_t)t->p[P_SLEN], i = ui.cursor, k, j, e, span = 1, add = 0, del = 0, stop = 0, last = 0;
+    int mono = t->p[P_VOICE] && !ENGINES[t->engine]->oneshot;
+    int32_t x;
+    uint64_t gone = 0;
+    char b[24];
+    ed_open(w, t, len);
+    v0 = w[i];
+    for (k = 0; k < w[i].n; k++)                        /* (a new note: as long as the step's first) */
+        if (!step_tied(&w[i], k)) {
+            span = note_span(t, i, k);
+            break;
+        }
+    for (k = 0; k < 27u; k++) {
+        uint8_t ch[CHORD_MAX];
+        uint16_t mask;
+        int32_t r;
+        uint32_t note, n, c, fresh;
+        if (!((pressed >> k) & 1u) || (note = kb_map(t, k)) == KB_SILENT)
+            continue;
+        last = note;
+        if ((x = note_at(&w[i], note)) >= 0 && !step_tied(&w[i], (uint32_t)x)) {   /* one of its own: out */
+            for (e = ed_end(w, len, i, note), j = i; j <= e; j++) {
+                ed_del(&w[j], (uint32_t)note_at(&w[j], note));
+                gone |= (uint64_t)(!w[j].n && !w[j].hit) << j;
+            }
+            del++;
+            continue;
+        }
+        r = (int32_t)note;
+        ch[0] = (uint8_t)note;
+        n = kb_solo(t, k) ? 1u : chord_make(t, note, ch, &r, &mask);
+        if (mono) {                                     /* (MONO: the chord's root, in place of the one there) */
+            ch[0] = (uint8_t)clamp(r, 0, 127);
+            n = 1;
+            for (j = w[i].n; j-- > 0u;)
+                if (!step_tied(&w[i], j))
+                    (void)ed_lift(w, len, i, w[i].note[j]);
+        }
+        for (fresh = !own_notes(&w[i]), c = 0; c < n; c++) {
+            if (note_at(&w[i], ch[c]) >= 0 && !step_tied(&w[i], (uint32_t)note_at(&w[i], ch[c])))
+                continue;                               /* (a chord's note there already) */
+            if ((e = ed_place(w, len, i, ch[c], span)) == i + 1u) {
+                stop = i + 1u;                          /* (no room on the cursor's step) */
+                continue;
+            }
+            add++;
+            if (fresh) {                                /* (its own notes all gone: its values back) */
+                ed_vals(&w[i], &v0);
+                fresh = 0;
+            }
+        }
+    }
+    if (!add && !del) {
+        if (stop)
+            sel_taken(stop - 1u);
+        return;                                         /* (only silent keys, or no room: nothing written) */
+    }
+    tl_undo_take(t, STEP_KEYS);
+    ed_close(t, w, len, 0);
+    for (j = 0; j < len; j++)
+        if (((gone >> j) & 1u) && step_empty(&t->step[j]))   /* (a step deleted to nothing and not written again) */
+            (void)motion_clear_locks(t, j);
+    run_done(t);
+    sel_drop();
+    follow_hold();                                      /* (the roll stays on the step) */
+    last_note = (uint8_t)last;
+    str_cpy(b, add ? "ADDED " : "DELETED ", sizeof b);
+    if ((add ? add : del) == 1u) {
+        note_name(b + str_len(b), add ? (uint32_t)t->step[i].note[t->step[i].n - 1u] : last);
+    } else {
+        fmt_int(b + str_len(b), (int32_t)(add ? add : del));
+        str_cpy(b + str_len(b), " NOTES", 8);
+    }
+    ui_message(b);
+}
 /* SEQ step entry = step recording (1.2, Discussion #133: only with the track armed and the transport stopped), acid
  * style: the keys pressed together (POLY: up to 4 notes, MONO: the last one) become the cursor step; releasing all
  * keys moves on past it ((2.0, #31) PRESETS meanwhile its LENGTH, its ties: past them; wrapping inside LEN). With CHRD
@@ -2603,8 +2697,18 @@ static void ui_input(void)
     } else if (song.seq_mode && step_page(cur_page()->graph)) {   /* NOTES (not FEEL: its knobs only) */
         static uint32_t wr_hint_ms;                     /* (Skiff U1) "[REC] REPLACE STEP" said last (0: never) */
         int armed = (song.rec >> song.sel) & 1u;
-        if (!armed && notes && !ui.entry_open && sel_keys(notes)) {   /* (2.0) not armed: a note of the selection's
-                                                         * they pick */
+        if (!armed && notes && !ui.entry_open && shift_held() && sel_keys(notes)) {   /* ((2.2) SHIFT + a key, not
+                                                         * armed: a note of the selection's picked, a SHIFT combo) */
+            shift_mark();
+            home_long = 0;
+            ui.force = 1;
+        } else if (!armed && notes && !ui.entry_open && !shift_held() && keys_on()) {   /* (2.2) not armed, the
+                                                         * cursor's step with notes: a key of one deletes it, another
+                                                         * adds its note */
+            cursor_keys(notes);
+            ui.force = 1;
+        } else if (!armed && notes && !ui.entry_open && sel_keys(notes)) {   /* (2.0) not armed, a range: a note of
+                                                         * the selection's they pick */
             ui.force = 1;
         } else if (!armed && !ui.entry_open && notes && draw_on(0)) {   /* (2.2) not armed, an empty cursor step:
                                                          * the keys write it, as step entry, one undo a step */
