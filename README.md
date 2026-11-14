@@ -974,3 +974,5 @@ by them, and Skiff is not made or endorsed by Hügelton Instruments.
 
 Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments (Felucca)<br>
 Copyright (C) 2026 illuminus5 (Skiff)
+
+You can also try Skiff in the browser, no flashing needed, in the free community [FM-1 Emulator](https://fm1-emulator.atst.tools/).
