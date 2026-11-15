@@ -19,8 +19,16 @@
  *   C  check    a hash of the music and the UI, once a second, after a frame's F: the copy compares its own; the
  *               sound's (cast_sound, 0: not taken)
  *   s  shed, o  MIDI overflow (what the unit's load and its queue did, which the copy can't know)
+ * The SMK-37 (B's CAST_SMK bit; its 18 buttons don't fit T's 14):
+ *   T  take     buttons, keys | pass << 27; U  struck, pressed (when either)
+ *   X  outer    the outer-key event (smk_extkey_take), buttons: as the audio ISR took it (seq.c kb_outer)
+ *   V  velocity key, its velocity: a key struck (keyboard_block, after its N)
+ *   D  pad      the step tap (smk_padq_take), as smk_ui_frame took it
+ *   A  analog   faders (7 bits each) | settled << 28, wheels | pedal << 20 (10 bits each): smk_ui_frame's reading,
+ *               when it changed
  * The copy renders to a record's block count, sets its clock to the record's ticks and does what the record says. */
 #define CAST_VER 4u                    /* (B's bits 24..30) the records' layout: 3 = F's cpu, P; 4 = C's sound (0: t2) */
+#define CAST_SMK 0x40u                 /* (in CAST_VER's bits) the SMK-37's layout: T U X V D A as above */
 static uint32_t cast_boot __attribute__((section(".noinit")));   /* CAST_BOOT: restarted for a cast (cast_cmd 2) */
 #define CAST_BOOT 0x43535442u                                     /* "CSTB" */
 static int cast_audio_late(void) { return cast_boot == CAST_BOOT; }   /* (core.h CAST_AUDIO_LATE: main.c's boot) */
@@ -52,10 +60,31 @@ static __attribute__((noinline)) void cast_take(uint32_t pressed, uint32_t struc
         return;
     cast.lb = b;
     cast.ln = k;
+#if BOARD_SMK37
+    cast_rec('T', b, k | (uint32_t)cast.pass << 27);
+    if (pressed | struck)
+        cast_rec('U', struck, pressed);
+#else
     cast_rec('T', b | pressed << 14, k | (uint32_t)cast.pass << 27);
     if (struck)
         cast_rec('U', struck, 0);
+#endif
 }
+#if BOARD_SMK37
+/* smk_ui.c smk_ui_frame, after its reading (smk_rd): the faders, the wheels and the pedal, when they changed */
+static __attribute__((noinline)) void cast_smk(void)
+{
+    uint32_t a = (uint32_t)smk_rd.ready << 28, w, j;
+    for (j = 0; j < 4u; j++)
+        a |= (uint32_t)(smk_rd.fader[j] & 127u) << (7u * j);
+    w = (smk_rd.wheel[0] & 1023u) | (smk_rd.wheel[1] & 1023u) << 10 | (uint32_t)(smk_rd.pedal & 1023u) << 20;
+    if (cast.on == 1u && (a != cast.la || w != cast.lw)) {
+        cast.la = a;
+        cast.lw = w;
+        cast_rec('A', a, w);
+    }
+}
+#endif
 /* the music (each track's values and steps, the globals, the lists) and what the UI shows, hashed */
 static __attribute__((noinline)) uint32_t cast_hash(void)
 {
@@ -127,8 +156,14 @@ static __attribute__((noinline)) void cast_cmd(uint32_t op)
         cast.lb = fm1_in.buttons;
         cast.ln = fm1_in.notes;
         cast.chk = fm1_ms;
+#if BOARD_SMK37
+        cast.la = cast.lw = ~0u;                      /* (the first frame's A: always) */
+#define CAST_LAYOUT (CAST_VER | CAST_SMK)
+#else
+#define CAST_LAYOUT CAST_VER
+#endif
         cast.on = 1;
-        cast_rec('B', fm1_ms, (uint32_t)master_knob | CAST_VER << 24 | (uint32_t)C1_ON() << 31);
+        cast_rec('B', fm1_ms, (uint32_t)master_knob | CAST_LAYOUT << 24 | (uint32_t)C1_ON() << 31);
     } else if (op == 0u) {
         cast.on = 0;
     } else if (op == 2u) {

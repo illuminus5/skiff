@@ -107,9 +107,10 @@ def main(pkg, version, out, *more):
     for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt", "fm1backup.js"):
         if (HERE / f).exists():
             shutil.copy(HERE / f, ed / f)
-    cast = HERE.parent / "build" / "cast" / "felucca_cast.wasm"   # ((Skiff Studio) the Screen tab's copy: web/emu/build.sh's
-    if cast.exists():
-        shutil.copy(cast, ed / "felucca_cast.wasm")
+    for name in ("felucca_cast.wasm", "felucca_cast_smk.wasm"):   # ((Skiff Studio) the Screen tab's copies, an FM-1's and
+        cast = HERE.parent / "build" / "cast" / name                # an SMK-37's: web/emu/build.sh's
+        if cast.exists():
+            shutil.copy(cast, ed / name)
     (ed / "conv").mkdir(exist_ok=True)              # ((2.0) the converter: the editor's Restore, the installer's write-back)
     shutil.copy(HERE / "conv" / "conv.js", ed / "conv" / "conv.js")
     shutil.copy(conv, ed / "conv" / "conv.wasm")

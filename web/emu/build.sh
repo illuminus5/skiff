@@ -26,6 +26,11 @@ emcc ${EMU_OPT:--O2} -ffp-contract=off -std=gnu99 -w ${EMU_CFLAGS:-} \
     "-DFELUCCA_VERSION=\"$VERSION\"" -DFELUCCA_CAST=1 -Ibuild/gen -Ifirmware/src \
     --no-entry -sSTANDALONE_WASM -sSTACK_SIZE=1048576 -sINITIAL_MEMORY=33554432 -sFILESYSTEM=0 \
     -o build/cast/felucca_cast.wasm web/emu/cast_follow.c
+# shellcheck disable=SC2086
+emcc ${EMU_OPT:--O2} -ffp-contract=off -std=gnu99 -w ${EMU_CFLAGS:-} \
+    "-DFELUCCA_VERSION=\"$VERSION\"" -DFELUCCA_CAST=1 -DBOARD_SMK37=1 -Ibuild/gen -Ifirmware/src \
+    --no-entry -sSTANDALONE_WASM -sSTACK_SIZE=1048576 -sINITIAL_MEMORY=33554432 -sFILESYSTEM=0 \
+    -o build/cast/felucca_cast_smk.wasm web/emu/cast_follow.c   # (an SMK-37's: INFO 59 01's bit 1)
 [ "${EMU_PREVIEW:-1}" = 0 ] && PREVIEW='' || PREVIEW=' (preview)'
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@PREVIEW@/$PREVIEW/g" web/emu/index.html > build/emu/index.html
 cp web/emu/worklet.js build/emu/

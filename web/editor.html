@@ -705,7 +705,8 @@ const parse = {
                                                      4 PERFORM, (#21) 5 SMP_MIX, (2.0, #25) 6 a step's ties */
     o.song2 = 0;                                  /* (2.0, INFO 58 01 caps) bit 0: LIST2, NEW, COPY+, CHAIN, ONCE, the pool's
                                                      EMPTY and CLEAR UNUSED */
-    o.cast = 0;                                   /* (Skiff Studio, INFO 59 01 caps) bit 0: the cast (cmd 83), the Screen tab */
+    o.cast = 0;                                   /* (Skiff Studio, INFO 59 01 caps) bit 0: the cast (cmd 83), the Screen tab;
+                                                     bit 1: an SMK-37's (its copy: felucca_cast_smk.wasm) */
     for (const p of [8, 11]) if (o.motionMax && trailer[p] === 0x46 && trailer[p + 1] === 1) {   /* for the editor's */
       o.fm6 = { factory: trailer[p + 2], bank: trailer[p + 3], caps: 0 };                         /* PRESET / G_ENGSEL */
       if (trailer[p + 4] === 0x53 && trailer[p + 5] === 1) o.syncCaps = trailer[p + 6] & 3;
@@ -3602,7 +3603,7 @@ const TEXT = {
     tabScreen: "画面", scrTitle: "本体の画面",
     scrHelp: "スタートを押すとバックアップを取ってから FM-1 を再起動し、同じ瞬間から本体の画面をここに映します。曲はそのまま残ります。画面をタップすると全画面になります。",
     scrStart: "スタート", scrStop: "ストップ", scrNeedDev: "先に FM-1 を接続してください。",
-    scrNeedFw: "このファームウェアは画面を送れません。画面タブには FM-1 の Skiff 2.6 以降が必要です（SMK-37 はまだ対応していません）。",
+    scrNeedFw: "このファームウェアは画面を送れません。画面タブには Skiff 2.6 以降（FM-1）、Skiff 2.7 以降（SMK-37）が必要です。",
     scrBackup: "FM-1 のバックアップ中… ", scrRestart: "FM-1 を再起動しています。触らないでください…",
     scrWait: "FM-1 を待っています…", scrFollow: "FM-1 に合わせて表示しています（ずれなし）。フレームの {pct} % が完全に一致。",
     scrOut: "FM-1 とずれました（チェック {n} / {m}）。スタートでやり直してください。",
@@ -3756,7 +3757,7 @@ const TEXT = {
     tabScreen: "Screen", scrTitle: "The FM-1's screen",
     scrHelp: "Start takes a backup of your FM-1, then restarts it, so that this copy starts at the same moment and shows its screen here as it changes. Your music is kept. Tap the screen for full screen.",
     scrStart: "Start", scrStop: "Stop", scrNeedDev: "Connect your FM-1 first.",
-    scrNeedFw: "This firmware can't send its screen. The Screen tab needs Skiff 2.6 or later on an FM-1 (the SMK-37 can't send it yet).",
+    scrNeedFw: "This firmware can't send its screen. The Screen tab needs Skiff 2.6 or later on an FM-1, 2.7 or later on an SMK-37.",
     scrBackup: "Taking a backup of your FM-1… ", scrRestart: "Restarting your FM-1. Please don't touch it…",
     scrWait: "Waiting for your FM-1…", scrFollow: "Following your FM-1, in step. {pct} % of frames exactly alike.",
     scrOut: "This copy is out of step with your FM-1 ({n} of {m} checks). Press Start to begin again.",
@@ -6872,7 +6873,7 @@ $("fm6export").addEventListener("click", () => downloadBytes(`${fileSlug(FM6.nam
    else (scrLoaded: WATCH, CAST op 1), within the 10 s the unit holds its splash. From then on every record goes into
    the copy, and so does every request this page sends (scrSent): the copy runs it at the unit's R (the unit's
    editor.c, compiled in), so what the other tabs change, the copy changes too. */
-const scr = { state: "idle", wasm: null, copy: null, queue: [], seq: -1, lost: 0, log: false, pump: 0, timer: 0,
+const scr = { state: "idle", wasm: null, wasmName: "", copy: null, queue: [], seq: -1, lost: 0, log: false, pump: 0, timer: 0,
   draws: -1, sayAt: 0, wake: null };              /* state: idle; prep (backup, restart); back (restarting); start; on */
 const scrCtx = $("scr-screen").getContext("2d"), scrImg = scrCtx.createImageData(240, 240);
 function scrSay(text, bad = false) { $("scr-status").textContent = text; $("scr-status").classList.toggle("bad", bad); }
@@ -6904,10 +6905,14 @@ async function scrStart() {
   scrButtons();
   await op(async () => {                           /* (the editor's polling waits meanwhile) */
     try {
-      scr.wasm ??= await fetch("felucca_cast.wasm").then((r) => {
-        if (!r.ok) throw new Error(t("scrNoCopy") + r.status);
-        return r.arrayBuffer();
-      });
+      const copyName = d.info.cast & 2 ? "felucca_cast_smk.wasm" : "felucca_cast.wasm";   /* (bit 1: an SMK-37's) */
+      if (scr.wasmName !== copyName) {
+        scr.wasm = await fetch(copyName).then((r) => {
+          if (!r.ok) throw new Error(t("scrNoCopy") + r.status);
+          return r.arrayBuffer();
+        });
+        scr.wasmName = copyName;
+      }
       const { captureBackup } = await backupModule();
       scrSay(t("scrBackup"));
       const file = await captureBackup((r, o) => sessionRequest(d, r, o), d.info.version,

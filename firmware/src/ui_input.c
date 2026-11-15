@@ -2150,6 +2150,8 @@ static void ui_notices(void)
 
 #if BOARD_SMK37
 static uint32_t smk_sh_t0;                              /* KNOB BANK as SHIFT (ui_input) */
+static uint32_t smk_btn_seen __attribute__((section(".pool")));   /* the buttons ui_input's last pass saw (smk_ui.c smk_buttons:
+                                                         * as the cast's T told them) */
 #endif
 /* (Skiff 2.0) SHIFT held (HOME; the SMK's KNOB BANK too), and a combo of it taken: no HOME tap, no MENU after (the
  * caller drops ui_input's home_long) */
@@ -2180,6 +2182,9 @@ static void ui_input(void)
     int32_t s, sel = 0, ks[4] = {0, 0, 0, 0};
     static uint32_t lock_ms;                            /* BPM LOCK: the last locked SELECT turn (fm1_ms | 1; 0 none) */
     static uint8_t home_long;                           /* Skiff: HOME held past 0.7 s, the menu closed: MENU when let go */
+#if BOARD_SMK37
+    smk_btn_seen = fm1_in.buttons;
+#endif
     CAST(cast_take(pressed, notes));                    /* (Skiff Studio: what this pass takes from the panel) */
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */
     unit_g_poll();                                      /* ((Skiff U3, R8) the unit's CLOCK MIDI IN TUNE) */
