@@ -502,6 +502,7 @@ typedef struct track {
     uint8_t arp_note;            /* sounding arp note, 0 = none */
     uint8_t arp_walk;            /* WALK: the place in the note list it stands on */
     uint8_t arp_ch[3];           /* CHORD: the other notes sounding with arp_note, 0 = none */
+    uint8_t arp_odd;             /* (Skiff) the arp step running is an odd one of the grid (SWING: seq.c arp_step) */
     uint32_t arp_off;            /* q8 sample time of its note-off */
     /* sequencer */
     step_t step[NSTEP];
