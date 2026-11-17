@@ -27,7 +27,9 @@ SIZE_FILES = ["ui.c", "favorites.c", "menu_items.c", "icons.c", "ui_graph.c", "u
               # (Skiff) its own main-loop files: the cards, the page graphs, the themes, FM6 LAB, DRUM-X's pages, HOME,
               # TAKES, SEQ TOOLS, the pool and its editor commands (what an interrupt reaches of them stays -Os)
               "ui_blocks.c", "ui_pgraph.c", "ui_crypt.c", "ui_neon.c", "ui_quark.c", "ui_fm6.c", "ui_dx.c", "ui_home.c",
-              "ui_take.c", "ui_tools.c", "bank.c", "take.c", "editor_project.c", "editor_song.c"]
+              "ui_take.c", "ui_tools.c", "bank.c", "take.c", "editor_project.c", "editor_song.c",
+              # (#92) control code, not sound: MIDI LEARN, the launches' main-loop side, THROW, the chord follow, main()
+              "midi_learn.c", "launch.c", "throw.c", "follow.c", "felucca.c"]
 ISR_ROOTS = ("fm1_alnk0_irq", "fm1_timer5_irq")      # hal/fm1_isr.S: the audio ISR, the key / LED scan (+ USB poll)
 DEF = re.compile(r"^(?:static|void|int|uint\w*|int\w*|const)\b[^;=(]*?\b([A-Za-z_]\w*)\s*\(", re.M)
 IR_DEF = re.compile(r"^(define [^\n]*?@\"?([\w.]+)\"?\([^\n]*\)(?: unnamed_addr| local_unnamed_addr)?)( #\d+[^\n]*\{)$",
@@ -80,18 +82,29 @@ def isr_reach(ir):
 # that frame (ed_handle's 1,948 B, draw_graph's 1,680 B, ui_input's 1,624 B: past the short stack offsets) and costs
 # more than the call it saves. Out of line, all of them: ~3 KB less (the FM-1 dev image, 2026-11-08: 121 helpers
 # measured one by one and together; KEEP_INLINE the five that are smaller inlined; fm1_main's were larger out of line)
-GIANTS = ("draw_graph", "ui_input", "ed_handle", "ui_draw_page", "fm_draw", "edit_param")
-KEEP_INLINE = ("midi_pc_poll", "unit_g_poll", "graph_follow", "scr_input", "rec_clear_poll")
+# (#92) measured again on 2.7's FM-1 image (2026-11-17): six more giants whose helpers are smaller out of line, each
+# helper of a giant kept inline when that is smaller (one by one, then greedily a giant at a time; not ui_input's,
+# whose frame would grow 856 B on the deepest path), and three helpers of other functions that are smaller out of
+# line (OUT_OF_LINE)
+GIANTS = ("draw_graph", "ui_input", "ed_handle", "ui_draw_page", "fm_draw", "edit_param",
+          "draw_layer", "layer_keys", "draw_menu", "take_commit", "draw_foot", "graph_tracks")
+KEEP_INLINE = ("midi_pc_poll", "unit_g_poll", "graph_follow", "scr_input", "rec_clear_poll",
+               "graph_events", "graph_slots", "graph_user", "graph_global", "graph_flt",
+               "fm_algo", "fm_scroll", "fm_pitch", "fm_sim", "fm_keys",
+               "up_parse", "ed_smp_erase", "autosave_hold", "ed_project_handle", "ed_motion_reply", "ed_menu_handle",
+               "project_save", "song_knob", "feel_turn", "tracks_edit", "menu_head", "mt_follow", "layer_perf", "mute_keys")
+OUT_OF_LINE = ("draw_column_tall", "ed_bk_capture", "ev_oct")
 IR_CALL = re.compile(r"\bcall [^@\n]*@\"?([\w.]+)\"?\(")
 
 
 def giant_helpers(ir):
-    """the functions called once in all, from one of GIANTS (but KEEP_INLINE)"""
+    """the functions called once in all, from one of GIANTS (but KEEP_INLINE), and OUT_OF_LINE"""
     body = {m.group(1): m.group(2) for m in IR_BODY.finditer(ir)}
     calls = {}
     for f in IR_CALL.findall(ir):
         calls[f] = calls.get(f, 0) + 1
-    return {f for g in GIANTS for f in IR_CALL.findall(body.get(g, "")) if calls[f] == 1 and f not in KEEP_INLINE}
+    return {f for g in GIANTS for f in IR_CALL.findall(body.get(g, "")) if calls[f] == 1 and f not in KEEP_INLINE} | \
+        set(OUT_OF_LINE)
 
 
 def main(src, dst):
