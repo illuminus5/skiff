@@ -19,6 +19,10 @@
  * other one version 1 as before, which firmware before reads (it shows a version 2 as empty).
  * (Skiff 2.0, #25) A record with a step's per-note ties (core.h step_ties: byte 7 of a step without hits) is version 3
  * (BK_VER3, BK_VER2's ids too): 1.4 shows it as empty; one without any stays version 1 or 2, byte for byte as before
+ * (Skiff, #92) The patterns' per-note trig conditions (core.h NC_*) are not in the records: in RAM each record is followed
+ * by its NC_BYTES (BK_RX, as the waiting copies hold it), in flash its chunk's follow the payload in the sector's last
+ * bytes (BK_NC), their hash in the commit record's rsv[0] and BK_NC_MAGIC in its rsv[1] (erased, as firmware before
+ * writes them, when none): firmware before reads the payload and passes them over, so its patterns play every note
  * Phase 5: the records are one pool, ids 0..BK_POOL-1 (pool_put, pat_decode); id = track x 16 + slot, so a chunk is
  * still one track's A..D, E..H, I..L or M..P and every bank saved before reads the same by id.
  * Flash: BK_CHUNKS chunks of BK_PER patterns (ids 4c .. 4c+3), each written whole to one
@@ -42,10 +46,15 @@ static int bk_ver(uint32_t v) { return v == BK_VER || v == BK_VER2 || v == BK_VE
 #define BK_MOT (BK_NUDGE + NSTEP / 4u * 3u)
 #define BK_REC (BK_MOT + MOTION_MAX * 4u)
 #define BK_LEN (BK_PER * BK_REC)                   /* a chunk's payload */
+#define BK_RX (BK_REC + NC_BYTES)                  /* (#92) a record in RAM: its notes' conditions after it */
+#define BK_NC (256u + BK_LEN)                      /* (#92) a sector's conditions: each pattern's, after the payload */
+#define BK_NC_LEN (BK_PER * NC_BYTES)
+#define BK_NC_MAGIC 0x314E4B53u                    /* "SKN1" */
 #define BK_NSECT 20u
 #define BK_NONE 0xFFu
 #define BK_MAGIC 0x31424B53u                       /* "SKB1" */
 _Static_assert(BK_REC == 888u && BK_LEN <= 4096u - 256u && BK_CHUNKS + 4u == BK_NSECT, "pattern bank layout");
+_Static_assert(BK_NC + BK_NC_LEN <= 4096u, "the conditions after a sector's payload");
 typedef struct { uint32_t magic, chunk, seq, len, sum, rsv[2], hsum; } bk_hdr_t;   /* at a sector's 0 */
 static const uint8_t BK_TIME[5] = {P_SLEN, P_SDIV, P_SSWING, P_SGATE, P_DIR};
 
@@ -56,15 +65,18 @@ static struct {
     uint8_t len[BK_POOL];                          /* each pattern's LEN, 0 = empty (the page) */
     uint8_t div[BK_POOL];                          /* ((2.5, 2B) .. its DIV (N_DIV): a song's bars, song_at) */
     uint32_t gen;                                  /* any change (the page redraws) */
+    uint16_t nc;                                   /* (#92) bit c: chunk c's copy holds conditions (BK_NC) */
 } bk;
-static uint8_t bk_buf[BK_LEN] __attribute__((section(".pool")));   /* a chunk read, changed and written */
-static uint8_t bk_rec[BK_REC] __attribute__((section(".pool")));   /* a track's pattern packed (pool_put) */
+/* a chunk read, changed and written: its payload, then (#92) its patterns' conditions (BK_NC's).
+ * (#92) In .bss, its own section, off the ISR's merged globals: the .pool has no room for it on the SMK */
+static uint8_t bk_buf[BK_LEN + BK_NC_LEN] __attribute__((section(".bss.bk_buf")));
+static uint8_t bk_rec[BK_RX] __attribute__((section(".pool")));   /* a track's pattern packed (pool_put) */
 /* (phase 5) keeping edits: a pattern changed while playing waits here for the next quiet stop (pat_flush_one), and every
  * read of it sees this copy first. PEND_N records, each its pool id (PAT_NONE: the slot free); a record all 0: the
  * pattern is to be emptied */
 #define PEND_N NTRK                                /* (one a track: every track can have one staged, stage_entry) */
 static uint8_t pend_id[PEND_N] __attribute__((section(".pool")));   /* (.pool: not among the globals the audio ISR reaches) */
-static uint8_t pend_rec[PEND_N][BK_REC] __attribute__((section(".pool")));
+static uint8_t pend_rec[PEND_N][BK_RX] __attribute__((section(".pool")));
 /* each track's pattern as it came in or was last kept (a hash of it packed): a copy unchanged since is not kept, so
  * another track on the same pattern that changed it is not undone; the staged one's, the track's when it comes in */
 static uint32_t trk_sig[NTRK] __attribute__((section(".pool")));
@@ -124,9 +136,44 @@ static int bk_head(uint32_t i, bk_hdr_t *h)        /* sector i's commit record v
     return h->magic == BK_MAGIC && h->chunk < BK_CHUNKS && h->len == BK_LEN &&
            h->hsum == proj_hash(h, sizeof *h - 4u) ? 0 : -1;
 }
-static int bk_body(uint32_t i, const bk_hdr_t *h)  /* its payload -> bk_buf, the hash right: 0 */
+/* its payload -> bk_buf, the hash right: -1 not; (#92) with its conditions after it (rsv[1]): 1, their hash right (else
+ * the patterns without them), 0 none */
+static int bk_body(uint32_t i, const bk_hdr_t *h)
 {
-    return bk_read(bk_sector(i) + 256u, bk_buf, BK_LEN) || proj_hash(bk_buf, BK_LEN) != h->sum ? -1 : 0;
+    int nc = h->rsv[1] == BK_NC_MAGIC;
+    memset(bk_buf + BK_LEN, 0, BK_NC_LEN);
+    if (bk_read(bk_sector(i) + 256u, bk_buf, nc ? BK_LEN + BK_NC_LEN : BK_LEN) || proj_hash(bk_buf, BK_LEN) != h->sum)
+        return -1;
+    if (nc && proj_hash(bk_buf + BK_LEN, BK_NC_LEN) != h->rsv[0]) {
+        memset(bk_buf + BK_LEN, 0, BK_NC_LEN);
+        nc = 0;
+    }
+    return nc;
+}
+/* chunk c's conditions from off on (bk.nc: if it holds any) -> dst: 0 */
+static int bk_nc_read(uint32_t c, uint32_t off, void *dst, uint32_t n)
+{
+    return ((bk.nc >> c) & 1u) && bk_read(bk_sector(bk.sect[c] - 1u) + BK_NC + off, dst, n);
+}
+/* pattern id in bk_buf (its record at r): rec and (#92) its conditions after it, 0 empty */
+static void bk_set(uint8_t *r, uint32_t id, const uint8_t *rec)
+{
+    uint8_t *n = bk_buf + BK_LEN + id % BK_PER * NC_BYTES;
+    if (rec) {
+        memcpy(r, rec, BK_REC);
+        memcpy(n, rec + BK_REC, NC_BYTES);
+    } else {
+        memset(r, 0, BK_REC);
+        memset(n, 0, NC_BYTES);
+    }
+}
+static int bk_nc_any(void)                         /* bk_buf's chunk has a condition */
+{
+    uint32_t r;
+    for (r = 0; r < BK_PER; r++)
+        if (bk_buf[BK_LEN + r * NC_BYTES])
+            return 1;
+    return 0;
 }
 static int bk_newer(uint32_t a, uint32_t b) { return a != b && a - b < 0x80000000u; }   /* (wraps) */
 static void bk_lens(uint32_t c)                    /* chunk c's patterns (in bk_buf): their LENs for the page */
@@ -146,6 +193,7 @@ static void bank_boot(void)
     bk_hdr_t h[BK_NSECT];
     uint8_t ok[BK_NSECT];
     uint32_t i, c;
+    int nc;
     memset(&bk, 0, sizeof bk);
     memset(pend_id, PAT_NONE, sizeof pend_id);     /* (phase 5: nothing waiting to be kept) */
     bk_bufc = 0;
@@ -164,8 +212,9 @@ static void bank_boot(void)
                     best = i;
             if (best == BK_NONE)
                 break;
-            if (bk_body(best, &h[best]) == 0) {
+            if ((nc = bk_body(best, &h[best])) >= 0) {
                 bk.sect[c] = (uint8_t)(best + 1u);
+                bk.nc = (uint16_t)(bk.nc | (uint32_t)nc << c);
                 bk_lens(c);
                 break;
             }
@@ -188,7 +237,7 @@ static uint32_t bk_free(void)                      /* a sector holding no chunk'
 /* bk_buf -> chunk c's next copy, the commit record last, then read back: 0 written */
 static int bk_write(uint32_t c)
 {
-    uint32_t to = bk_free(), base, off;
+    uint32_t to = bk_free(), base, off, nc = (uint32_t)bk_nc_any(), end = nc ? BK_LEN + BK_NC_LEN : BK_LEN;
     bk_hdr_t h, chk;
     int rc;
     if (to == BK_NONE)
@@ -196,8 +245,8 @@ static int bk_write(uint32_t c)
     base = bk_sector(to);
     if ((rc = bk_erase(base)) != 0)
         return rc;
-    for (off = 0; off < BK_LEN; off += 256u)
-        if ((rc = bk_prog(base + 256u + off, bk_buf + off, BK_LEN - off > 256u ? 256u : BK_LEN - off)) != 0)
+    for (off = 0; off < end; off += 256u)                /* ((#92) the conditions after it, when any) */
+        if ((rc = bk_prog(base + 256u + off, bk_buf + off, end - off > 256u ? 256u : end - off)) != 0)
             return rc;
     h.magic = BK_MAGIC;
     h.chunk = c;
@@ -205,12 +254,17 @@ static int bk_write(uint32_t c)
     h.len = BK_LEN;
     h.sum = proj_hash(bk_buf, BK_LEN);
     h.rsv[0] = h.rsv[1] = 0xFFFFFFFFu;
+    if (nc) {                                      /* ((#92) none: erased, as firmware before writes it) */
+        h.rsv[0] = proj_hash(bk_buf + BK_LEN, BK_NC_LEN);
+        h.rsv[1] = BK_NC_MAGIC;
+    }
     h.hsum = proj_hash(&h, sizeof h - 4u);
     if ((rc = bk_prog(base, &h, sizeof h)) != 0)
         return rc;
-    if (bk_head(to, &chk) || memcmp(&chk, &h, sizeof h) || bk_body(to, &chk))
+    if (bk_head(to, &chk) || memcmp(&chk, &h, sizeof h) || bk_body(to, &chk) != (int)nc)
         return -7;                                 /* (a part that does not keep what it is given: not SAVED) */
     bk.sect[c] = (uint8_t)(to + 1u);
+    bk.nc = (uint16_t)((bk.nc & ~(1u << c)) | (uint32_t)nc << c);
     bk.top = h.seq;
     bk.next = (uint8_t)((to + 1u) % BK_NSECT);
     bk.gen++;
@@ -219,7 +273,8 @@ static int bk_write(uint32_t c)
 
 /* a pattern -> record r: steps st, LEN DIV SWING GATE DIR tv (the sound's own), the events of ms placed on track k, the
  * automation on or not: 0 for a step no format can hold (none the UI makes) */
-static int bk_pack_raw(uint8_t *r, uint32_t k, const step_t *st, const int16_t *tv, const motion_store_t *ms, int on)
+static int bk_pack_raw(uint8_t *r, uint32_t k, const step_t *st, const int16_t *tv, const motion_store_t *ms, int on,
+                       const ncond_store_t *nc)
 {
     uint32_t i, n = 0, np = PROJ_NP, ties = 0;
     /* ((Skiff phase 9) the motion's ids as a store of PROJ_NP has them, which firmware before reads; today's when it
@@ -227,7 +282,7 @@ static int bk_pack_raw(uint8_t *r, uint32_t k, const step_t *st, const int16_t *
     for (i = 0; i < ms->count && i < MOTION_MAX; i++)
         if ((ms->event[i].place >> 6) == k && MOTION_ID(&ms->event[i]) >= PROJ_NP - 8u && MOTION_ID(&ms->event[i]) < P_E0)
             np = P_COUNT;
-    memset(r, 0, BK_REC);
+    memset(r, 0, BK_RX);
     r[0] = BK_VER;
     r[1] = (uint8_t)np;
     for (i = 0; i < 5u; i++)
@@ -255,6 +310,10 @@ static int bk_pack_raw(uint8_t *r, uint32_t k, const step_t *st, const int16_t *
     r[7] = (uint8_t)(n | (on ? 128u : 0u));
     if (ties)
         r[0] = BK_VER3;                            /* ((2.0) its ids as BK_VER2's too) */
+    if (nc) {                                      /* ((#92) its notes' conditions after it, the ones on a note) */
+        memcpy(r + BK_REC, nc, NC_BYTES);
+        (void)nc_fit((ncond_store_t *)(r + BK_REC), st, NSTEP);
+    }
     return 1;
 }
 /* track t's pattern as it is (the sound's own timing, its automation and locks) -> record r */
@@ -264,17 +323,20 @@ static int bk_pack(uint8_t *r, const track_t *t)
     uint32_t i;
     for (i = 0; i < 5u; i++)
         tv[i] = motion_base_value(t, BK_TIME[i]);
-    return bk_pack_raw(r, trk_index(t), t->step, tv, &motion, motion_enabled(t));
+    return bk_pack_raw(r, trk_index(t), t->step, tv, &motion, motion_enabled(t), &ncs[trk_index(t)]);
 }
 
 /* chunk c as it is now -> bk_buf (never saved: all empty): 0, 2 a flash error */
 static int bk_load(uint32_t c)
 {
     bk_bufc = 0;
+    memset(bk_buf + BK_LEN, 0, BK_NC_LEN);
     if (!bk.sect[c]) {
         memset(bk_buf, 0, BK_LEN);
         return 0;
     }
+    if (bk_nc_read(c, 0, bk_buf + BK_LEN, BK_NC_LEN))
+        return 2;                                  /* ((#92) its conditions) */
     return bk_read(bk_sector(bk.sect[c] - 1u) + 256u, bk_buf, BK_LEN) ? 2 : 0;
 }
 /* record rec -> pattern id (rec 0: the pattern emptied): 0 done, 2 not (the transport runs, a flash error), 3 no flash */
@@ -287,10 +349,7 @@ static int pool_put(uint32_t id, const uint8_t *rec)
         return 3;
     if (transport_busy() || bk_load(c))
         return 2;
-    if (rec)
-        memcpy(r, rec, BK_REC);
-    else
-        memset(r, 0, BK_REC);
+    bk_set(r, id, rec);
     if (bk_write(c))
         return 2;
     bk_lens(c);
@@ -316,14 +375,17 @@ static int pool_used(uint32_t id)
     uint32_t i = pend_at(id);
     return i < PEND_N ? bk_ver(pend_rec[i][0]) : bk.len[id % BK_POOL] != 0u;
 }
-/* pattern id's record as it is now -> r: its waiting copy, else flash's: 0, 1 none (empty, or one no firmware wrote) */
+/* pattern id's record as it is now -> r (BK_RX: (#92) its conditions after it): its waiting copy, else flash's: 0, 1
+ * none (empty, or one no firmware wrote) */
 static int pat_read(uint32_t id, uint8_t *r)
 {
     uint32_t i = pend_at(id), c = bk_chunk(id);
+    memset(r + BK_REC, 0, NC_BYTES);
     if (i < PEND_N)
-        memcpy(r, pend_rec[i], BK_REC);
+        memcpy(r, pend_rec[i], BK_RX);
     else if (!bk.len[id % BK_POOL] || !bk.sect[c] ||
-             bk_read(bk_sector(bk.sect[c] - 1u) + 256u + id % BK_PER * BK_REC, r, BK_REC))
+             bk_read(bk_sector(bk.sect[c] - 1u) + 256u + id % BK_PER * BK_REC, r, BK_REC) ||
+             bk_nc_read(c, id % BK_PER * NC_BYTES, r + BK_REC, NC_BYTES))
         return 1;
     return bk_ver(r[0]) && (r[7] & 127u) <= MOTION_MAX ? 0 : 1;
 }
@@ -334,7 +396,7 @@ static int pat_keep_rec(uint32_t id, const uint8_t *r)
     uint32_t i = pend_at(id);
     int now = pat_read(id, bk_buf);
     bk_bufc = 0;
-    if (bk_ver(r[0]) ? !now && !memcmp(bk_buf, r, BK_REC) : now)
+    if (bk_ver(r[0]) ? !now && !memcmp(bk_buf, r, BK_RX) : now)
         return 0;                                  /* (the same, or empty and empty) */
     if (i == PEND_N)
         for (i = 0; i < PEND_N && pend_id[i] != PAT_NONE; i++)
@@ -342,7 +404,7 @@ static int pat_keep_rec(uint32_t id, const uint8_t *r)
     if (i == PEND_N)
         return 1;
     pend_id[i] = (uint8_t)(id % BK_POOL);
-    memcpy(pend_rec[i], r, BK_REC);
+    memcpy(pend_rec[i], r, BK_RX);
     bk.gen++;
     return 0;
 }
@@ -361,11 +423,7 @@ static int pat_flush_one(void)
             return 2;
         for (i = 0; i < PEND_N; i++)
             if (pend_id[i] != PAT_NONE && bk_chunk(pend_id[i]) == c) {
-                uint8_t *r = bk_buf + pend_id[i] % BK_PER * BK_REC;
-                if (bk_ver(pend_rec[i][0]))
-                    memcpy(r, pend_rec[i], BK_REC);
-                else
-                    memset(r, 0, BK_REC);
+                bk_set(bk_buf + pend_id[i] % BK_PER * BK_REC, pend_id[i], bk_ver(pend_rec[i][0]) ? pend_rec[i] : 0);
             }
         if (bk_write(c))
             return 2;
@@ -415,7 +473,7 @@ static uint32_t pool_find(const uint8_t *r)
         i = pend_at(id);
         if (!pool_used(id) || (i == PEND_N && bk.len[id] != (uint8_t)(len < 1 ? 1 : len > (int32_t)NSTEP ? NSTEP : len)))
             continue;
-        if (!pat_read(id, bk_buf) && !memcmp(bk_buf, r, BK_REC)) {
+        if (!pat_read(id, bk_buf) && !memcmp(bk_buf, r, BK_RX)) {
             bk_bufc = 0;
             return id;
         }
@@ -426,7 +484,7 @@ static uint32_t pool_find(const uint8_t *r)
 
 /* pattern id, read and checked, for track t: its steps, LEN DIV SWING GATE DIR (fitted to t's sound), its automation
  * and locks (t's places): 0 ok, 1 nothing there (or a record no firmware wrote) */
-static int pat_decode(const track_t *t, uint32_t id, step_t *st, int16_t *v, motion_store_t *ms)
+static int pat_decode(const track_t *t, uint32_t id, step_t *st, int16_t *v, motion_store_t *ms, ncond_store_t *nc)
 {
     uint8_t *r = bk_buf;
     uint32_t tk = trk_index(t), i, out;
@@ -454,6 +512,8 @@ static int pat_decode(const track_t *t, uint32_t id, step_t *st, int16_t *v, mot
     }
     if (out || !proj_motion_ids(ms, r[1]) || !motion_valid(ms))
         ms->count = 0;                             /* (motion no firmware wrote: the steps still load) */
+    memcpy(nc, r + BK_REC, NC_BYTES);              /* ((#92) its notes' conditions: the ones on a note) */
+    (void)nc_fit(nc, st, NSTEP);
     return 0;
 }
 
@@ -684,6 +744,7 @@ static int chain_tails(uint32_t k, const step_t *last, uint32_t cnt, const uint8
     for (i = 0; i < un; i++)
         if (!step_put9(bk_rec + BK_STEPS + i * 9u, &u[i]))
             return 2;
+    (void)nc_fit((ncond_store_t *)(bk_rec + BK_REC), u, un);   /* ((#92) the ones on a note of its first steps still) */
     bk_rec[0] = BK_VER3;                           /* (ties in it) */
     if (pat_keep_rec(id, bk_rec))
         return 2;
@@ -693,6 +754,7 @@ static int chain_tails(uint32_t k, const step_t *last, uint32_t cnt, const uint8
             u[i].nudge = q->step[i].nudge;
             q->step[i] = u[i];
         }
+        (void)nc_fit(&q->nc, q->step, NSTEP);
         fm1_irq_on();
     }
     bk.gen++;
@@ -741,8 +803,9 @@ static __attribute__((noinline)) void take_part(uint32_t k, uint32_t j, uint32_t
     int16_t v[5];
     int own;
     motion_store_t ms;
+    ncond_store_t nc;
     k %= NTRK;
-    if (id == PAT_NONE || pat_decode(t, id, tmp, v, &ms))
+    if (id == PAT_NONE || pat_decode(t, id, tmp, v, &ms, &nc))
         return;                                    /* (a REST: nothing) */
     len = v[0] > 0 && v[0] < (int16_t)NSTEP ? (uint32_t)v[0] : NSTEP;
     own = trk_vmode(t) == V_POLY && v[4] == DIR_FWD && !drum_track(t);   /* (as rec_poly, the part's DIR) */
@@ -763,8 +826,8 @@ static __attribute__((noinline)) void take_part(uint32_t k, uint32_t j, uint32_t
     undo.keep = 0;
     memcpy(undo.p, t->p, sizeof undo.p);
     undo.pid = (uint8_t)(id + 1u);
-    if (!bk_pack_raw(bk_rec, k, tmp, v, &ms, (ms.on >> k) & 1u) || pat_decode(t, id, undo.step, v, &undo.motion_backup) ||
-        pat_keep_rec(id, bk_rec)) {
+    if (!bk_pack_raw(bk_rec, k, tmp, v, &ms, (ms.on >> k) & 1u, &nc) ||
+        pat_decode(t, id, undo.step, v, &undo.motion_backup, &undo_nc) || pat_keep_rec(id, bk_rec)) {
         undo.trk = 0;                              /* (not kept: nothing to undo) */
         return;
     }
@@ -774,8 +837,9 @@ static __attribute__((noinline)) void take_part(uint32_t k, uint32_t j, uint32_t
         fm1_irq_off();
         memcpy(q->step, tmp, sizeof q->step);
         q->motion = ms;
+        memcpy(&q->nc, bk_rec + BK_REC, NC_BYTES);   /* ((#92) its notes' conditions, as bk_pack_raw kept them) */
         fm1_irq_on();
-        q_sig[k] = proj_hash(bk_rec, BK_REC);
+        q_sig[k] = proj_hash(bk_rec, BK_RX);
     }
     *notes += nn;
     *moves += mm;
@@ -827,7 +891,7 @@ static int trk_keep(uint32_t k)
         return 0;                                  /* (nothing there: nothing to keep) */
     if (!trk_rec(k))
         return 1;
-    h = proj_hash(bk_rec, BK_REC);
+    h = proj_hash(bk_rec, BK_RX);
     if (trk_pid[k] && h == trk_sig[k])
         return 0;
     id = trk_pid[k] ? trk_pid[k] - 1u : pool_alloc();
@@ -872,13 +936,15 @@ static int pat_load(track_t *t, uint32_t id)
 {
     static step_t st[NSTEP];
     static motion_store_t ms;
+    ncond_store_t nc;
     uint32_t k = trk_index(t), i, full;
     int16_t v[5];
-    if (pat_decode(t, id, st, v, &ms))
+    if (pat_decode(t, id, st, v, &ms, &nc))
         return 1;
     motion_restore(t);
     fm1_irq_off();                                 /* the audio ISR must not see half a pattern */
     memcpy(t->step, st, sizeof st);
+    ncs[k] = nc;                                   /* ((#92) its notes' conditions) */
     for (i = 0; i < 5u; i++)
         t->p[BK_TIME[i]] = v[i];
     fm1_irq_on();
@@ -888,7 +954,7 @@ static int pat_load(track_t *t, uint32_t id)
     motion_lost = (uint8_t)((motion_lost & ~(1u << k)) | (full ? 1u << k : 0u));
     motion_rebase(t);
     trk_pid[k] = (uint8_t)(id + 1u);
-    trk_sig[k] = trk_rec(k) ? proj_hash(bk_rec, BK_REC) : 0u;
+    trk_sig[k] = trk_rec(k) ? proj_hash(bk_rec, BK_RX) : 0u;
     bk.gen++;
     return full ? 2 : 0;
 }
@@ -1019,7 +1085,7 @@ static int bank_put(uint32_t k, uint32_t e, int erase)
     id = ent_pat(k, e);
     if (erase) {
         if (id != PAT_NONE && !pat_refs(id, k, e)) {
-            memset(bk_rec, 0, BK_REC);
+            memset(bk_rec, 0, BK_RX);
             if (pat_keep_now(id, bk_rec))
                 return 4;
             for (j = 0; j < NTRK; j++)
@@ -1045,7 +1111,7 @@ static int bank_put(uint32_t k, uint32_t e, int erase)
         lists.ent[k][e][0] = (uint8_t)(id + 1u);
         lists.cur[k] = (uint8_t)e;
         trk_pid[k] = (uint8_t)(id + 1u);
-        trk_sig[k] = proj_hash(bk_rec, BK_REC);
+        trk_sig[k] = proj_hash(bk_rec, BK_RX);
     }
     while (pend_free() < PEND_N)
         if (pat_flush_one())
@@ -1103,11 +1169,11 @@ static void bank_poll_trk(uint32_t k)
     if (q->done == 2u && transport_busy())
         return;
     if (!q->same && (trk_pid[k] || !q_empty(q)) &&     /* ((2.0.3, #71) the same pattern: nothing went out) */
-        bk_pack_raw(bk_rec, k, q->step, q->time, &q->motion, (q->motion.on >> k) & 1u)) {
+        bk_pack_raw(bk_rec, k, q->step, q->time, &q->motion, (q->motion.on >> k) & 1u, &q->nc)) {
         id = trk_pid[k] ? trk_pid[k] - 1u : pool_alloc();   /* (a new pattern went out: the first free id) */
         if (trk_pid[k] && ((motion_lost >> k) & 1u))
             rec_motion_of(bk_rec, id);
-        if (trk_pid[k] && proj_hash(bk_rec, BK_REC) == trk_sig[k])
+        if (trk_pid[k] && proj_hash(bk_rec, BK_RX) == trk_sig[k])
             ;                                      /* (unchanged since it came in) */
         else if (id == NPAT || (rc = pat_keep_now(id, bk_rec)) != 0) {
             if (rc && transport_busy()) {
@@ -1180,8 +1246,9 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
         for (i = 0; i < 5u; i++)                   /* ((2.0.2) GATE the default, as ent_go's) */
             q->time[i] = BK_TIME[i] == P_SGATE ? TP[P_SGATE].def : motion_base_value(t, BK_TIME[i]);
         memset(&q->motion, 0, sizeof q->motion);
+        q->nc.n = 0;
         id = PAT_NONE;
-    } else if (id == PAT_NONE || pat_decode(t, id, q->step, q->time, &q->motion))
+    } else if (id == PAT_NONE || pat_decode(t, id, q->step, q->time, &q->motion, &q->nc))
         return 1;
     same = id != PAT_NONE && id == trk_pat(k);     /* ((2.0.3, #71) the pattern the track is on: it goes on as the
                                                     * track has it, edits made before or after this copy (launch_swap) */
@@ -1190,10 +1257,10 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
         full = 1;
     }
     q_sig[k] = 0;                                  /* (the track's sig once it is in: as trk_keep packs it then) */
-    if (bk_pack_raw(bk_rec, k, q->step, q->time, &q->motion, (q->motion.on >> k) & 1u)) {
+    if (bk_pack_raw(bk_rec, k, q->step, q->time, &q->motion, (q->motion.on >> k) & 1u, &q->nc)) {
         if (full)
             rec_motion_of(bk_rec, id);
-        q_sig[k] = proj_hash(bk_rec, BK_REC);
+        q_sig[k] = proj_hash(bk_rec, BK_RX);
     }
     q->slot = (uint8_t)e;
     q->id = (uint8_t)id;
@@ -1679,7 +1746,7 @@ static void pool_clear(uint32_t id)
         ui_message(transport_busy() ? "STOP TO CLEAR" : "IN USE");
         return;
     }
-    memset(bk_rec, 0, BK_REC);
+    memset(bk_rec, 0, BK_RX);
     if (pool_flush_said(pat_keep_now(id, bk_rec) ? 4 : 0))
         return;
     str_cpy(b, "CLEARED ", sizeof b);
@@ -1708,7 +1775,7 @@ static void rec_empty(uint8_t *r, const track_t *t)
     (void)step_put9(r + BK_STEPS, &e);
     for (i = 1; i < NSTEP; i++)
         memcpy(r + BK_STEPS + i * 9u, r + BK_STEPS, 9u);
-    memset(r + BK_NUDGE, 0, BK_REC - BK_NUDGE);
+    memset(r + BK_NUDGE, 0, BK_RX - BK_NUDGE);   /* (and (#92) its notes' conditions) */
     r[0] = BK_VER;
     r[1] = PROJ_NP;
     r[7] = 0;
@@ -1746,7 +1813,7 @@ static void pool_clear_unused(void)
         ui_message(!BK_ON ? "STORAGE ERROR" : "STOP TO CLEAR");
         return;
     }
-    memset(bk_rec, 0, BK_REC);
+    memset(bk_rec, 0, BK_RX);
     for (id = 0; id < BK_POOL && !rc; id++)
         if (pool_used(id) && !pool_refs(id)) {
             if (pat_keep_now(id, bk_rec))
@@ -2034,7 +2101,9 @@ static void song_from(void)
 }
 
 /* ---- the editor's backup (editor_backup.c): each chunk an object, ids 16..31 ---- */
-/* chunk c, read into bk_buf: *len BK_LEN, 0 when every pattern in it is empty (or never saved) */
+/* chunk c, read into bk_buf: *len BK_LEN, 0 when every pattern in it is empty (or never saved); ((#92) its patterns'
+ * conditions after it when it holds any: BK_LEN + BK_NC_LEN, which firmware before refuses, the web tool then sending
+ * the chunk alone) */
 static const uint8_t *bank_chunk(uint32_t c, uint32_t *len)
 {
     uint32_t r;
@@ -2044,13 +2113,13 @@ static const uint8_t *bank_chunk(uint32_t c, uint32_t *len)
         return bk_buf;
     if (bk_bufc != c + 1u) {
         bk_bufc = 0;
-        if (bk_read(bk_sector(bk.sect[c] - 1u) + 256u, bk_buf, BK_LEN))
+        if (bk_load(c))
             return bk_buf;
         bk_bufc = (uint8_t)(c + 1u);
     }
     for (r = 0; r < BK_PER; r++)
         if (bk_ver(bk_buf[r * BK_REC]))
-            *len = BK_LEN;
+            *len = bk_nc_any() ? BK_LEN + BK_NC_LEN : BK_LEN;
     return bk_buf;
 }
 /* a chunk from a backup (len 0: all empty): each pattern empty or as some firmware with this record wrote it */
@@ -2060,7 +2129,7 @@ static int bank_chunk_ok(const uint8_t *b, uint32_t len)
     step_t s;
     if (!len)
         return 1;
-    if (len != BK_LEN)
+    if (len != BK_LEN && len != BK_LEN + BK_NC_LEN)
         return 0;
     for (r = 0; r < BK_PER; r++) {
         const uint8_t *p = b + r * BK_REC;
@@ -2088,6 +2157,10 @@ static int bank_restore(uint32_t c, const uint8_t *b, uint32_t len)
         memcpy(bk_buf, b, BK_LEN);
     else
         memset(bk_buf, 0, BK_LEN);
+    if (len > BK_LEN)                              /* ((#92) its patterns' conditions, when the backup has them) */
+        memcpy(bk_buf + BK_LEN, b + BK_LEN, BK_NC_LEN);
+    else
+        memset(bk_buf + BK_LEN, 0, BK_NC_LEN);
     if (bk_write(c))
         return 1;
     bk_lens(c);
@@ -2144,7 +2217,7 @@ static int proj_migrate(int allowed)
                 continue;                          /* (empty, or its steps cleared when it loads: no pattern) */
             for (i = 0; i < 5u; i++)
                 tv[i] = p->t[k].p[BK_TIME[i]];
-            if (!bk_pack_raw(bk_rec, k, p->t[k].step, tv, &p->motion, (p->motion.on >> k) & 1u))
+            if (!bk_pack_raw(bk_rec, k, p->t[k].step, tv, &p->motion, (p->motion.on >> k) & 1u, 0))
                 break;
             if ((id = pool_find(bk_rec)) == NPAT && ((id = pool_alloc()) == NPAT || pat_keep_now(id, bk_rec)))
                 break;                             /* (the pool full) */

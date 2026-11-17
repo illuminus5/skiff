@@ -3,8 +3,10 @@
 // Local, complete musical archives. Requests name whitelisted objects, never flash addresses.
 // 8: the FM6 patch bank of 1.0..1.0.2 (listed empty since 1.0.3: a restore of an older archive's bank moves its patches
 // into the user presets restored before it); 9: the user presets' FM6 patches (1.0.3); 16..31: Skiff's pattern bank,
-// a chunk of 4 patterns each (3552 bytes, 0 when all empty)
+// a chunk of 4 patterns each (3552 bytes, 0 when all empty; (#92) 3812 with their notes' own trig conditions)
 const BANK_IDS = Array.from({ length: 16 }, (_, i) => 16 + i);
+const BANK_CHUNK = 3552;                         // a bank chunk's 4 patterns (bank.c BK_LEN); (#92) + 260: their notes'
+                                                 // trig conditions (BK_NC_LEN), when any
 export const BACKUP_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ...BANK_IDS, 32, 33, 34];
 const BACKUP_IDS_V3 = BACKUP_IDS.filter((id) => id < 16 || id >= 32);   // Felucca 1.0.3.. (no bank), and its archives
 const BACKUP_IDS_V2 = BACKUP_IDS_V3.filter((id) => id !== 9);           // 1.0..1.0.2, and their archives
@@ -137,15 +139,22 @@ export async function restoreBackup(request, file, onProgress = () => {}, only =
         done += 512; onProgress(done, total);
       }
     } else {
+      let bytes = o.bytes, size = o.size, crc = o.crc;
       if (o.id === 9 || BANK_IDS.includes(o.id)) {   // firmware before 1.0.3 does not take id 9, firmware without Skiff's
                                                      // bank not 16..31 (rc 1 at begin, nothing written): skip them
-        const a = await ask([BACKUP_CMD.PUT, [0, o.id, ...bkU32(o.size), ...bkU32(o.crc)]]);
+        let a = await ask([BACKUP_CMD.PUT, [0, o.id, ...bkU32(size), ...bkU32(crc)]]);
+        if (a[2] === 1 && size > BANK_CHUNK) {       // (#92) a chunk with its notes' conditions after it: firmware
+          bytes = bytes.subarray(0, BANK_CHUNK);     // before takes the chunk alone, its patterns playing every note
+          size = BANK_CHUNK; crc = bkCrc(bytes);
+          a = await ask([BACKUP_CMD.PUT, [0, o.id, ...bkU32(size), ...bkU32(crc)]]);
+        }
         if (a[2] === 1) { done += o.size; onProgress(done, total); continue; }
         bkCheck(a[2]);
-      } else await put([0, o.id, ...bkU32(o.size), ...bkU32(o.crc)]);
+        done += o.size - size;
+      } else await put([0, o.id, ...bkU32(size), ...bkU32(crc)]);
       try {
-        for (let off = 0; off < o.size; off += BACKUP_CHUNK) {
-          const chunk = o.bytes.subarray(off, off + BACKUP_CHUNK);
+        for (let off = 0; off < size; off += BACKUP_CHUNK) {
+          const chunk = bytes.subarray(off, off + BACKUP_CHUNK);
           await put([1, o.id, ...bkU32(off), ...bkPack(chunk)]);
           done += chunk.length; onProgress(done, total);
         }

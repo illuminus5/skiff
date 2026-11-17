@@ -210,6 +210,7 @@ static struct {
     int16_t bpm0, len0, div0;                           /* the tempo, LEN and DIV it opened with */
 } fr;
 static step_t fr_from[NSTEP] __attribute__((section(".pool")));   /* the steps as it opened */
+static ncond_store_t fr_nc __attribute__((section(".pool")));     /* ((#92) its notes' conditions then: none on the take's) */
 static uint16_t fr_on[FR_NON] __attribute__((section(".pool")));  /* the phrase's onsets: ms / 2 after its first */
 #define FE_T(e) ((e) & 0x7FFFu)
 #define FE_NOTE(e) (((e) >> 15) & 127u)
@@ -436,6 +437,8 @@ static int free_open(uint32_t k)
     }
     tl_undo_take(t, "FREE TAKE");                       /* (one undo: SAVE held) */
     memcpy(fr_from, t->step, sizeof fr_from);
+    fr_nc = ncs[k % NTRK];
+    nc_put(t, &(ncond_store_t){0});
     fr.len0 = t->p[P_SLEN];
     fr.div0 = t->p[P_SDIV];
     fr.bpm0 = song.g[G_BPM];
@@ -475,6 +478,7 @@ static void fr_close(int keep)
     if (!keep && trk_pat(fr.trk) == fr.pat) {          /* (another pattern on it meanwhile: left as it is) */
         fm1_irq_off();
         memcpy(t->step, fr_from, sizeof fr_from);
+        ncs[fr.trk % NTRK] = fr_nc;
         t->p[P_SLEN] = fr.len0;
         t->p[P_SDIV] = fr.div0;
         fm1_irq_on();
@@ -556,6 +560,7 @@ static void take_commit(uint32_t k)
             memcpy(t->step, tmp, sizeof tmp);
             t->seq_active = 1;
             fm1_irq_on();
+            nc_prune(t);                              /* ((#92) a condition left on no note goes) */
         }
         for (i = 0; i < (take_kv_n < TAKE_KV ? take_kv_n : TAKE_KV); i++) {
             const take_kv_t *m = &take_kv[i];

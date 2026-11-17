@@ -301,7 +301,10 @@ static int replaces(void)
     put_step(t, 20, 3, OLD, ST_NOTE, 0);              /* step 21, past LEN 16: stored there */
     t->seq_active = 1;
     memcpy(before, t->step, sizeof before);
+    ncs[trk_index(t)].n = 0;
+    (void)nc_set(t, 0, 1, TC_1_2);                    /* ((#92) step 1's second note on a condition of its own) */
     ch4_play(t);
+    bad += check("  .. (#92) the notes' own conditions of the pattern gone with it", fr.on && !ncs[trk_index(t)].n);
     for (s = 0; s < NSTEP; s++)
         for (k = 0; k < 3u; k++)
             ok &= !has_note(&t->step[s], OLD[k]);
@@ -312,6 +315,7 @@ static int replaces(void)
     bad += check("  .. the first chord whole on step 1, where three notes were", ok);
     fr_close(0);
     bad += check("  .. OCT-: the pattern as it was", !memcmp(t->step, before, sizeof before) && t->p[P_SLEN] == 16);
+    bad += check("  .. (#92) and its notes' own conditions", ncs[trk_index(t)].n == 1u && nc_get(t, 0, 1) == TC_1_2);
     return bad;
 }
 /* KNOB 1 to the next guess and back: the steps of the first again (on a POLY track each guess started from the last

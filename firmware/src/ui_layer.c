@@ -1451,6 +1451,10 @@ static void shift_map(smap_t *m)
     } else if (step_page(g)) {                       /* (the grid: the keys its steps) */
         m[3] = (smap_t){"KEYS", "STEPS", 1};
         m[4] = (smap_t){"EDIT + REC", "CLEAR", 1};
+    } else if (g == GR_FEEL && !drum) {              /* ((#92) FEEL: the keys pick, KNOB 1 their own condition) */
+        m[3] = (smap_t){"KEYS", "PICK", 1};
+    } else if (g == GR_FEEL) {                       /* ((#92) a DRUM track's FEEL: the LANE card's hits' own) */
+        m[4] = (smap_t){"+ KNOB 1", "LANE COND", 2};
     }
     for (i = 0; i < 6u; i++)
         m[6 + i] = ALL[i < 3u && sel ? 6u + i : i];

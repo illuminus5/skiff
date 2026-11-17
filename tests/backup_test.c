@@ -537,7 +537,7 @@ int main(void)
         bad += check("(Skiff) the pattern bank: 16 objects, a chunk with a pattern 3552 B (its CRC), the rest 0",
                      ok);
         {   /* (phase 5) T3 on 42, edited, then 42's chunk restored: T3 off it, its edit a new pattern, 42 the backup's */
-            static uint8_t r[BK_REC];
+            static uint8_t r[BK_RX];
             trk[2].step[5] = (step_t){{90}, 1, ST_NOTE, 0, 99};
             ok = trk_pat(2) == 41u && put_all(16u + 10u, got[10], lens[10], crcs[10]) == 0 && !trk_pid[2] &&
                  keep_all() == 0 && trk_pat(2) != 41u && trk_pat(2) != PAT_NONE && !pat_read(41, r) &&

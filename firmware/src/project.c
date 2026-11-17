@@ -305,14 +305,7 @@ static int chain_valid(const chain_config_t *c)
 }
 #endif
 
-static uint32_t proj_hash(const void *p, uint32_t n)   /* FNV-1a over n bytes */
-{
-    const uint8_t *b = (const uint8_t *)p;
-    uint32_t i, s = 0x811C9DC5u;
-    for (i = 0; i < n; i++)
-        s = (s ^ b[i]) * 16777619u;
-    return s;
-}
+static uint32_t proj_hash(const void *p, uint32_t n) { return fnv(0x811C9DC5u, p, n); }   /* FNV-1a over n bytes */
 static uint32_t proj_sum(const project_t *p) { return proj_hash(p, sizeof *p - 4u); }
 static int proj_ok(const project_t *q) { return q->magic == PROJ_MAGIC && q->size == sizeof *q &&
     q->sum == proj_sum(q)
@@ -1544,6 +1537,7 @@ static int project_restore_runtime(const project_t *input)
         for (i = 0; i < NSTEP; i++)
             t->step[i].time = ST_REST;
 #endif
+        ncs[k].n = 0;                                   /* ((#92) its notes' conditions: its pattern's, as it loads) */
         {   /* the project's own FM6 patch, never reloaded from SLOT: F n if it is that factory patch, else OWN */
             uint8_t v[FP_SIZE + 1u];
             fm6_unpack(p->fm6[k], v);
@@ -1754,15 +1748,7 @@ static struct {
  * back at power-on. The user's own act, a flash write already: no wear to speak of */
 static void autosave_soon(void) { as.soon = 1; }
 
-static uint32_t as_mix(uint32_t h, const void *p, uint32_t n)   /* FNV-1a, continued */
-{
-    const uint8_t *b = p;
-    while (n--) {
-        h ^= *b++;
-        h *= 16777619u;
-    }
-    return h;
-}
+static uint32_t as_mix(uint32_t h, const void *p, uint32_t n) { return fnv(h, p, n); }   /* FNV-1a, continued */
 
 /* what an autosave would hold, hashed (no copy, no RAM): project_capture's values */
 static uint32_t autosave_sig(void)
@@ -1779,6 +1765,8 @@ static uint32_t autosave_sig(void)
         h = as_mix(h, &t->user, 1);                   /* ((2.0, #20) the user sound it is on: SKF4 holds it) */
         h = as_mix(h, t->step, sizeof t->step);
         h = as_mix(h, fm6_patch[i], sizeof fm6_patch[i]);
+        if (ncs[i].n)                                 /* ((#92) its notes' conditions; none: as before) */
+            h = as_mix(h, &ncs[i], 1u + 2u * ncs[i].n);
     }
     h = as_mix(h, dx_kit, sizeof dx_kit);             /* (phase 7) the DRUM-X kit */
     for (i = 0; i < G_COUNT; i++)                       /* ((Skiff U3) not the unit's CLOCK MIDI IN TUNE, ui.c) */

@@ -945,7 +945,7 @@ static int test_actions(void)
     bad += check("..OCT+ on it: NOTHING TO CLEAR, the octave stays", msg_is("NOTHING TO CLEAR") && song.octave == 1 &&
                  !ui.home);
     {
-        static uint8_t r[BK_REC];
+        static uint8_t r[BK_RX];
         bk_pack(r, t);
         pool_put(1, r);                           /* (02 kept, nothing using it) */
     }
@@ -9642,7 +9642,7 @@ static int test_song_chain(void)
 static int test_song_bars(void)
 {
     int bad = 0, ok;
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     uint32_t k, at, n;
     ui_power_on();
     song.playing = 0;
@@ -9681,7 +9681,7 @@ static int test_song_bars(void)
 static int test_song_shift(void)
 {
     int bad = 0, ok;
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     uint8_t l0[sizeof lists];
     smap_t m[12];
     ui_power_on();

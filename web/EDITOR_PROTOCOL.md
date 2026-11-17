@@ -762,7 +762,7 @@ this firmware sends 3. Requests name objects, never flash addresses.
 | 6, 7 | user preset banks (slots 1..16, 17..32) | the bank's size, or 0 if empty |
 | 8 | the FM6 patch bank of 1.0..1.0.2 (B1..B27). Since 1.0.3 always listed empty (see below); (2.0) `PUT` takes it only empty | 3472, or 0 if empty |
 | 9 | the user presets' FM6 patches (1.0.3; `up_fm6.c`: per slot a tag and the packed patch) | 3728, or 0 if none |
-| 16..31 | Skiff: the pattern bank (`bank.c`), chunk `id - 16`: a track's 4 patterns (track `(id - 16) / 4`, slots A..D, E..H, I..L, M..P), each 888 bytes. Phase 5: the pool, patterns `4 × (id - 16) + 1` to `+ 4` (01..64) | 3552, or 0 if all 4 are empty |
+| 16..31 | Skiff: the pattern bank (`bank.c`), chunk `id - 16`: a track's 4 patterns (track `(id - 16) / 4`, slots A..D, E..H, I..L, M..P), each 888 bytes. Phase 5: the pool, patterns `4 × (id - 16) + 1` to `+ 4` (01..64) | 3552, or 0 if all 4 are empty; (#92) 3812 when any of them holds per-note trig conditions |
 | 32..34 | user sample slots 1..3: header (512 bytes) then ADPCM data | 512 + data length, or 0 if empty |
 
 Reading: `BACKUP_LIST` (no arguments) stops the transport, then takes a snapshot of the runtime object and
@@ -781,7 +781,7 @@ objects). Skiff phase 5: ids 0 and 2..5 also take 1280 (SKF2) and 3840 (SKF1); a
 older format as SKF1. Phase 6: 2048 (SKF3) too, stored as it is. 2.0: 2560 (SKF4) too, stored as it is. `LIST` writes the tracks' patterns first, so the chunks hold what plays. When id 0 commits,
 the device converts the slots of older formats as at its first boot (patterns from their steps), so an archive
 from before phase 5 restores to SKF2 projects. A chunk restored drops what waited in RAM for its patterns, and a
-track on one of them keeps its steps as a new pattern when next kept. Skiff: ids 16..31 take 3552 or 0 (0 empties the chunk's 4 patterns); each pattern is checked (its version,
+track on one of them keeps its steps as a new pattern when next kept. Skiff: ids 16..31 take 3552, (#92) 3812, or 0 (0 empties the chunk's 4 patterns); 3812 is the 3552 and then each of the 4 patterns' per-note trig conditions, 65 bytes a pattern (a count, then 32 of `step, target << 4 | condition`: core.h `ncond_store_t`), which firmware before answers rc 1 at the begin, so the web editor sends the first 3552 alone; each pattern is checked (its version,
 every step as a project's, at most 64 motion records) and the chunk is written as a bank save writes it (a spare sector,
 its commit record last). Firmware without the bank answers rc 1 at their begin and writes nothing: the web editor
 skips them there, as it skips id 9 on firmware before 1.0.3.

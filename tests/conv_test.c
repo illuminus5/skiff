@@ -270,7 +270,7 @@ int main(int argc, char **argv)
     /* 1b. (2.0) an old project no free pattern can take (the archive's pool full): left as it is (SKF1, which a 2.0 unit
      * keeps whole: OLD FORMAT); conv.js reports it kept, "the patterns are full" (web/conv/conv_test.mjs) */
     {
-        static uint8_t r[BK_REC];
+        static uint8_t r[BK_RX];
         conv_reset();
         music(36);
         project_capture(&p);

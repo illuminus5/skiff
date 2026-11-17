@@ -1043,7 +1043,7 @@ static int takes(void)
     return bad;
 }
 
-/* Skiff trig conditions (core.h TC_*, seq.c step_cond_ok): A:B on pass A of every B of the track's loop, FILL and
+/* Skiff trig conditions (core.h TC_*, seq.c tc_ok): A:B on pass A of every B of the track's loop, FILL and
  * !FILL with GLO + F4 held (seq_fill); a step without one plays as before */
 static int cond_played(const track_t *t, uint32_t note)   /* the step just entered sounds this note */
 {
@@ -1258,7 +1258,7 @@ int main(void)
     bad += arp_new_modes();
     bad += lock_playback() + lock_edit() + lock_project() + lock_ui() + lock_undo() + auto_list();
     bad += takes();                                   /* Skiff: TAKES (take.c, ui_take.c) */
-    bad += conditions();                              /* Skiff: trig conditions (seq.c step_cond_ok) */
+    bad += conditions();                              /* Skiff: trig conditions (seq.c tc_ok) */
     bad += direction();                               /* Skiff: play direction (seq.c seq_next) */
     bad += feel();                                    /* Skiff: FEEL (seq.c feel_of) */
     bad += step_gates();                              /* Skiff: a step's own GATE (a lock) */

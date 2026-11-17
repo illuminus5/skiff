@@ -48,6 +48,7 @@ static void tl_undo_take(track_t *t, const char *name)
     undo.fm6_slot = fm6_slot[i];
     undo.pid = trk_pid[i];
     motion_snapshot_track(t, &undo.motion_backup);
+    undo_nc = ncs[i];
 }
 
 /* the layer's OCT- (SEQ TOOLS, REC): t's steps and automation as the undo copy of its first change holds them (the track
@@ -65,6 +66,7 @@ static int tl_put_back(track_t *t)
     tl_undo_take(t, "PUT BACK");
     s = undo_find(upin.pin);                            /* (it may have moved on in the ring) */
     memcpy(t->step, undo_ring[s].step, sizeof t->step);
+    nc_put(t, &undo_ncs[s]);
     if (motion_replace_track(t, &undo_ring[s].motion_backup))
         motion_full = 1;
     return 1;
@@ -105,6 +107,7 @@ static void tl_order(track_t *t, uint32_t len, const uint8_t *src)
             e->place = (uint16_t)(k << 6 | to[e->place & 63u]);
     }
     motion_unguard(f);
+    nc_drop(t, 0, len);                                 /* ((#92) its notes' conditions: gone with the move) */
 }
 
 /* (2.0, #25) REVERSE with notes that overlap: note by note on the edit copy (ui_input.c ed_open), each starting where
@@ -615,6 +618,7 @@ static void eu_close(track_t *t, int apply)
     eu.on = 0;
     if (apply) {
         tl_unlock(t, tl_used_of(eu_from, len), len);
+        nc_prune(t);                                    /* ((#92) a hit's condition gone with it) */
         return;
     }
     memcpy(t->step, eu_from, sizeof t->step);
@@ -683,6 +687,7 @@ static __attribute__((noinline)) uint32_t tl_double(track_t *t, uint32_t len)   
     uint32_t nl = tl_nl(len), i;
     for (i = len; i < nl; i++)
         t->step[i] = t->step[i - len];
+    nc_drop(t, len, nl);                               /* ((#92) none on the copy: the ones the steps there had go) */
     (void)tl_motion_plan(&m, t, len, nl, nl - len, len);
     (void)motion_replace_track(t, &m);
     t->p[P_SLEN] = (int16_t)nl;
@@ -753,6 +758,7 @@ static const char *tl_do(track_t *t, uint32_t p, uint32_t l)
     case TL_HALF:
         str_cpy(b, p == TL_DOUBLE ? "DOUBLED: " : "HALVED: ", sizeof b);
         fmt_int(b + str_len(b), (int32_t)(p == TL_DOUBLE ? tl_double(t, len) : tl_half(t, len)));
+        nc_prune(t);
         str_cpy(b + str_len(b), " STEPS", sizeof b - str_len(b));
         return b;                                       /* (nothing emptied inside the new LEN: no unlock) */
     case TL_BEAT:                                       /* four on the floor, the backbeat, 8th hats */
@@ -770,6 +776,11 @@ static const char *tl_do(track_t *t, uint32_t p, uint32_t l)
             tl_lane_clear(t, len, l);
             msg = " CLEARED";
         } else if (p == TL_LREV) {
+            ncond_store_t c = undo_nc;                  /* ((#92) the lane's hits' conditions mirror with them) */
+            for (i = 0; i < c.n; i++)
+                if (nc_tgt(&c.e[i]) == NC_LANE + l && c.e[i].at < len)
+                    c.e[i].at = (uint8_t)(len - 1u - c.e[i].at);
+            nc_put(t, &c);
             for (i = 0; i < len; i++) {
                 const step_t *s = &undo.step[len - 1u - i];
                 grid_hit(t, i, l, tl_lane(s, l));
@@ -789,5 +800,6 @@ static const char *tl_do(track_t *t, uint32_t p, uint32_t l)
         break;
     }
     tl_unlock(t, was, len);
+    nc_prune(t);                                        /* ((#92) a condition left on no note goes) */
     return msg;
 }

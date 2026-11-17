@@ -418,11 +418,35 @@ static void nudge_unpack(step_t *s, const uint8_t *b, uint32_t n)
         }
     }
 }
-/* Skiff: a step's trig condition (seq.c step_cond_ok): FILL / !FILL while GLO + F4 is held (or not), A:B on pass A of
+/* Skiff: a step's trig condition (seq.c tc_ok): FILL / !FILL while GLO + F4 is held (or not), A:B on pass A of
  * every B of its track's loop (take.c take_pass). Saved in bit 7 of the step's note bytes (project.c) */
 enum { TC_NONE, TC_FILL, TC_NFILL, TC_1_2, TC_2_2, TC_1_3, TC_2_3, TC_3_3, TC_1_4, TC_2_4, TC_3_4, TC_4_4, TC_COUNT };
 static const char *const TC_NAME[TC_COUNT] = {"--", "FILL", "!FILL", "1:2", "2:2", "1:3", "2:3", "3:3", "1:4", "2:4",
                                               "3:4", "4:4"};
+/* (Skiff, #92) FNV-1a over n bytes, continued from h (2166136261u: a new hash): project.c proj_hash and as_mix, ui.c
+ * track_sig, the editor's favorites signature */
+static uint32_t fnv(uint32_t h, const void *p, uint32_t n)
+{
+    const uint8_t *b = (const uint8_t *)p;
+    while (n--)
+        h = (h ^ *b++) * 16777619u;
+    return h;
+}
+/* (Skiff, #92) per-note trig conditions: a note or a lane's hit with a condition of its own (TC_FILL .. TC_4_4), beside
+ * the pattern's steps, not in them (step_t stays 13 bytes): up to NC_MAX a pattern, 2 bytes each (seq.c ncond.c).
+ * at: the step; tg: bits 0..3 the condition, bits 4..7 what it gates (NC_TG: 0..3 the step's note[k], NC_LANE + l lane
+ * l's hit). The note plays when the step's own condition and CHANCE pass and its own condition does. Stored as it is,
+ * after a pattern's record in RAM and after the payload of the bank's sectors (bank.c BK_NC), which firmware before
+ * reads past: there every note plays */
+#define NC_MAX 32u
+#define NC_LANE 4u
+#define NC_TG(g, c) ((uint8_t)((g) << 4 | (c)))
+typedef struct { uint8_t at, tg; } ncond_t;
+typedef struct { uint8_t n; ncond_t e[NC_MAX]; } ncond_store_t;
+#define NC_BYTES ((uint32_t)sizeof(ncond_store_t))
+_Static_assert(sizeof(ncond_store_t) == 1u + 2u * NC_MAX, "a per-note condition is 2 bytes");
+static uint32_t nc_cond(const ncond_t *e) { return e->tg & 15u; }
+static uint32_t nc_tgt(const ncond_t *e) { return e->tg >> 4; }
 typedef struct {                 /* a step as formats 1..4 (projects to FUN4) stored it: no hits */
     uint8_t note[4];
     uint8_t n, time, flags, vel;

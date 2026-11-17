@@ -12,7 +12,8 @@
  * Id 9 is the user presets' FM6 patches (up_fm6.c), appended in 1.0.3.
  * (Skiff) Ids 16..31 are the pattern bank's 16 chunks (bank.c, each 4 patterns; 0 bytes: all empty): a restore checks
  * every pattern, then writes the chunk as a save does (its commit record last). Firmware without the bank refuses them
- * (rc 1 at begin, nothing written): the web tool skips them there.
+ * (rc 1 at begin, nothing written): the web tool skips them there. (#92) A chunk holding notes' own trig conditions
+ * has them after it (BK_LEN + BK_NC_LEN); firmware before refuses that length, the web tool sends the chunk alone.
  */
 static const uint8_t ED_BK_IDS[29] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
                                       29, 30, 31, 32, 33, 34};
@@ -237,7 +238,8 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t n)
             ((a[1] == 6u || a[1] == 7u) && len && len != sizeof(up_bank_t)) ||
             (a[1] == 8u && len && (!FELUCCA_LEGACY || len != sizeof(fm6_bank_t))) ||   /* ((2.0) only empty: web/conv) */
             (a[1] == 9u && len && len != sizeof(upf_t)) ||
-            (ED_BK_BANK(a[1]) && len && len != BK_LEN)) return 1;
+            (ED_BK_BANK(a[1]) && len && len != BK_LEN && len != BK_LEN + BK_NC_LEN)) return 1;   /* ((#92) its notes'
+                                                         * conditions after it) */
         if (ed_flash_stop()) return 3;
         ed_bk_valid = 0; ed_bk_put = 1; ed_bk_id = a[1]; ed_bk_len = len; ed_bk_gen = ++proj_wire_gen;
         ed_bk_crc = ed_bk_r32(a + 7); ed_bk_pos = 0;

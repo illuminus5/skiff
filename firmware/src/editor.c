@@ -691,6 +691,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         st = &TSEL->step[a[0]];
         if (cmd == ED_STEP_SET && na >= 9u) {
             ed_step_put(st, a + 1, na - 1u);
+            nc_prune(TSEL);                                /* ((#92) a note's condition left on no note goes) */
         }
         ed_w.st[a[0]] = ed_step_sig(&TSEL->step[a[0]]);
         ed_b(a[0]);
@@ -986,8 +987,10 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         if (na < 2u || a[0] >= NTRK || a[1] >= NSTEP)
             return;
         st = &trk[a[0]].step[a[1]];
-        if (na >= 10u)
+        if (na >= 10u) {
             ed_step_put(st, a + 2, na - 2u);
+            nc_prune(&trk[a[0]]);
+        }
         if (a[0] == song.sel)
             ed_w.st[a[1]] = ed_step_sig(st);
         ed_b(a[0]);

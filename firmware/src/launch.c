@@ -35,6 +35,7 @@ typedef struct {
     step_t step[NSTEP];                            /* the pattern (after the swap: the one it replaced) */
     int16_t time[5];                               /* .. its LEN DIV SWING GATE DIR */
     motion_store_t motion;                         /* .. its automation and locks (place: the track's), its on bit */
+    ncond_store_t nc;                              /* .. (#92) its notes' own trig conditions */
 } launch_t;
 static launch_t launch_q[NTRK] __attribute__((section(".pool")));
 static motion_event_t launch_in[MOTION_MAX] __attribute__((section(".pool")));   /* (the swap's: off the ISR stack) */
@@ -159,6 +160,8 @@ static __attribute__((noinline)) void launch_swap(track_t *t)
             t->p[LAUNCH_TIME[i]] = q->time[i];
             q->time[i] = v;
         }
+        if (ncs[k].n || q->nc.n)                   /* ((#92) its notes' conditions) */
+            nc_swap(&ncs[k], &q->nc);
     }
     if (q->snd)
         esnd_put(t, &esnd[k]);                     /* ((2.0, #30) the entry's sound) */

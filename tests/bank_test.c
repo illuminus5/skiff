@@ -84,6 +84,7 @@ static void fresh(void)                           /* a new unit: flash erased, t
     memset(trk, 0, sizeof trk);
     memset(&ui, 0, sizeof ui);
     memset(&motion, 0, sizeof motion);
+    memset(ncs, 0, sizeof ncs);                   /* ((#92) no note's own conditions) */
     memset(proj_slot, 0, sizeof proj_slot);
     host_tracks_init();
     undo_clear();
@@ -201,7 +202,7 @@ static int fidelity(void)
     int bad = 0, ok;
     uint32_t e0;
     snap_t a, b, c;
-    static uint8_t r[BK_REC], r0[BK_REC];
+    static uint8_t r[BK_RX], r0[BK_RX];
     static step_t st[NSTEP];
     static motion_store_t ms;
     int16_t v[5];
@@ -240,7 +241,7 @@ static int fidelity(void)
     ok = !pat_read(0, r0) && keep_all() == 0 && erases_total() == e0;   /* (what was loaded, kept: the same, nothing) */
     motion_set_event(&trk[0], 2, P_REV, 9);       /* (refused: the pattern's own did not fit) */
     trk[0].step[1].vel ^= 1u;                     /* an edit: kept, the pattern's own automation with it */
-    ok &= !motion_count(&trk[0]) && keep_all() == 0 && !pat_decode(&trk[3], 0, st, v, &ms) &&
+    ok &= !motion_count(&trk[0]) && keep_all() == 0 && !pat_decode(&trk[3], 0, st, v, &ms, &(ncond_store_t){0}) &&
           st[1].vel == (a.step[1].vel ^ 1u) && ms.count == a.m.count;
     trk[0].step[1].vel ^= 1u;
     ok &= keep_all() == 0 && !pat_read(0, r) && !memcmp(r, r0, BK_REC);
@@ -265,7 +266,7 @@ static int fidelity(void)
 static int keep(void)
 {
     int bad = 0, ok;
-    static uint8_t r1[BK_REC], r2[BK_REC], r3[BK_REC], got[BK_REC], zero[BK_REC];
+    static uint8_t r1[BK_RX], r2[BK_RX], r3[BK_RX], got[BK_RX], zero[BK_RX];
     uint32_t e0, e;
     fresh();
     rich(1, 3);
@@ -324,7 +325,7 @@ static int entries(void)
     int bad = 0, ok;
     uint32_t i, a, b;
     track_t *t = &trk[0];
-    static uint8_t r[BK_REC], rb[BK_REC];
+    static uint8_t r[BK_RX], rb[BK_RX];
     static step_t st[NSTEP];
     static motion_store_t ms;
     int16_t v[5];
@@ -342,7 +343,7 @@ static int entries(void)
     bad += check("  .. the entry it is on naming another: the first empty one (B), the track on it; A as it was", ok);
     lists.ent[0][1][0] = (uint8_t)(a + 1u);       /* B made to name a (the SONG page's PATTERN), the track still on b */
     t->step[0].note[0] = 52;                      /* an edit */
-    ok = keep_all() == 0 && !pat_decode(t, b, st, v, &ms) && st[0].note[0] == 52 && !pat_decode(t, a, st, v, &ms) &&
+    ok = keep_all() == 0 && !pat_decode(t, b, st, v, &ms, &(ncond_store_t){0}) && st[0].note[0] == 52 && !pat_decode(t, a, st, v, &ms, &(ncond_store_t){0}) &&
          st[0].note[0] == 30;
     lists.ent[0][1][0] = (uint8_t)(b + 1u);
     bad += check("  an edit kept as the pattern the track is on (b), whatever its entry names now", ok);
@@ -367,7 +368,7 @@ static int entries(void)
     song.playing = 1;
     ok &= bank_switch(0, 0) == 4 && bank_next(0) == BK_NONE;
     song.playing = 0;
-    ok &= bank_put(0, 1, 0) == 0 && trk_pat(0) == b && !pat_decode(t, b, st, v, &ms) && st[0].note[0] == 70;
+    ok &= bank_put(0, 1, 0) == 0 && trk_pat(0) == b && !pat_decode(t, b, st, v, &ms, &(ncond_store_t){0}) && st[0].note[0] == 70;
     bad += check("  the pool full: new steps get no id (PATTERNS FULL: no switch, no SAVE into an empty entry, no project "
                  "save; the track stays on them); SAVE over a named entry goes", ok);
     ok = bank_put(0, 0, 1) == 0 && !pool_used(a) && pool_alloc() == a;
@@ -395,7 +396,7 @@ static int staged_all(void)
 {
     int bad = 0, ok;
     uint32_t k, b;
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     fresh();
     simple(0, 60, 4, DIR_FWD);
     ok = keep_all() == 0 && trk_pid[0] != 0u;     /* T1's steps: a pattern, its entry A */
@@ -436,7 +437,7 @@ static int last_track(void)
 {
     int bad = 0, ok;
     uint32_t k = NTRK - 1u, i, id, n = 0;
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     static step_t st[NSTEP];
     static motion_store_t ms;
     int16_t v[5];
@@ -454,7 +455,7 @@ static int last_track(void)
     ok = !pat_read(id, r) && (r[7] & 127u) == 1u;
     r[BK_MOT + 2u] = 200u;                            /* (its value: 200, 0) */
     r[BK_MOT + 3u] = 0u;
-    ok &= pat_keep_rec(id, r) == 0 && !pat_decode(&trk[k], id, st, v, &ms) && !ms.count && st[5].note[0] == 45u;
+    ok &= pat_keep_rec(id, r) == 0 && !pat_decode(&trk[k], id, st, v, &ms, &(ncond_store_t){0}) && !ms.count && st[5].note[0] == 45u;
     bad += check("  a record holding a value outside -64..127: its automation dropped, the steps load", ok);
     /* (Skiff phase 9) the motion's ids as a store of PROJ_NP has them (firmware before reads the record), unless the
      * motion names a parameter added since: then today's */
@@ -463,11 +464,11 @@ static int last_track(void)
     ok = motion_put(&trk[k], 3, P_E5, 20, MOTION_LOCK) == 0 && keep_all() == 0 && trk_pid[k] != 0u;
     id = trk_pid[k] - 1u;
     ok &= !pat_read(id, r) && r[1] == PROJ_NP && r[BK_MOT + 1u] == ((P_E5 - PROJ_ESHIFT) | MOTION_LOCK) &&
-          !pat_decode(&trk[k], id, st, v, &ms) && ms.count == 1u && (ms.event[0].id == P_E5 && ms.event[0].lock);
+          !pat_decode(&trk[k], id, st, v, &ms, &(ncond_store_t){0}) && ms.count == 1u && (ms.event[0].id == P_E5 && ms.event[0].lock);
     ok &= r[0] == BK_VER;
     bad += check("  (phase 9) a lock on E5: the record of 103 parameters (E5 at 100), back at today's P_E5", ok);
     ok = motion_put(&trk[k], 4, P_DTONE, -9, MOTION_LOCK) == 0 && keep_all() == 0 && trk_pid[k] == id + 1u;
-    ok &= !pat_read(id, r) && r[1] == P_COUNT && !pat_decode(&trk[k], id, st, v, &ms) && ms.count == 2u;
+    ok &= !pat_read(id, r) && r[1] == P_COUNT && !pat_decode(&trk[k], id, st, v, &ms, &(ncond_store_t){0}) && ms.count == 2u;
     for (i = n = 0; i < ms.count; i++)
         n += (ms.event[i].id == P_E5 && ms.event[i].lock) || (ms.event[i].id == P_DTONE && ms.event[i].lock);
     bad += check("  .. and one on DRIVE's TONE (phase 9's): the record of today's ids, both back", ok && n == 2u);
@@ -526,7 +527,7 @@ static int wear_and_wrap(void)
     int bad = 0, ok = 1;
     uint32_t i, most = 0;
     snap_t a, b;
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     fresh();
     for (i = 0; i < BK_CHUNKS; i++) {              /* a full bank: every chunk has a copy, 4 sectors spare */
         rich(0, i);
@@ -917,7 +918,7 @@ static int song_test(void)
     int bad = 0, ok;
     uint32_t i;
     track_t *t = &trk[0];
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     fresh();
     ui_launch = LAUNCH_LOOP;                      /* (a launch's: at the pass end) */
     simple(0, 30, 4, DIR_FWD);                    /* T1: A 4 steps (30..) x2, B 2 (50..), C empty, D 3 (70..) x3 */
@@ -1383,7 +1384,7 @@ static int migrate(void)
     static uint8_t before[sizeof nor];
     static project_t pj, got;
     static project_store_t w, ref;
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     snap_t a[NTRK], b;
     fresh();
     rich(0, 5);                                   /* T1 every field; T2 the same pattern (on its own track); T3 empty; */
@@ -1572,7 +1573,7 @@ static int song_chain(void)
 {
     int bad = 0, ok;
     uint32_t a, b;
-    static uint8_t r1[BK_REC], r2[BK_REC];
+    static uint8_t r1[BK_RX], r2[BK_RX];
     fresh();
     ui_launch = LAUNCH_LOOP;
     simple(0, 30, 2, DIR_FWD);                    /* T1: A 2 steps (30..) on CHAIN into B 3 (50..); C 2 (70..) */
@@ -1644,11 +1645,93 @@ static int song_chain(void)
     return bad;
 }
 
+/* (#92) the notes' own trig conditions (core.h NC_*): kept with their pattern in its sector's last bytes (bank.c BK_NC)
+ * and back whole over a power cycle; the record and the commit record as firmware before reads them (it plays every
+ * note); none: the sector's last bytes erased, as before; a block whose hash fails passes over (the pattern loads
+ * without them); one on no note not kept; a switch while playing brings the incoming pattern's */
+static int nconds(void)
+{
+    int bad = 0, ok;
+    uint32_t id, c, s, i, any, sig;
+    static uint8_t r[BK_RX], r0[BK_RX];
+    int16_t tv[5];
+    bk_hdr_t h;
+    track_t *t = &trk[1];
+    fresh();
+    simple(1, 60, 8, DIR_FWD);
+    t->step[0] = (step_t){{60, 64}, 2, ST_NOTE, 0, 100};
+    t->step[4] = (step_t){{0}, 0, ST_NOTE, 0, 100, 0x81};
+    for (i = 0; i < 5u; i++)
+        tv[i] = t->p[BK_TIME[i]];
+    ok = bk_pack_raw(r0, 1, t->step, tv, &motion, motion_enabled(t), 0);   /* (the pattern without them) */
+    ok &= nc_set(t, 0, 1, TC_1_2) == 0 && nc_set(t, 4, NC_LANE + 7u, TC_FILL) == 0 && bank_put(1, 5, 0) == 0;
+    id = ent_pat(1, 5);
+    c = bk_chunk(id);
+    s = bk_sector(bk.sect[c] - 1u);
+    ok &= ((bk.nc >> c) & 1u) && bk_head(bk.sect[c] - 1u, &h) == 0 && h.rsv[1] == BK_NC_MAGIC &&
+          h.rsv[0] == proj_hash(nor + s + BK_NC, BK_NC_LEN) && h.len == BK_LEN &&
+          !memcmp(nor + s + 256u + id % BK_PER * BK_REC, r0, BK_REC);
+    bad += check("(#92) notes' conditions in the sector's last bytes, their hash in the commit record; the record as "
+                 "without them", ok);
+    power_cycle();
+    detach(1);
+    memset(ncs, 0, sizeof ncs);
+    ok = ent_go(1, 5) == 0 && ncs[1].n == 2u && nc_get(t, 0, 1) == TC_1_2 && nc_get(t, 4, NC_LANE + 7u) == TC_FILL &&
+         nc_get(t, 0, 0) == TC_NONE;
+    bad += check("  over a power cycle: back with their pattern, each on its note or hit", ok);
+    sig = autosave_sig();
+    ok = nc_set(t, 0, 0, TC_2_2) == 0 && autosave_sig() != sig;   /* (the steps as they were: only the condition new) */
+    for (i = 0; i < 8u && keep_poll() == 1; i++)
+        ;
+    ok &= !pat_read(ent_pat(1, 5), r) && r[BK_REC] == 3u;
+    (void)nc_set(t, 0, 0, TC_NONE);
+    bad += check("  a condition changed and nothing else: something an autosave keeps, written by its round",
+                 ok && autosave_sig() == sig);
+    (void)nc_set(t, 0, 1, TC_NONE);
+    (void)nc_set(t, 4, NC_LANE + 7u, TC_NONE);
+    ok = bank_put(1, 5, 0) == 0;
+    s = bk_sector(bk.sect[c] - 1u);
+    for (any = 0, i = BK_NC; i < 4096u; i++)
+        any |= nor[s + i] != 0xFFu;
+    ok &= bk_head(bk.sect[c] - 1u, &h) == 0 && h.rsv[0] == 0xFFFFFFFFu && h.rsv[1] == 0xFFFFFFFFu;
+    bad += check("  none left: the sector's last bytes and the commit record's rsv erased, byte for byte as before",
+                 ok && !any && !((bk.nc >> c) & 1u));
+    (void)nc_set(t, 0, 1, TC_1_2);
+    ok = bank_put(1, 5, 0) == 0;
+    s = bk_sector(bk.sect[c] - 1u);
+    nor[s + BK_NC + id % BK_PER * NC_BYTES + 1u] ^= 0x10u;   /* (a bit of its step byte gone wrong) */
+    power_cycle();
+    detach(1);
+    memset(ncs, 0, sizeof ncs);
+    ok &= ent_go(1, 5) == 0 && !ncs[1].n && t->step[0].n == 2u && t->step[4].hit == 0x81u;
+    bad += check("  a block whose hash fails: passed over, the patterns load without them", ok);
+    (void)nc_set(t, 0, 1, TC_1_2);
+    t->step[0].n = 1;                             /* (E4 gone, not through an edit) */
+    ok = bank_put(1, 5, 0) == 0 && !pat_read(ent_pat(1, 5), r) && r[BK_REC] == 0u;
+    bad += check("  one on no note (its note gone): not kept", ok);
+
+    fresh();
+    simple(0, 80, 8, DIR_FWD);                    /* C: 8 steps, its step 1's note on 2:2 */
+    (void)nc_set(&trk[0], 0, 0, TC_2_2);
+    bank_put(0, 2, 0);
+    memset(ncs, 0, sizeof ncs);
+    lv_start(LAUNCH_LOOP);                        /* (W: none) */
+    lv_next(5);
+    ok = bank_switch(0, 2) == 0 && !ncs[0].n;
+    lv_next(7);
+    ok &= launch_q[0].done && sounds(80) && ncs[0].n == 1u && nc_get(&trk[0], 0, 0) == TC_2_2 && !launch_q[0].nc.n;
+    bad += check("  a switch while playing: the pattern coming in brings its own, the one going out keeps none", ok);
+    transport_req = 2;
+    events_block(1);
+    bank_poll();
+    return bad;
+}
+
 int main(void)
 {
     int bad = layout() + fidelity() + keep() + entries() + staged_all() + last_track() + torn() + wear_and_wrap() +
               playing() + live() + scenes() + scenes_six() + song_test() + song_six() + song_rest() + song_once() +
-              song_chain() + song_sound() + song_same() + song_next_edit() + migrate() + dx_kit_project();
+              song_chain() + song_sound() + song_same() + song_next_edit() + migrate() + dx_kit_project() + nconds();
     printf("%s\n", bad ? "BANK TEST FAILED" : "pattern bank tests passed");
     return bad != 0;
 }

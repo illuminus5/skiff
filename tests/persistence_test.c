@@ -415,7 +415,7 @@ static int autosave_test(void)
         static motion_store_t ms4;
         int16_t v4[5];
         bad += check("  .. the patterns kept all the same (T4's new steps a pattern, written)", pool_erases == w + 1u &&
-                     bank_used(7u % NTRK, 0) && !pat_decode(&trk[7u % NTRK], ent_pat(7u % NTRK, 0), st4, v4, &ms4) &&
+                     bank_used(7u % NTRK, 0) && !pat_decode(&trk[7u % NTRK], ent_pat(7u % NTRK, 0), st4, v4, &ms4, &(ncond_store_t){0}) &&
                      !memcmp(st4, trk[7u % NTRK].step, sizeof st4));
     }
     ui_prefs &= (uint8_t)~PREF_RESTORE_OFF;
@@ -895,7 +895,7 @@ int main(void)
         bad += check("successful project save publishes new RAM (the tracks' patterns kept first)", !strcmp(ui.msg, "SAVED") &&
                       proj_import(&proj_scratch, &proj_slot[0], sizeof proj_slot[0]) && proj_scratch.g[G_BPM] == 140 &&
                       proj_ok(&proj_scratch) && proj_scratch.ent[0][0][0] == ent_pat(0, 0) + 1u &&
-                      !pat_decode(&trk[0], ent_pat(0, 0), st0, v0, &ms0) && st0[0].note[0] == 72u);
+                      !pat_decode(&trk[0], ent_pat(0, 0), st0, v0, &ms0, &(ncond_store_t){0}) && st0[0].note[0] == 72u);
     }
     before = erases;
     transport_req = 1;

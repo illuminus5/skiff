@@ -44,6 +44,10 @@
 # RATCH (tests/ratchet_test.c): a step's ratchet (x1..x4): its parts in the sequencer (equal, gated, chords and drum
 #                   hits whole, one chance roll, swing, no slide or tie out, STOP), FUN8 round trip and older projects x1,
 #                   user preset patterns, SEQ > CHANCE KNOB 3 and the roll / grid drawing.
+# NCOND (tests/ncond_test.c): (#92) per-note trig conditions: a chord's notes on conditions of their own (one pattern
+#                   alternating), with the step's own, FILL, RATCH, a preview, a DRUM lane's hits; FEEL's KNOB 1 on the
+#                   picked notes, SHIFT + KNOB 1 on the LANE card's lane, one undo; PITCH START DELETE COPY PASTE REVERSE
+#                   DOUBLE HALF keep them on their notes; NC_MAX a pattern, NOTE CONDS FULL. Their store: bank_test.
 # TIES (tests/ties_test.c): (2.0, #25) per-note ties: a note going on while another starts (one note-on each, the
 #                   held one ending where a TIE chain's would), a miss, a tie never starting a note, MONO, RATCH, STOP;
 #                   the 9-byte step's byte 7 and the record's version 3 (1.4 reads 1 and 2).
@@ -289,6 +293,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "RATCH: x1..x4 in a step (notes, chords, drum hits), gates, chance, swing, projects (the converter's build), user presets, CHANCE page; FLAM" "$OUT/ratchet_test"
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/ties_test" tests/ties_test.c -lm
     run "2.0 TIES (#25): notes going on while others start, a miss, a tie never starts a note, MONO, RATCH, STOP; record version 3" "$OUT/ties_test"
+    $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/ncond_test" tests/ncond_test.c -lm
+    run "(#92) per-note trig conditions: a chord alternating, with the step's own, RATCH, lanes; FEEL's KNOB 1 on picked notes, SHIFT + KNOB 1 on a lane; the edits; NC_MAX" "$OUT/ncond_test"
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_control_test" tests/midi_control_test.c -lm
     run "USB/TRS clock, bend, sustain, ownership and panic recovery" "$OUT/midi_control_test"
     $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_out_test" tests/midi_out_test.c -lm
