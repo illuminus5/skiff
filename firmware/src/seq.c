@@ -1123,6 +1123,7 @@ static void kb_outer(void)
     int32_t e;
     while ((e = smk_extkey_take()) >= 0) {
         uint32_t bed = (uint32_t)e >> 8, k = bed < 5u ? bed + 27u : bed;
+        CAST(cast_rec('X', (uint32_t)e, fm1_in.buttons));   /* (Skiff Studio: the event, the buttons it saw) */
         if (k < 27u || k >= KB_N)
             continue;
         if (e & 0xFF) {
@@ -1158,6 +1159,11 @@ static __attribute__((noinline)) void keyboard_block(void)
     if (!ch)
         return;
     CAST(cast_rec('N', cur, fm1_in.buttons));    /* (Skiff Studio: the keys and buttons this block sees) */
+#if BOARD_SMK37 && FELUCCA_CAST
+    for (k = 0; cast.on == 1u && k < 27u; k++)    /* (.. and the velocity of each key struck: KB_VEL) */
+        if ((ch & cur) >> k & 1u)
+            cast_rec('V', k, fm1_in.key_vel[kb_bed(k)]);
+#endif
     if (kb_boot_hold) {                           /* #137: under the splash; their release is silent too */
         for (k = 0; k < 27u; k++)
             if ((ch & cur) >> k & 1u)

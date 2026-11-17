@@ -13,7 +13,10 @@
  * checked: the main loop as the unit's (a frame at each F with its readings and takes, drawn with the audio run to
  * its pieces' stamps; ui_input passes between frames at the takes' blocks, idle ones at each ms and after each audio
  * half); the audio ISR's records (N keys, M MIDI, o overflow, s shed) at their block. A half's length and the unit's
- * ms boundaries are estimated as the records come (the replayer fits them over a whole recording). */
+ * ms boundaries are estimated as the records come (the replayer fits them over a whole recording).
+ * -DBOARD_SMK37=1 (felucca_cast_smk.wasm): an SMK-37 Pro's cast (B's CAST_SMK layout): its T and U, the outer keys (X)
+ * and the velocities (V) at their block, the pads' taps (D) and the faders, wheels and pedal (A) for its frame's
+ * smk_ui_frame; its wheels' MIDI comes as the unit's M records (SMK_MIDI_PUT: none of the copy's own). */
 #ifndef FELUCCA_CAST
 #define FELUCCA_CAST 1
 #endif
@@ -29,6 +32,7 @@ static void cf_read(void);
 #define GFX_HOOK_BEGIN() cf_piece()                 /* gfx.c cv_begin: a piece of the frame begins */
 #define GFX_HOOK_PIXELS(n) ((void)0)
 #define CAST_READ() cf_read()                       /* ui_graph.c's scope reads the sound: a piece too (layout 4) */
+#define SMK_MIDI_PUT(pkt) ((void)(pkt))             /* (SMK: the wheels' MIDI, the unit's M records instead) */
 #include "felucca_web.c"
 /* the editor's SysEx (editor.c) as the unit runs it, behind the web build (no USB): at each R, the page's frame of
  * that request through ed_service, so the copy changes what the unit changed (after the Learn build's edlink.h) */
@@ -72,6 +76,7 @@ static uint32_t cf_pt, cf_pb;                       /* the last record's raw tic
 static uint64_t cf_lt, cf_lb, cf_bt, cf_bb;         /* the last record's unwrapped ticks and blocks; B's */
 static int cf_seen, cf_booted;
 static uint32_t cf_ver;                             /* B's layout: 3 F's CPU load and P, 4 C's sound and the scope's P */
+static uint32_t cf_board_off;                       /* 1: B's board isn't this copy's (CAST_SMK), nothing replayed */
 static uint32_t n_frames, n_frames_off, n_chk, n_chk_off, n_late, n_shed, n_req, n_req_lost, n_req_missing;
 /* the page's requests, as it sent them after the cast's start (cf_req_push): each runs here at its R */
 typedef struct { uint16_t n; uint8_t b[700]; } cf_frame_t;
@@ -111,7 +116,7 @@ static void half(void)
     drain();
 }
 static int is_take(uint32_t ty) { return ty == 'T' || ty == 'U' || ty == 'K'; }
-static int is_isr(uint32_t ty) { return ty == 'N' || ty == 'M' || ty == 's' || ty == 'o'; }
+static int is_isr(uint32_t ty) { return ty == 'N' || ty == 'M' || ty == 's' || ty == 'o' || ty == 'X' || ty == 'V'; }
 static uint32_t pass_of(const cf_rec_t *r) { return r->ty == 'T' ? r->w[3] >> 27 : r->ty == 'K' ? (r->w[2] >> 8) & 31u : 99u; }
 /* (core.h CAST_BLOCK) the unit's ISR records of this block */
 static void web_cast_block(void)
@@ -135,6 +140,19 @@ static void web_cast_block(void)
             mi_w++;
         } else if (r->ty == 'o')
             midi_in_overflow = 1;
+#if BOARD_SMK37
+        else if (r->ty == 'X') {                    /* (seq.c kb_outer takes it from the queue, as the scan put it) */
+            uint32_t e = r->w[2] & 0xFFFFu, bed = e >> 8;
+            if ((e & 0xFFu) && bed < 37u)
+                fm1_in.key_vel[bed] = (uint8_t)e;
+            fm1_in.buttons = r->w[3];
+            smk_extq[smk_extq_w] = (uint16_t)e;
+            smk_extq_w = (uint8_t)((smk_extq_w + 1u) % SMK_EXTQ);
+        } else if (r->ty == 'V') {
+            if (r->w[2] < 27u)
+                fm1_in.key_vel[kb_bed(r->w[2])] = (uint8_t)r->w[3];
+        }
+#endif
         else {
             n_shed++;
             pend_shed = 1;                          /* (s: put before the half's blocks: at the last one's count) */
@@ -174,16 +192,26 @@ static void advance(const cf_rec_t *r)
 }
 static void apply_take(const cf_rec_t *r)
 {
+#if BOARD_SMK37
+    if (r->ty == 'T') {                             /* (18 buttons: what they did in U) */
+        fm1_in.buttons = r->w[2] & 0x3FFFFu;
+        fm1_in.notes = r->w[3] & 0x7FFFFFFu;
+    } else if (r->ty == 'U') {
+        web_notes_pressed |= r->w[2];
+        web_pressed |= r->w[3] & 0x3FFFFu;
+    }
+#else
     if (r->ty == 'T') {
         fm1_in.buttons = r->w[2] & 0x3FFFu;
         web_pressed |= (r->w[2] >> 14) & 0x3FFFu;
         fm1_in.notes = r->w[3] & 0x7FFFFFFu;
     } else if (r->ty == 'U')
         web_notes_pressed |= r->w[2];
+#endif
     else if (r->ty == 'K') {
         uint32_t role = r->w[2] & 0xFFu;
         if (role < NE)
-            web_enc_steps[panel.enc[role] % 7u] += (int32_t)r->w[3] * panel.dir[role];
+            web_enc_steps[panel.enc[role] % FM1_NENC] += (int32_t)r->w[3] * panel.dir[role];
     }
 }
 
@@ -278,6 +306,22 @@ static uint32_t cf_frame(uint32_t i)
         }
     felucca_dbg.ui_frames++;
     ui_input();
+#if BOARD_SMK37
+    for (j = i + 1; j < cf_nr && cf_r[j].ty != 'e' && cf_r[j].ty != 'F'; j++)
+        if (cf_r[j].ty == 'A') {                    /* (smk_ui_frame's reading) */
+            uint32_t a = cf_r[j].w[2], w = cf_r[j].w[3], f;
+            for (f = 0; f < 4u; f++)
+                fm1_in.fader[f] = (uint8_t)(a >> (7u * f) & 127u);
+            fm1_in.frames = (a >> 28 & 1u) ? 300u : 0u;
+            fm1_in.wheel[0] = (uint16_t)(w & 1023u);
+            fm1_in.wheel[1] = (uint16_t)(w >> 10 & 1023u);
+            fm1_in.pedal = (uint16_t)(w >> 20 & 1023u);
+        } else if (cf_r[j].ty == 'D') {             /* (its taps, as smk_padq_take gave them) */
+            smk_padq[smk_padq_w] = (uint16_t)cf_r[j].w[2];
+            smk_padq_w = (uint8_t)((smk_padq_w + 1u) % SMK_PADQ);
+        }
+    smk_ui_frame();
+#endif
     settings_poll();
     autosave_poll();
     ui_leds();
@@ -312,7 +356,8 @@ static void cf_boot(void)
         half();
     set_clock(B->t);
     fm1_ms = B->w[2];
-    cf_ver = (B->w[3] >> 24) & 0x7Fu;
+    cf_ver = (B->w[3] >> 24) & 0x3Fu;
+    cf_board_off = ((B->w[3] >> 30) & 1u) != (uint32_t)BOARD_SMK37;   /* (CAST_SMK: the editor picked another copy) */
     master_knob = (int32_t)(B->w[3] & 0xFFFFFFu);
     song.master_q12 = master_of_pot((uint32_t)(master_knob / 16));
     kb_boot_hold = 0;                               /* (main.c after cast_boot_hold) */
@@ -397,6 +442,8 @@ EXPORT uint32_t cf_run(void)
             return 0;
         cf_boot();
     }
+    if (cf_board_off)
+        return 0;
     while (cf_ri < cf_nr) {
         const cf_rec_t *r = &cf_r[cf_ri];
         uint32_t j, k, ps;
@@ -444,10 +491,10 @@ EXPORT uint32_t cf_run(void)
 }
 /* 0 booted, 1 frames replayed, 2 of them unlike the unit's, 3 checks of the music and UI, 4 of them unlike, 5 records
  * waiting, 6 ISR records taken late, 7 voices shed, 8 editor requests handled (R), 9 the second core (B), 10 the
- * page's requests the unit never took, 11 Rs the page's log didn't have */
+ * page's requests the unit never took, 11 Rs the page's log didn't have, 12 the unit is another board (B) */
 EXPORT uint32_t cf_stat(uint32_t k)
 {
-    const uint32_t v[12] = {(uint32_t)cf_booted, n_frames, n_frames_off, n_chk, n_chk_off, cf_nr - cf_ri, n_late,
-                            n_shed, n_req, cf_c1, n_req_lost, n_req_missing};
-    return k < 12u ? v[k] : 0u;
+    const uint32_t v[13] = {(uint32_t)cf_booted, n_frames, n_frames_off, n_chk, n_chk_off, cf_nr - cf_ri, n_late,
+                            n_shed, n_req, cf_c1, n_req_lost, n_req_missing, cf_board_off};
+    return k < 13u ? v[k] : 0u;
 }

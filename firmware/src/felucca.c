@@ -52,8 +52,7 @@
 #error "FELUCCA_OTA needs FELUCCA_FLASH"
 #endif
 #ifndef FELUCCA_CAST
-#define FELUCCA_CAST (FELUCCA_OTA && !BOARD_SMK37)   /* (Skiff Studio) the cast (cast.c): the FM-1's (the SMK's keybed,
-                                                      * pads, faders and wheels are not in it yet) */
+#define FELUCCA_CAST FELUCCA_OTA     /* (Skiff Studio) the cast (cast.c); the SMK-37's own controls too (X V D A) */
 #endif
 #ifndef FELUCCA_CPU2
 #define FELUCCA_CPU2 1           /* (Skiff 1.3, as Felucca 1.6.1) 1: the second core is built in and renders some tracks when

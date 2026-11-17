@@ -567,7 +567,8 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                                                          * EMPTY, CLEAR UNUSED (editor_song.c; last: an editor before
                                                          * reads up to 49 01 only) */
 #if FELUCCA_CAST
-            0x59, 1, 1,                                 /* (Skiff Studio) the cast, cmd 83 (cast.c) */
+            0x59, 1, 1u | (BOARD_SMK37 ? 2u : 0u),     /* (Skiff Studio) the cast, cmd 83 (cast.c); bit 1: the SMK-37's
+                                                         * layout (its copy: felucca_cast_smk.wasm) */
 #endif
         };
         ed_str("FELUCCA " FELUCCA_VERSION, 24);

@@ -1141,7 +1141,8 @@ bus reset (send `INFO` and `WATCH` again after reconnecting), and a backup in pr
 The cast lets a copy of Skiff in the browser (the web build, as Try Skiff) follow the unit exactly: the unit sends
 what its main loop and its audio ISR take, stamped, and the copy does the same at the same moments, so it draws the
 same screen and plays the same sound (`firmware/src/cast.c`; the copy: `web/emu/cast_follow.c`).
-FM-1 builds only for now (`FELUCCA_CAST`); INFO advertises `59 01 01`. Firmware without the tag answers no 83.
+FM-1 and SMK-37 builds (`FELUCCA_CAST`); INFO advertises `59 01 01` (an FM-1) or `59 01 03` (bit 1: an SMK-37 Pro, its
+layout below). Firmware without the tag answers no 83.
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
@@ -1167,6 +1168,22 @@ samples) | the record's type << 24, `w2` and `w3` its own:
 | `C` check | a hash of the music and the UI, (layout 4) the last 512 samples of the sound (the scope's, oldest first, FNV-1a \| 1; 0: the audio ran since the `F`, not taken) | once a second, after an `F` |
 | `s`, `o` | - | the audio shed a voice (CPU load); MIDI IN overflowed |
 
+**The SMK-37's layout** (`B`'s layout | 0x40, INFO's bit 1): its 18 buttons don't fit `T`'s 14, and its own controls
+have records of their own.
+
+| type | `w2`, `w3` | put |
+| --- | --- | --- |
+| `T` take | buttons, keys \| the pass << 27 | as the FM-1's |
+| `U` struck | the keys struck it took, the buttons pressed it took | after a `T`, when it took either |
+| `X` outer key | the outer-key event (keybed key << 8 \| velocity, 0 = release), buttons | the audio ISR took it (seq.c `kb_outer`) |
+| `V` velocity | key (0..26), its velocity | after an `N`, each key struck |
+| `D` pad | the step tap (pad << 8 \| velocity, 0 = let go) | smk_ui_frame took it |
+| `A` analog | faders 1..4 (7 bits each) \| settled << 28, the wheels \| the pedal << 20 (10 bits each) | smk_ui_frame read them changed (the first frame always) |
+
+The copy (`felucca_cast_smk.wasm`, the same `cast_follow.c` with `-DBOARD_SMK37=1`) applies `X` and `V` at their block,
+`A` and `D` before its frame's `smk_ui_frame`; the wheels' and the pedal's MIDI comes as the unit's `M` records. K1 (the
+MASTER) is `F`'s MASTER reading.
+
 `seq` 127 instead: the device's ring (64 records) overflowed and the cast stopped; start it again (and resync). The
 device sends between frames and between the pieces of a frame's drawing, about three records at a time.
 
@@ -1186,7 +1203,7 @@ sends after its `CAST 1` frame (the unit takes those with the cast on, each with
 logged frame of the `R`'s command (earlier ones never reached the unit) through the unit's own `editor.c`, in a frame
 before its panel read, else in the wait loop: what the page changes, the copy changes too.
 
-The copy is the editor's Screen tab (`web/editor.html`): `felucca_cast.wasm`, built by `web/emu/build.sh` from
+The copy is the editor's Screen tab (`web/editor.html`): `felucca_cast.wasm` (`felucca_cast_smk.wasm` for an SMK-37), built by `web/emu/build.sh` from
 `web/emu/cast_follow.c` (the web build with `editor.c` and `cast.c`), fed the records and the page's frames as they come
 (`web/emu/cast_test.mjs` feeds it a recording the same way).
 
