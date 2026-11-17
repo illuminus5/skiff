@@ -255,11 +255,50 @@
   /* (Skiff Studio) the Screen tab: the FM-1's 240 x 240 screen as large as the page allows, sharp pixels; tap: full */
   #scr-status { color: var(--dim); margin-left: 6px; }
   #scr-status.bad { color: var(--rec); }
-  #scr-wrap { display: grid; place-items: center; margin-top: 8px; }
-  #scr-screen { width: min(100%, calc(100vh - 220px)); min-width: 240px; aspect-ratio: 1; background: black;
+  #scr-wrap { display: grid; place-items: center; margin-top: 8px; position: relative; }
+  /* (2.7) #scr-dev: the screen alone (--ar 1) or inside the panel's drawing (.ctl, --ar its width / height: ../panel.js,
+     as Try Skiff's), as large as the page allows, or the display in full screen */
+  #scr-dev { --ar: 1; position: relative; width: min(100%, calc((100vh - 220px) * var(--ar))); min-width: 240px;
+             aspect-ratio: var(--ar); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+             --body: #1d1d1f; --tray: #141415; --part: #2a2a2d; --edge: #3a3a3e; --label: #d6d6d8; --lit: #fff4d6; --green: #5fe08a; }
+  #scr-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #scr-screen { position: absolute; inset: 0; width: 100%; height: 100%; background: black;
                 image-rendering: pixelated; border-radius: 6px; cursor: zoom-in; }
+  #scr-dev.ctl #scr-screen { inset: auto; border-radius: 0; cursor: default; }
   #scr-wrap:fullscreen { background: black; }
-  #scr-wrap:fullscreen #scr-screen { width: min(100vw, 100vh); border-radius: 0; cursor: zoom-out; }
+  #scr-wrap:fullscreen #scr-dev { width: min(100vw, calc(100vh * var(--ar))); }
+  /* (the screen alone: as large as the display, but clear of the exit's corner on a near-square one) */
+  #scr-wrap:fullscreen #scr-dev:not(.ctl) { width: min(100vw, 100vh, max(100vh - 80px, 100vw - 240px)); }
+  #scr-wrap:fullscreen #scr-screen { border-radius: 0; cursor: zoom-out; }
+  #scr-wrap:fullscreen #scr-dev.ctl #scr-screen { cursor: default; }
+  #scr-exit { display: none; position: absolute; top: 8px; right: 8px; }
+  #scr-wrap:fullscreen #scr-exit { display: block; }
+  /* (the tall drawing can reach the top on a tablet held upright: the exit goes over MASTER, a knob not turned here) */
+  #scr-dev.tall ~ #scr-exit { right: auto; left: 8px; }
+  #scr-dev .hit { position: absolute; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent; border-radius: 10px; }
+  #scr-dev .hit.knob { cursor: ns-resize; border-radius: 50%; }
+  #scr-dev .hit:focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
+  #scr-dev .face { transition: fill .05s; }
+  #scr-dev .dim .face.btn { fill: #3a3934; }
+  #scr-dev .lit .face.btn { fill: var(--lit); }
+  #scr-dev .lit text { fill: #1d1d1f; }
+  #scr-dev .green .face.btn { fill: var(--green); }
+  #scr-dev .green text { fill: #0d2414; }
+  #scr-dev .face.key { fill: #0c0c0d; stroke: var(--edge); stroke-width: 1.5; }
+  #scr-dev .slit { fill: #3a3a3c; transition: fill .05s; }
+  #scr-dev .dim .slit { fill: #77777b; }
+  #scr-dev .lit .slit { fill: #ececee; filter: drop-shadow(0 0 3px rgba(255, 255, 255, .6)); }
+  #scr-dev .mid .slit { fill: #9a9a9e; }
+  #scr-dev .breath .face.btn { animation: scr-breath-btn 1.13s ease-in-out infinite; }
+  #scr-dev .breath .slit { animation: scr-breath-slit 1.13s ease-in-out infinite; }
+  @keyframes scr-breath-btn { 0%, 100% { fill: #3a3934; } 50% { fill: #d8cfb6; } }
+  @keyframes scr-breath-slit { 0%, 100% { fill: #3a3a3c; } 50% { fill: #c8c8ca; } }
+  @media (prefers-reduced-motion: reduce) {
+    #scr-dev .breath .face.btn { animation: none; fill: #aca592; }
+    #scr-dev .breath .slit { animation: none; fill: #a1a1a3; }
+  }
+  #scr-dev .held .face { stroke: var(--lit); stroke-width: 3; }
+  #scr-dev .latched .face { stroke: #79b8ff; stroke-width: 3; }
   /* ((Skiff 2.2) the sequencer as a DAW's: a piano roll (or the drum lanes) over the steps, a controller lane under it
      (velocity, chance, nudge, ratchet) drawn with the mouse, the picked step's knobs beside; the table stays below) */
   .sqtool { margin: 4px 0 6px; }
@@ -422,6 +461,7 @@
     <div class="groups" id="seqgroups"></div>
     <div id="steps">
       <h2 data-t="steps" data-ic="note_eight"></h2>
+      <p class="dim" id="sqwhere" hidden></p>
       <p class="bar sqtool"><span class="seg" id="sqview" role="group"><button type="button" data-v="roll" data-t="sqRoll"
         data-ic="symbol_keyboard"></button><button type="button" data-v="drum" data-t="sqDrum" data-ic="symbol_grid"></button></span>
         <label><span data-t="sqZoom"></span> <input type="range" id="sqzoom" min="12" max="64" step="1"></label>
@@ -557,8 +597,13 @@
     <h2 data-t="scrTitle" data-ic="symbol_eye"></h2>
     <p class="dim" data-t="scrHelp"></p>
     <p class="bar"><button id="scr-start" data-t="scrStart"></button> <button id="scr-stop" data-t="scrStop" disabled></button>
+      <button id="scr-full" data-t="scrFull"></button>
+      <label><input type="checkbox" id="scr-ctl"> <span data-t="scrCtl"></span></label>
       <span id="scr-status" role="status" aria-live="polite"></span></p>
-    <div id="scr-wrap"><canvas id="scr-screen" width="240" height="240"></canvas></div>
+    <p class="dim" id="scr-keys" data-t="scrKeys" hidden></p>
+    <div id="scr-wrap"><div id="scr-dev"><svg id="scr-svg" aria-hidden="true"></svg>
+      <canvas id="scr-screen" width="240" height="240"></canvas></div>
+      <button id="scr-exit" type="button" data-t="scrExit"></button></div>
   </section>
 
   <section class="panel" id="p-settings" data-tab="settings" data-dev hidden>
@@ -597,7 +642,7 @@ const CMD = { INFO: 1, GET: 2, SET: 3, DUMP: 4, DESC: 5, STEP_GET: 6, STEP_SET: 
   UI_STATE: 34, UI_SET: 35, UI_PALETTES: 36, FAV_GET: 37, FAV_SET: 38, COLORS: 39,
   MOTION: 64, BACKUP_LIST: 65, BACKUP_GET: 66, BACKUP_PUT: 67,
   FM6_GET: 68, FM6_PUT: 69, FM6_LIST: 70, FM6_ERASE: 71, MENU_DESC: 72, MENU_SET: 73, KIT_GET: 74, KIT_PUT: 75, TRANSPORT: 76, PROJ_NAME: 77, POOL: 78, LIST: 79, PERFORM: 80,
-  SMP_MIX: 81, LIST2: 82, CAST: 83 };
+  SMP_MIX: 81, LIST2: 82, CAST: 83, PANEL: 84 };
 /* frames the device sends on its own (while WATCH is on); never replies */
 const PUSH = new Set([CMD.CHANGED, CMD.RELOAD, CMD.STEP_CHANGED, CMD.TRACK_CHANGED]);
 /* user preset bank: name 1..12 printable ASCII, a 16-step pattern of (note, flags 1 acc 2 slide 4 tie) */
@@ -780,7 +825,8 @@ const parse = {
     o.song2 = 0;                                  /* (2.0, INFO 58 01 caps) bit 0: LIST2, NEW, COPY+, CHAIN, ONCE, the pool's
                                                      EMPTY and CLEAR UNUSED */
     o.cast = 0;                                   /* (Skiff Studio, INFO 59 01 caps) bit 0: the cast (cmd 83), the Screen tab;
-                                                     bit 1: an SMK-37's (its copy: felucca_cast_smk.wasm) */
+                                                     (2.7) bit 1: PANEL (cmd 84, an FM-1's); bit 2: an SMK-37's cast (its
+                                                     copy: felucca_cast_smk.wasm) */
     for (const p of [8, 11]) if (o.motionMax && trailer[p] === 0x46 && trailer[p + 1] === 1) {   /* for the editor's */
       o.fm6 = { factory: trailer[p + 2], bank: trailer[p + 3], caps: 0 };                         /* PRESET / G_ENGSEL */
       if (trailer[p + 4] === 0x53 && trailer[p + 5] === 1) o.syncCaps = trailer[p + 6] & 3;
@@ -1165,6 +1211,7 @@ function replyMatches(cmd, args, a) {
     case CMD.WATCH: return (a[0] & 1) === (args[0] & 1);   /* bit 1: v4 firmware only */
     case CMD.TRACK_STEP: case CMD.TRACK_PARAM: return a[0] === args[0] && a[1] === args[1];
     case CMD.CAST: return a.length === 3 && a[0] === args[0];   /* (op, on, rc; a record is 21 bytes: Link.onCast) */
+    case CMD.PANEL: return a.length === 1 && a[0] === args[0];  /* ((2.7) the op) */
     default: return true;
   }
 }
@@ -3598,6 +3645,8 @@ const TEXT = {
     saveFile: "ファイルに保存", loadFile: "ファイルを読み込む", projects: "プロジェクト",
     load: "読込", save: "保存", used: "使用中", empty: "空", unknown: "—",
     steps: "ステップ", reload: "再読み込み", clearSeq: "シーケンスを消去",
+    sqWhere: "T{t} · エントリー {e} · パターン {p}",
+    sqNowhere: "T{t} はまだパターンの上にいません。ここで書いたステップは、リストの最初の空きエントリーに新しいパターンとして保存されます（エントリーを編集するには、ソングタブでダブルクリック）。",
     sqRoll: "ピアノロール", sqDrum: "ドラム", sqZoom: "ズーム", sqUndo: "元に戻す", sqList: "ステップ一覧（テキスト入力）", sqStep: "ステップ",
     sqEnd: "パターンの長さ（ドラッグ）", sqFull: "1 ステップに 4 音まで", sqPick: "ノートかステップをクリックすると、ここで編集できます",
     sqHelpRoll: "空いた所をクリックで入力、ドラッグで長さ · ノートをドラッグで移動、右端で長さ · 右クリック／ダブルクリックで削除 · ⌫ 削除 · ↑↓ 移調（Shift: オクターブ）· ←→ 移動 · ⌘Z 元に戻す",
@@ -3617,7 +3666,7 @@ const TEXT = {
     noName: "（名前なし）", projNow: "現在", projChanged: "保存後に変更あり",
     projRefused: "本体が受け付けませんでした（空のスロット、またはパターンがいっぱい）", projFailed: "本体での保存に失敗しました",
     play: "再生", stop: "停止", playTitle: "再生（Shift+クリック: 頭から）", playing: "再生中", stopped: "停止中", countIn: "カウントイン",
-    sgTab: "ソング", sgHelp: "各トラックはリスト（A〜P）のエントリーを演奏し、各エントリーはプールのパターンを指します（本体の SEQ › SONG）。シーンとミュートは PERFORM と同じです。エントリーをクリックで編集、ダブルクリックで再生。停止中はすぐに、再生中は LAUNCH のタイミングで切り替わります。",
+    sgTab: "ソング", sgHelp: "各トラックはリスト（A〜P）のエントリーを演奏し、各エントリーはプールのパターンを指します（本体の SEQ › SONG）。シーンとミュートは PERFORM と同じです。エントリーをクリックすると下のボタンの対象になり、ダブルクリック（または PLAY）でトラックがそのエントリーに移ります。シーケンサータブは各トラックが今いるエントリーを編集します。停止中の NEW は、トラックを新しいエントリーに移します。停止中はすぐに、再生中は LAUNCH のタイミングで切り替わります。",
     sgLists: "リスト", sgSong: "SONG（各トラックがリストを順に進む。ONCE: 一度だけ進んで停止）", sgLaunch: "LAUNCH", sgCancel: "予約を取り消す",
     sgPattern: "パターン", sgSet: "設定", sgCopy: "新しいパターンにコピー", sgPlay: "再生", sgClear: "クリア", sgEmptyEntry: "空",
     sgNew: "新しい空のパターン", sgCopyPlus: "後ろの空きにコピー", sgEmptyIt: "空にする", sgClearUnused: "未使用の {n} 個をクリア",
@@ -3679,8 +3728,11 @@ const TEXT = {
     tabSeq: "シーケンサー", tabTracks: "ミキサー", tabSettings: "設定",   /* ((Skiff W5) the device's MIXER) */
     /* (Skiff Studio) the Screen tab */
     tabScreen: "画面", scrTitle: "本体の画面",
-    scrHelp: "スタートを押すとバックアップを取ってから FM-1 を再起動し、同じ瞬間から本体の画面をここに映します。曲はそのまま残ります。画面をタップすると全画面になります。",
+    scrHelp: "スタートを押すとバックアップを取ってから FM-1 を再起動し、同じ瞬間から本体の画面をここに映します。曲はそのまま残ります。「全画面」で画面いっぱいに映し、「操作」で画面のまわりに FM-1 のパネルを出して、マウス・指・キーボードで FM-1 を操作できます（FM-1 の Skiff 2.7 以降）。",
     scrStart: "スタート", scrStop: "ストップ", scrNeedDev: "先に FM-1 を接続してください。",
+    scrFull: "全画面", scrExit: "全画面を終了", scrCtl: "操作", scrCtlNeedFw: "操作には FM-1 の Skiff 2.7 以降が必要です。",
+    scrNoPanel: "パネルの絵を読み込めませんでした。",
+    scrKeys: "キーボード：Z〜' と Q〜O で鍵盤、1〜= でボタン（FX … REC）、[ ] で OCT、↑↓ で SELECT、←→ で ALGORITHM。ボタンは Shift＋クリックか右クリックで押したままになります（SHIFT は HOME を押したまま）。",
     scrNeedFw: "このファームウェアは画面を送れません。画面タブには Skiff 2.6 以降（FM-1）、Skiff 2.7 以降（SMK-37）が必要です。",
     scrBackup: "FM-1 のバックアップ中… ", scrRestart: "FM-1 を再起動しています。触らないでください…",
     scrWait: "FM-1 を待っています…", scrFollow: "FM-1 に合わせて表示しています（ずれなし）。フレームの {pct} % が完全に一致。",
@@ -3756,6 +3808,8 @@ const TEXT = {
     saveFile: "Save to file", loadFile: "Load file", projects: "Projects",
     load: "Load", save: "Save", used: "used", empty: "empty", unknown: "—",
     steps: "Steps", reload: "Reload", clearSeq: "Clear sequence",
+    sqWhere: "T{t} · entry {e} · pattern {p}",
+    sqNowhere: "T{t} is on no pattern yet: what you write here is kept as a new pattern in its list's first empty entry (to edit an entry, double-click it on the Song tab first).",
     sqRoll: "Piano roll", sqDrum: "Drums", sqZoom: "Zoom", sqUndo: "Undo", sqList: "Step list (text entry)", sqStep: "Step",
     sqEnd: "Pattern length (drag)", sqFull: "Up to 4 notes on a step", sqPick: "Click a note or a step to edit it here",
     sqHelpRoll: "Click empty space to draw, drag for length · drag a note to move it, its right edge to resize · right-click or double-click deletes · ⌫ deletes · ↑↓ transpose (Shift: octave) · ←→ move · ⌘Z undo",
@@ -3775,7 +3829,7 @@ const TEXT = {
     noName: "(no name)", projNow: "Now", projChanged: "changed since saved",
     projRefused: "The device refused (an empty slot, or the patterns are full)", projFailed: "Saving failed on the device",
     play: "Play", stop: "Stop", playTitle: "Play (Shift+click: from the top)", playing: "Playing", stopped: "Stopped", countIn: "Count-in",
-    sgTab: "Song", sgHelp: "Each track plays the entries of its list (A to P), each naming a pattern of the pool, as on SEQ › SONG; the scenes and mutes are PERFORM's. Click an entry to edit it, double-click to play it. Stopped, a change is at once; playing, at the LAUNCH point.",
+    sgTab: "Song", sgHelp: "Each track plays the entries of its list (A to P), each naming a pattern of the pool, as on SEQ › SONG; the scenes and mutes are PERFORM's. Click an entry to pick it for the buttons below; double-click it (or PLAY) to put the track on it. The Sequencer tab edits the entry each track is on, and NEW puts the track on its new entry while stopped. Stopped, a change is at once; playing, at the LAUNCH point.",
     sgLists: "Lists", sgSong: "SONG (each track moves through its list; ONCE: once through, then stop)", sgLaunch: "LAUNCH", sgCancel: "Cancel staged",
     sgPattern: "Pattern", sgSet: "Set", sgCopy: "Copy to a new pattern", sgPlay: "Play", sgClear: "Clear", sgEmptyEntry: "empty",
     sgNew: "New empty pattern", sgCopyPlus: "Copy into the next empty", sgEmptyIt: "Empty", sgClearUnused: "Clear {n} unused",
@@ -3837,8 +3891,11 @@ const TEXT = {
     tabSeq: "Sequencer", tabTracks: "Mixer", tabSettings: "Settings",   /* ((Skiff W5) the device's MIXER) */
     /* (Skiff Studio) the Screen tab */
     tabScreen: "Screen", scrTitle: "The FM-1's screen",
-    scrHelp: "Start takes a backup of your FM-1, then restarts it, so that this copy starts at the same moment and shows its screen here as it changes. Your music is kept. Tap the screen for full screen.",
+    scrHelp: "Start takes a backup of your FM-1, then restarts it, so that this copy starts at the same moment and shows its screen here as it changes. Your music is kept. Full screen fills the display; Controls draws the FM-1's panel round the screen, to work the FM-1 with the mouse, a finger or the keyboard (Skiff 2.7 or later on the FM-1).",
     scrStart: "Start", scrStop: "Stop", scrNeedDev: "Connect your FM-1 first.",
+    scrFull: "Full screen", scrExit: "Exit full screen", scrCtl: "Controls", scrCtlNeedFw: "Controls need Skiff 2.7 or later on the FM-1.",
+    scrNoPanel: "The panel's drawing didn't load.",
+    scrKeys: "Keyboard: Z–' and Q–O play the keys, 1–= the buttons (FX … REC), [ ] OCT, ↑ ↓ SELECT, ← → ALGORITHM. Shift-click or right-click holds a button down (SHIFT is HOME held).",
     scrNeedFw: "This firmware can't send its screen. The Screen tab needs Skiff 2.6 or later on an FM-1, 2.7 or later on an SMK-37.",
     scrBackup: "Taking a backup of your FM-1… ", scrRestart: "Restarting your FM-1. Please don't touch it…",
     scrWait: "Waiting for your FM-1…", scrFollow: "Following your FM-1, in step. {pct} % of frames exactly alike.",
@@ -4023,14 +4080,25 @@ function copyPlusAt(x, j) {
   for (let f = b1 + 1; f + n <= 16; f++) if (x.ent.slice(f, f + n).every((en) => !en.pat)) return f;
   return -1;
 }
-function songOp(r, kind) {
+/* then: (x, the reply) -> a request to send after it, or nothing */
+function songOp(r, kind, then = null) {
   const d = dev;
   op(async () => {
     const x = songReply(d, r, await sessionRequest(d, r, { timeout: 4000, retries: 0 }));
+    const r2 = then && then(x);
+    if (r2) await sessionRequest(d, r2, { timeout: 4000, retries: 0 });
     await readSong(d, true);
     const k = !(kind === "perf" && x.op === 5) && SG_RC[kind][x.rc];
     if (k) sayK(k);
   });
+}
+/* (2.7, #133) NEW, or SET on a track that is on no pattern, also puts the track on that entry while stopped, as a
+   double-click does: the Sequencer tab writes the entry each track is on, and steps written on no pattern are kept as a
+   new pattern in the list's first empty entry (bank.c trk_keep), which looked like an entry made on its own */
+function songPut(op, k, e, v) {
+  const d = dev, x = d.song && d.song.list && d.song.list.tracks[k];
+  const go = op === 7 || (x && x.cur < 0);
+  songOp(lreq(op, k, e, v), "list", go ? (y) => (!y.rc && !transportPlaying(d.transport || {}) ? lreq(3, k, e) : null) : null);
 }
 /* the APC mini mk2 (apcAction, apcLeds): found whenever the ports change; on it, the song is read every APC_POLL ms
    whichever tab is open, so its LEDs follow the device (the keep-alive's read, more often) */
@@ -4186,8 +4254,8 @@ function renderEntry(L, Q) {
   }
   box.replaceChildren(el("strong", { text: `T${k + 1} ${ENTS[e]}` }), " ",
     el("label", {}, el("span", { class: "dim", text: t("sgPattern") }), " ", sel),
-    el("button", { type: "button", onclick: () => songOp(lreq(1, k, e, +sel.value), "list") }, t("sgSet")),
-    ...(two ? [el("button", { type: "button", disabled: !!Q && Q.pats.every((p) => p.len), onclick: () => songOp(lreq(7, k, e), "list") }, t("sgNew"))] : []),
+    el("button", { type: "button", onclick: () => songPut(1, k, e, +sel.value) }, t("sgSet")),
+    ...(two ? [el("button", { type: "button", disabled: !!Q && Q.pats.every((p) => p.len), onclick: () => songPut(7, k, e) }, t("sgNew"))] : []),
     el("button", { type: "button", disabled: !en.pat || rest, onclick: () => songOp(lreq(2, k, e), "list") }, t("sgCopy")),
     ...(two ? [el("button", { type: "button", disabled: f < 0, onclick: () => songOp(lreq(8, k, e), "list") },
       t("sgCopyPlus") + (f < 0 ? "" : ` → ${ENTS[f]}${b1 > b0 ? "-" + ENTS[f + b1 - b0] : ""}`))] : []),
@@ -4359,6 +4427,7 @@ async function connect() {
     connectedDevice = dev;
     setLabel($("connect"), t("disconnect"));
     await load(connectedDevice);
+    pnlBuild();                                    /* ((2.7) the Screen tab: an SMK-37 has no panel drawing) */
   } catch (e) {
     console.error(e);
     if (connectedDevice && connectedDevice === dev) { /* an old connection must not close a replacement */
@@ -4508,6 +4577,21 @@ async function loadSteps(d = dev) {
   }
   renderSteps();
   if (d.info.motionMax) await readMotion(d);
+  await sqWhere(d);
+}
+/* (2.7, #133) which entry and pattern the Sequencer tab writes: the selected track's place in its list (SEQ › SONG), or
+   no pattern yet (then what is written is kept as a new pattern in the list's first empty entry: bank.c trk_keep) */
+async function sqWhere(d = dev) {
+  const p = $("sqwhere");
+  p.hidden = true;
+  if (!(d.info.skiff & 8)) return;
+  const r = lreq(0, 0, 0), L = songReply(d, r, await sessionRequest(d, r));
+  (d.song = d.song || {}).list = L;
+  const k = d.sel ?? 0, x = L.tracks[k];
+  if (!x) return;
+  p.textContent = x.cur < 0 ? t("sqNowhere").replace("{t}", k + 1)
+    : t("sqWhere").replace("{t}", k + 1).replace("{e}", ENTS[x.cur]).replace("{p}", x.pat < 0 ? "–" : pat2(x.pat + 1));
+  p.hidden = false;
 }
 
 /* --------------------------------------------------------------- UI --- */
@@ -7477,6 +7561,7 @@ const scr = { state: "idle", wasm: null, wasmName: "", copy: null, queue: [], se
 const scrCtx = $("scr-screen").getContext("2d"), scrImg = scrCtx.createImageData(240, 240);
 function scrSay(text, bad = false) { $("scr-status").textContent = text; $("scr-status").classList.toggle("bad", bad); }
 function scrButtons() { $("scr-start").disabled = scr.state !== "idle"; $("scr-stop").disabled = scr.state === "idle"; }
+const scrSmk = () => !!(dev && dev.info && dev.info.cast & 4);   /* (2.7) an SMK-37's cast: its copy, no panel yet */
 async function scrInstance(wasm) {
   const { instance } = await WebAssembly.instantiate(wasm, {});
   instance.exports._initialize();
@@ -7499,12 +7584,13 @@ async function scrStart() {
   const d = dev;
   if (scr.state !== "idle") return;
   if (!d || !d.info) { scrSay(t("scrNeedDev"), true); return; }
-  if (!(d.info.cast & 1)) { scrSay(t("scrNeedFw"), true); return; }
+  if (!(d.info.cast & 5)) { scrSay(t("scrNeedFw"), true); return; }   /* (bit 0 an FM-1's cast, bit 2 an SMK-37's) */
   scr.state = "prep";
   scrButtons();
+  pnlBuild();                                      /* (an SMK-37: the screen alone, no FM-1 panel) */
   await op(async () => {                           /* (the editor's polling waits meanwhile) */
     try {
-      const copyName = d.info.cast & 2 ? "felucca_cast_smk.wasm" : "felucca_cast.wasm";   /* (bit 1: an SMK-37's) */
+      const copyName = scrSmk() ? "felucca_cast_smk.wasm" : "felucca_cast.wasm";   /* (bit 2: an SMK-37's) */
       if (scr.wasmName !== copyName) {
         scr.wasm = await fetch(copyName).then((r) => {
           if (!r.ok) throw new Error(t("scrNoCopy") + r.status);
@@ -7614,6 +7700,11 @@ function scrDraw() {
     }
     scrCtx.putImageData(scrImg, 0, 0);
   }
+  if (tab === "screen" && pnl.layout && c.web_lit_buttons) {   /* ((2.7) the panel's LEDs: the copy's, as its screen) */
+    const v = [c.web_lit_buttons(), c.web_lit_keys(), c.web_dim_buttons(), c.web_dim_keys(), c.web_breath_buttons(),
+      c.web_breath_keys(), c.web_mid_keys()], sig = v.join();
+    if (sig !== pnl.leds) { pnl.leds = sig; pnlLights(v); }
+  }
   requestAnimationFrame(scrDraw);
 }
 async function scrStop(msg, tell = true, bad = true) {
@@ -7622,6 +7713,7 @@ async function scrStop(msg, tell = true, bad = true) {
   scr.log = false;
   clearInterval(scr.pump);
   clearTimeout(scr.timer);
+  pnlLetGo();                                      /* ((2.7) the unit lets its panel's presses go too: cast.c) */
   scrButtons();
   if (msg) scrSay(msg, bad);
   try { await scr.wake?.release(); } catch (e) { /* gone already */ }
@@ -7633,10 +7725,238 @@ async function scrStop(msg, tell = true, bad = true) {
 function scrDisconnected() {
   if (scr.state === "prep" || scr.state === "start" || scr.state === "on") scrStop(t("scrLost"), false);
 }
+/* (2.7) the panel round the screen (panel.js's drawing, beside this page, as Try Skiff's; loaded when Controls is first
+   ticked): the FM-1's buttons, keys and knobs to press with the mouse, a finger or the keyboard. They go to the unit as
+   PANEL (cmd 84, INFO 59 01 bit 1: editor.c ed_panel), one request at a time (the unit holds one SysEx frame), and the
+   unit takes them as its own panel's, so the copy follows them as it follows the unit's own presses. The LEDs are the
+   copy's (scrDraw). MASTER is a pot on the unit: drawn, not turned from here */
+const pnl = { on: false, layout: "", knobs: [], buttons: [], keys: [], btnBy: new Map(), keyBy: new Map(), latched: 0,
+  bm: 0, km: 0, turns: [0, 0, 0, 0, 0, 0, 0], tq: 0, leds: "" };
+const pnlLive = () => scr.state === "on" && !!dev && !!dev.info && !!(dev.info.cast & 2);
+const pnlTall = () => innerHeight > innerWidth;            /* (a phone or a tablet held upright: the tall drawing) */
+function pnlSend(args) {
+  if (pnlLive()) sessionRequest(dev, [CMD.PANEL, args], { timeout: 1000, retries: 0, quiet: true }).catch(() => {});
+}
+function pnlOk() {                                         /* a press: the cast on, the firmware with PANEL */
+  if (pnlLive()) return true;
+  if (scr.state === "on") scrSay(t("scrCtlNeedFw"), true);
+  return false;
+}
+/* the buttons held (latched: Shift-click or right-click) and the keys held, sent when either changes, every change in
+   turn (a tap is a press and a let-go) */
+function pnlSync() {
+  let b = pnl.latched, k = 0;
+  for (const x of pnl.btnBy.values()) b |= 1 << x;
+  for (const x of pnl.keyBy.values()) k |= 1 << x;
+  for (const x of pnl.buttons) {
+    const on = !!(b >> x.bit & 1);
+    x.g.classList.toggle("held", on);
+    x.g.classList.toggle("latched", !!(pnl.latched >> x.bit & 1));
+    if (x.hit) x.hit.setAttribute("aria-pressed", on);
+  }
+  pnl.keys.forEach((x, i) => x.g.classList.toggle("held", !!(k >> i & 1)));
+  if (b === pnl.bm && k === pnl.km) return;
+  pnl.bm = b;
+  pnl.km = k;
+  pnlSend([0, b & 127, b >> 7 & 127, k & 127, k >> 7 & 127, k >> 14 & 127, k >> 21 & 127]);
+}
+function pnlLetGo() {
+  pnl.btnBy.clear();
+  pnl.keyBy.clear();
+  pnl.latched = pnl.bm = pnl.km = 0;
+  pnl.turns.fill(0);
+  pnlSync();
+}
+/* a knob's turns, summed and sent at most every 30 ms (each request at most 63 steps) */
+function pnlTurn(role, n) {
+  pnl.turns[role] += n;
+  if (pnl.tq) return;
+  pnl.tq = setTimeout(function flush() {
+    let more = false;
+    pnl.turns.forEach((s, r) => {
+      const v = Math.max(-63, Math.min(63, s));
+      if (!v) return;
+      pnl.turns[r] -= v;
+      more ||= !!pnl.turns[r];
+      pnlSend([1, r, v & 127]);
+    });
+    pnl.tq = more ? setTimeout(flush, 30) : 0;
+  }, 30);
+}
+function pnlLights([litB, litK, dimB, dimK, brB, brK, midK]) {
+  const { B, PLAY_GREEN } = window.PANEL;
+  for (const x of pnl.buttons) {
+    const bit = 1 << x.bit, green = x.bit === B.PLAY && litB >> PLAY_GREEN & 1;
+    x.g.classList.toggle("lit", !!(litB & bit) && !green);
+    x.g.classList.toggle("green", !!green);
+    x.g.classList.toggle("dim", !!(dimB & bit));
+    x.g.classList.toggle("breath", !!(brB & bit));
+  }
+  pnl.keys.forEach((x, i) => {
+    x.g.classList.toggle("lit", !!(litK >> i & 1));
+    x.g.classList.toggle("dim", !!(dimK >> i & 1));
+    x.g.classList.toggle("breath", !!(brK >> i & 1));
+    x.g.classList.toggle("mid", !!(midK >> i & 1));
+  });
+}
+/* the drawing (or none: the screen alone), its targets over it (the drawing takes no pointer: as Try Skiff's) */
+function pnlBuild() {
+  const dv = $("scr-dev"), cv = $("scr-screen"), svg = $("scr-svg"), smk = scrSmk();
+  for (const d of dv.querySelectorAll(".hit")) d.remove();
+  $("scr-ctl").parentElement.hidden = smk;         /* (Controls: the FM-1's panel only, for now) */
+  $("scr-keys").hidden = !pnl.on || smk;
+  if (!pnl.on || !window.PANEL || smk) {
+    svg.replaceChildren();
+    dv.classList.remove("ctl", "tall");
+    dv.style.setProperty("--ar", 1);
+    Object.assign(cv.style, { left: "", top: "", width: "", height: "" });
+    Object.assign(pnl, { layout: "", knobs: [], buttons: [], keys: [] });
+    return;
+  }
+  const P = window.PANEL.draw(svg, pnl.layout = pnlTall() ? "tall" : "side"), L = P.L, [sx, sy, ss] = P.screen;
+  dv.classList.add("ctl");
+  dv.classList.toggle("tall", pnl.layout === "tall");   /* (full screen's exit: over MASTER, not ALGORITHM) */
+  dv.style.setProperty("--ar", L.w / L.h);
+  Object.assign(cv.style, { left: `${sx / L.w * 100}%`, top: `${sy / L.h * 100}%`, width: `${ss / L.w * 100}%`, height: `${ss / L.h * 100}%` });
+  Object.assign(pnl, { knobs: P.knobs, buttons: P.buttons, keys: P.keys, leds: "" });
+  const hit = (c, cls, role) => {
+    const b = c.g.getBBox(), d = el("div", { class: "hit" + (cls ? " " + cls : ""), role, "aria-label": c.name, title: c.name, tabindex: 0 });
+    Object.assign(d.style, { left: `${b.x / L.w * 100}%`, top: `${b.y / L.h * 100}%`, width: `${b.width / L.w * 100}%`, height: `${b.height / L.h * 100}%` });
+    d.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+    d.addEventListener("contextmenu", (e) => e.preventDefault());
+    dv.append(d);
+    return (c.hit = d);
+  };
+  for (const k of pnl.knobs) if (k.role !== "master") pnlKnob(k, hit(k, "knob", "slider"));
+  for (const b of pnl.buttons) pnlButton(b, hit(b, "", "button"));
+  pnl.keys.forEach((k, i) => pnlKey(i, hit(k, "", "button")));
+  pnlSync();
+}
+function pnlButton(b, h) {
+  h.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!pnlOk()) return;
+    if (e.shiftKey || e.button === 2 || pnl.latched >> b.bit & 1) { pnl.latched ^= 1 << b.bit; pnlSync(); return; }
+    h.setPointerCapture(e.pointerId);
+    pnl.btnBy.set("p" + e.pointerId, b.bit);
+    pnlSync();
+  });
+  h.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && !e.repeat && pnlOk()) { pnl.btnBy.set("f" + b.bit, b.bit); pnlSync(); e.preventDefault(); e.stopPropagation(); }
+  });
+  h.addEventListener("keyup", () => { if (pnl.btnBy.delete("f" + b.bit)) pnlSync(); });
+}
+function pnlKey(i, h) {
+  h.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!pnlOk()) return;
+    h.setPointerCapture(e.pointerId);
+    pnl.keyBy.set("p" + e.pointerId, i);
+    pnlSync();
+  });
+}
+function pnlKnob(k, h) {
+  let drag = null, wheel = 0;
+  h.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    if (!pnlOk()) return;
+    h.setPointerCapture(e.pointerId);
+    drag = { y: e.clientY, acc: 0 };
+  });
+  h.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    drag.acc += drag.y - e.clientY;
+    drag.y = e.clientY;
+    const n = Math.trunc(drag.acc / 8);
+    if (n) { drag.acc -= n * 8; pnlTurn(k.role, n); }
+  });
+  for (const ev of ["pointerup", "pointercancel"]) h.addEventListener(ev, () => { drag = null; });
+  h.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (!pnlOk()) return;
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    if (Math.abs(dy) >= 50) { pnlTurn(k.role, dy < 0 ? 1 : -1); wheel = 0; return; }   /* a wheel's notch: one detent */
+    wheel -= dy;                                                                       /* a trackpad: by distance */
+    const n = Math.trunc(wheel / 25);
+    if (n) { wheel -= n * 25; pnlTurn(k.role, n); }
+  }, { passive: false });
+  h.addEventListener("keydown", (e) => {
+    const d = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
+    if (d && pnlOk()) { pnlTurn(k.role, d); e.preventDefault(); e.stopPropagation(); }
+  });
+}
+for (const ev of ["pointerup", "pointercancel", "lostpointercapture"])
+  $("scr-dev").addEventListener(ev, (e) => {
+    const id = "p" + e.pointerId;
+    if (pnl.btnBy.delete(id) | pnl.keyBy.delete(id)) pnlSync();
+  });
+/* the computer's keyboard, as Try Skiff's: F3..A#4 on the Z (white) and A (black) rows, B4..G5 on Q..O by semitone, the
+   twelve buttons on the number row in the panel's order, [ ] OCT, the arrows SELECT and ALGORITHM */
+let pnlKeymap = null;
+function pnlKeys() {
+  if (pnlKeymap) return pnlKeymap;
+  const { B, EN, WHITE, ROW1, ROW2 } = window.PANEL, m = {};
+  ["KeyZ", "KeyX", "KeyC", "KeyV", "KeyB", "KeyN", "KeyM", "Comma", "Period", "Slash"].forEach((c, i) => { m[c] = { key: WHITE[i] }; });
+  [["KeyS", 1], ["KeyD", 3], ["KeyF", 5], ["KeyH", 8], ["KeyJ", 10], ["KeyL", 13], ["Semicolon", 15], ["Quote", 17]].forEach(([c, k]) => { m[c] = { key: k }; });
+  ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO"].forEach((c, i) => { m[c] = { key: 18 + i }; });
+  ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Digit0", "Minus", "Equal"]
+    .forEach((c, i) => { m[c] = { btn: B[[...ROW1, ...ROW2][i]] }; });
+  Object.assign(m, { BracketLeft: { btn: B["OCT-"] }, BracketRight: { btn: B["OCT+"] },
+    ArrowUp: { enc: EN.SELECT, n: 1 }, ArrowDown: { enc: EN.SELECT, n: -1 }, ArrowRight: { enc: EN.ALGORITHM, n: 1 }, ArrowLeft: { enc: EN.ALGORITHM, n: -1 } });
+  return (pnlKeymap = m);
+}
+const pnlTyping = (x) => x.isContentEditable || /^(TEXTAREA|SELECT)$/.test(x.tagName) ||
+  (x.tagName === "INPUT" && !/^(checkbox|radio|button|range)$/.test(x.type)) || !!x.closest?.(".hit.knob");
+addEventListener("keydown", (e) => {
+  if (tab !== "screen" || !pnl.layout || e.metaKey || e.ctrlKey || e.altKey || pnlTyping(e.target)) return;
+  const m = pnlKeys()[e.code];
+  if (!m || !pnlLive()) return;
+  e.preventDefault();
+  if (m.enc !== undefined) { pnlTurn(m.enc, m.n); return; }
+  if (e.repeat) return;
+  if (m.key !== undefined) pnl.keyBy.set("k" + e.code, m.key);
+  else pnl.btnBy.set("k" + e.code, m.btn);
+  pnlSync();
+});
+addEventListener("keyup", (e) => {
+  const id = "k" + e.code;
+  if (pnl.btnBy.delete(id) | pnl.keyBy.delete(id)) pnlSync();
+});
+addEventListener("blur", () => {                       /* (the window let go of: its keys too) */
+  let n = 0;
+  for (const m of [pnl.btnBy, pnl.keyBy]) for (const id of [...m.keys()]) if (id[0] === "k") n += m.delete(id);
+  if (n) pnlSync();
+});
+addEventListener("resize", () => { if (pnl.layout && pnl.layout !== (pnlTall() ? "tall" : "side")) pnlBuild(); });
+function pnlLoad() {                                   /* panel.js, once */
+  return window.PANEL ? Promise.resolve() : new Promise((ok) => {
+    const s = el("script", { src: "panel.js" });
+    s.onload = ok;
+    s.onerror = () => { scrSay(t("scrNoPanel"), true); ok(); };
+    document.head.append(s);
+  });
+}
+async function pnlShow(on) {
+  pnl.on = on;
+  $("scr-ctl").checked = on;
+  $("scr-keys").hidden = !on;
+  try { localStorage.setItem("skiff-screen-controls", on ? "1" : ""); } catch (e) { /* not kept here */ }
+  if (on) await pnlLoad();
+  pnlLetGo();
+  pnlBuild();
+}
+function scrFull() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else $("scr-wrap").requestFullscreen?.().catch(() => {});
+}
+
 $("scr-start").addEventListener("click", () => scrStart());
 $("scr-stop").addEventListener("click", () => scrStop(t("scrStopped"), true, false));
-$("scr-screen").addEventListener("click", () =>
-  document.fullscreenElement ? document.exitFullscreen() : $("scr-wrap").requestFullscreen?.());
+$("scr-full").addEventListener("click", scrFull);
+$("scr-exit").addEventListener("click", scrFull);
+$("scr-screen").addEventListener("click", () => { if (!pnl.layout) scrFull(); });   /* (the screen alone: a tap, as before) */
+$("scr-ctl").addEventListener("change", () => pnlShow($("scr-ctl").checked));
+try { if (localStorage.getItem("skiff-screen-controls")) pnlShow(true); } catch (e) { /* none kept */ }
 scrButtons();
 
 $("connect").addEventListener("click", () => {

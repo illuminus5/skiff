@@ -681,6 +681,8 @@ static int cast_audio_late(void);
 #define CAST_READ() ((void)0)
 #define CAST_AUDIO_LATE() 0
 #endif
+#define FELUCCA_PANEL (FELUCCA_CAST && !BOARD_SMK37)   /* (2.7) the Screen tab's panel, PANEL cmd 84 (editor.c ed_panel): the
+                                                     * FM-1's (its virtual contacts: hal/fm1_input.h vbtn, vkey) */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
 #define BOOTGUARD_MAGIC 0x42475244u

@@ -354,7 +354,7 @@ static uint32_t key_leds(uint32_t *br)                 /* (*br: a layer's keys t
  * buttons of the black FM-1 can be found in the dark; hal/fm1_input.h fm1_led_dim, a short pulse each frame).
  * MENU > LEDS: DIM HI (default) that glow, DIM LO a darker one (fm1_led_dim_level), OFF no glow (as 1.0); INV
  * turns it around, as the stock firmware: the idle ones fully lit, the active ones dark, no glow (the ARP beat:
- * lit / dark). The keys' own maps (keys_own) stay lit or dark in every mode: their dark keys read as dark; only the
+ * lit / dark); ((2.7, #134) but an armed REC breathes: dark, it looked off while armed). The keys' own maps (keys_own) stay lit or dark in every mode: their dark keys read as dark; only the
  * DRUM grid's keys that do something (grid_glow) glow under it, so STEP on a DRUM track is never a dark
  * keyboard (the steps of an empty pattern); on it the first step of each four (grid_beats: 1 5 9 13 of a page, where
  * no hit shows) glows steadier and brighter, so a bar's beats can be counted: DIM HI / DIM LO the mid level
@@ -403,7 +403,8 @@ static void ui_leds(void)
         led_put(nl, panel.btn[B_FX], 1);                /* FX LATCH: lit while an effect or a macro is on */
     if (ui.layer)                                       /* the layer's button breathes while its map is up */
         led_put(nb, panel.btn[layer_btn()], 1);
-    led_put(nl, panel.btn[B_REC], song.rec != 0u && ui.layer != LAYER_REC);   /* (its layer: it breathes) */
+    led_put(mode == LEDS_INV ? nb : nl, panel.btn[B_REC], song.rec != 0u && ui.layer != LAYER_REC);   /* (its layer:
+                                                         * it breathes; (2.7, #134) INV: armed, it breathes) */
     k = oct_leds();
     led_put(nl, panel.btn[B_OCTDN], (int)(k & 1u));
     led_put(nl, panel.btn[B_OCTUP], (int)((k >> 1) & 1u));

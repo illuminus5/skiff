@@ -104,7 +104,7 @@ def main(pkg, version, out, *more):
     for doc in ("LICENSE", "LICENSING.md"):
         shutil.copy(HERE.parent / doc, fw / doc)
     shutil.copy(HERE / "editor.html", ed / "index.html")
-    for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt", "fm1backup.js"):
+    for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt", "fm1backup.js", "panel.js"):   # ((2.7) panel.js: the Screen tab's panel)
         if (HERE / f).exists():
             shutil.copy(HERE / f, ed / f)
     for name in ("felucca_cast.wasm", "felucca_cast_smk.wasm"):   # ((Skiff Studio) the Screen tab's copies, an FM-1's and

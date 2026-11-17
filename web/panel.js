@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
-// The FM-1's panel drawn in SVG, shared by the browser emulator (web/emu) and the Learn page (web/learn): two drawings
-// of the same controls, WIDE after the unit's own layout, TALL for a phone held upright. A classic script (it loads
+// The FM-1's panel drawn in SVG, shared by the browser emulator (web/emu), the Learn page (web/learn) and (2.7) the
+// editor's Screen tab: drawings of the same controls, WIDE after the unit's own layout, TALL for a phone held upright,
+// SIDE (the Screen tab's) with the screen large and the controls beside it. A classic script (it loads
 // from file:// too), as window.PANEL. Colours come from the page's CSS: --body --tray --part --edge --label, and the
 // classes face btn / face key / slit.
 (function () {
@@ -23,6 +24,14 @@
       trays: [[50, 250, 220, 50], [568, 160, 400, 140]],
       oct: [[60, 258, 90, 34], [170, 258, 90, 34]],
       grid: [582, 174, 54, 48, 63, 62], keybed: [36, 332, 928, 256],
+    },
+    // (2.7) the editor's Screen tab: the screen as large as the drawing's height, the controls beside it
+    side: {
+      w: 1600, h: 900, screen: [24, 24, 852],
+      knobs: [[1492, 236, 34], [988, 236, 34], [1156, 236, 34], [1324, 236, 34], [988, 100, 34], [1156, 100, 34], [1324, 100, 34], [1492, 100, 34]],
+      trays: [[904, 300, 672, 176], [904, 492, 300, 66]],
+      oct: [[918, 502, 130, 46], [1062, 502, 130, 46]],
+      grid: [918, 314, 98, 66, 108, 82], keybed: [904, 574, 672, 302],
     },
     tall: {
       w: 600, h: 1070, screen: [130, 104, 340],

@@ -6,7 +6,7 @@
  * controls (HOLD: the layer threshold, KNOB ACCEL, FX LATCH, BPM LOCK; 1.2: SCALE LEDS, the keys), the sound (SPEAKER EQ: FLAT LOWCUT BASS+,
  * USB LEVEL; 1.1: CLICK, CLICK LEVEL, COUNT-IN), USB SERIAL, RESTORE LAST (1.2), then CALIBRATION (the setup screen: HARDWARE CALIBRATION) and ABOUT, the two rows with no
  * value (MI_VALUES: the rows before them hold one). 1.0.5: in four tabs (MI_TAB). */
-/* (Skiff 2.0) a build without the serial console (FELUCCA_CDC=0: a release, build.py --release) has no USB SERIAL row:
+/* (Skiff 2.0) a build without the serial console (FELUCCA_CDC=0: (2.7) build.py's but --console's) has no USB SERIAL row:
  * MI_SERIAL past MI_COUNT, as the SMK's LEDS, so its setting stays and no tab shows it */
 #if FELUCCA_CDC
 #define MI_SERIAL_IN MI_SERIAL,

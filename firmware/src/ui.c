@@ -139,9 +139,9 @@ static void theme_apply(void)                  /* settings.palette, and over it 
 #define ui_ph_line (favorites.factory[15][15])
 /* (Skiff 1.3) MENU > SYSTEM > CPU 2 CORES: the second core from the next power-on (main.c, hal/fm1_cpu1.h), bit 0
  * of a settings byte ([15][5]); clear: one core, as 1.2. It clears itself when core 1 misreads or stops answering
- * (main.c). (2.5) CPU2_DEFAULT: the FM-1 starts on 2 CORES (RESET SETTINGS, and every unit once: cpu2_move), so its 16
- * voices are there out of the box; the SMK-37 stays on 1 CORE until its second core is tried on the unit; the browser
- * has none */
+ * ((2.7, #126) or the boot before ended in a crash or a hang; main.c). (2.5) CPU2_DEFAULT: the FM-1 starts on 2
+ * CORES (RESET SETTINGS, and every unit once: cpu2_move), so its 16 voices are there out of the box; the SMK-37 stays
+ * on 1 CORE until its second core is tried on the unit; the browser has none */
 #define CPU2_BYTE (favorites.factory[15][5])
 #define CPU2_SET (CPU2_BYTE & 1u)
 #if FELUCCA_CPU2 && !BOARD_SMK37 && !defined(FELUCCA_WEB)

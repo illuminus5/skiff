@@ -1614,6 +1614,13 @@ static int test_menu_tabs(void)
     turn(EN_ALGO, -1); ok &= ui.menu_sel == MI_CLOCK && menu_tab() == MTAB_MIDI;   /* (wraps; (1.3) MIDI last) */
     turn(EN_ALGO, 1); ok &= ui.menu_sel == MI_SCROFF;
     bad += check("MENU: ALGORITHM steps between the tabs and wraps, each tab back at its last row", ok && ui.menu == 1);
+    {   /* (2.7) SELECT as ALGORITHM; the tempo stays */
+        int16_t bpm = song.g[G_BPM];
+        turn(EN_SELECT, 1); ok = ui.menu_sel == MI_BPMLOCK && menu_tab() == MTAB_CONTROL;
+        turn(EN_SELECT, -1); turn(EN_SELECT, -1); ok &= ui.menu_sel == MI_CLOCK && menu_tab() == MTAB_MIDI;
+        turn(EN_SELECT, 1); ok &= ui.menu_sel == MI_SCROFF && song.g[G_BPM] == bpm;
+        bad += check("MENU: (2.7) SELECT steps between the tabs too, wraps, the tempo kept", ok && ui.menu == 1);
+    }
     turn(EN_ALGO, 1); turn(EN_PRESET, -1);            /* CONTROL: from FX LATCH up to KNOB ACCEL */
     ok = ui.menu_sel == MI_ACCEL && !(ui_prefs & PREF_ACCEL);
     for (i = 0; i < 4u; i++) {                         /* any of KNOB 1..4: right ON, left OFF */
@@ -1808,6 +1815,7 @@ static int test_menu_tabs(void)
     turn(EN_K1, 1); ok &= ui.menu == 1 && ui.menu_sel == MI_ABOUT;
     press(B_OCTUP); ok &= ui.menu == 2;
     ok &= oct_leds() == 1u;                             /* (ABOUT: OCT- back, lit) */
+    turn(EN_SELECT, 1); turn(EN_ALGO, 1); ok &= ui.menu == 2 && ui.menu_sel == MI_ABOUT;   /* ((2.7) no tab from ABOUT) */
     press(B_OCTDN); ok &= ui.menu == 1 && ui.menu_sel == MI_ABOUT;
     turn(EN_PRESET, -1); turn(EN_PRESET, -1); ok &= ui.menu_sel == MI_PANEL;   /* ((U4) past RESET SETTINGS) */
     press(B_OCTDN); ok &= ui.menu == 1 && ui.menu_sel == MI_PANEL;
@@ -5025,6 +5033,16 @@ static int test_idle_glow(void)
     fm1_in.notes = 0;
     song.playing = 0;
     bad += check("LEDS INV: the page's button, PLAY running and a key held go dark, the rest lit, no glow", ok);
+    led_pos[panel.btn[B_REC]] = 0u << 3 | 5u;
+    song.rec = 1u;                                      /* ((2.7, #134) armed: dark in INV, it looked off) */
+    ui_leds();
+    ok = ((fm1_led_breath[0] >> 5) & 1u) && !((fm1_led[0] >> 5) & 1u) && !((fm1_led_dim[0] >> 5) & 1u);
+    settings_leds = LEDS_DIM;
+    ui_leds();
+    ok &= ((fm1_led[0] >> 5) & 1u) && !((fm1_led_breath[0] >> 5) & 1u);
+    settings_leds = LEDS_INV;
+    song.rec = 0;
+    bad += check("(2.7, #134) LEDS INV: REC armed breathes (not dark); DIM: lit, as before", ok);
     ui.layer = 1;
     led_pos[panel.btn[layer_btn()]] = 0u << 3 | 4u;   /* the layer's button */
     {
@@ -7395,6 +7413,8 @@ static int test_bpm_lock(void)
     b0 = song.g[G_BPM];
     turn(EN_SELECT, 3);
     ok = str_eq(MI_NAME[MI_BPMLOCK], "BPM LOCK") && ui.menu == 1u && song.g[G_BPM] == b0;   /* (the menu: no tempo) */
+    ok &= menu_tab() != MTAB_CONTROL;                                 /* ((2.7) a tab on instead) */
+    ui.menu_sel = MI_BPMLOCK;
     turn(EN_K1, 1); ok &= (ui_prefs & PREF_BPM_LOCK) != 0u;          /* right: ON */
     turn(EN_K1, -1); ok &= !(ui_prefs & PREF_BPM_LOCK);              /* left: OFF */
     press(B_OCTUP); ok &= (ui_prefs & PREF_BPM_LOCK) && ui.menu;      /* OCT+: ON */
@@ -7402,7 +7422,8 @@ static int test_bpm_lock(void)
     press(B_OCTUP);
     ok &= ui_prefs == PREF_BPM_LOCK;                                  /* (no other setting moved) */
     press(B_HOME);
-    bad += check("#58 MENU > BPM LOCK: KNOB 1 right / OCT+ ON, left / OCT- OFF; SELECT in the menu is no tempo", ok && !ui.menu);
+    bad += check("#58 MENU > BPM LOCK: KNOB 1 right / OCT+ ON, left / OCT- OFF; SELECT in the menu is no tempo (a tab)",
+                 ok && !ui.menu);
 
     /* ON: no tempo from SELECT; on HOME "BPM LOCKED" once per burst; (Skiff phase 8) on a page it turns the pages */
     frame();

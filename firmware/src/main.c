@@ -138,15 +138,19 @@ static void felucca_init(void)
 static uint32_t crash_seen __attribute__((section(".noinit")));   /* fm1_crash.count at the last boot */
 static uint8_t boot_clean;                    /* no crash, hang (WDT) or failed boot before this one (boot_leds):
                                                * the sweep runs and the autosave is restored (project.c autosave_boot) */
+static uint32_t boot_crashed(void)            /* the last boot ended in a crash or a hang (WDT); ((2.7, #126)
+                                               * fm1_main: 2 CORES then falls back to 1) */
+{
+    return (fm1_crash.magic == FM1_CRASH_MAGIC && fm1_crash.count != crash_seen
+#if FELUCCA_CPU2
+            && fm1_crash.core != 1u           /* ((Skiff 1.3) the second core's own fault left core 0 playing) */
+#endif
+            ) || (fm1_boot.p3_rst & 4u);
+}
 static void boot_leds(void)
 {
-    uint32_t crashed = fm1_crash.magic == FM1_CRASH_MAGIC && fm1_crash.count != crash_seen
-#if FELUCCA_CPU2
-                       && fm1_crash.core != 1u    /* ((Skiff 1.3) the second core's own fault left core 0 playing) */
-#endif
-                       ;
+    boot_clean = !boot_crashed() && !bootguard.failed;
     crash_seen = fm1_crash.count;
-    boot_clean = !crashed && !bootguard.failed && !(fm1_boot.p3_rst & 4u);
     fm1_led_dim_level(settings_leds == LEDS_DIM_LO);
     if (boot_clean && !(ui_prefs & PREF_ANIM_OFF))
         fm1_led_anim_start(settings_leds == LEDS_DIM || settings_leds == LEDS_DIM_LO);
@@ -169,6 +173,7 @@ static void fm1_main(void)
     uint32_t ms;
 #if FELUCCA_CPU2
     uint8_t c1_told = 0;                                /* (Skiff 1.3) CORE 2 FAILED said (and the setting cleared) */
+    uint8_t c1_fell = 0;                                /* ((2.7, #126) 2 CORES and the last boot crashed or hung) */
 #endif
     persist_boot();
     bank_boot();                                        /* (Skiff) the pattern bank (bank.c) */
@@ -224,12 +229,15 @@ static void fm1_main(void)
     kb_boot_hold = 1;                         /* #137: no notes from the keys before the UI (seq.c keyboard_block) */
 #if FELUCCA_CPU2
     cpu2_move();                              /* ((2.5) every FM-1 on 2 CORES once: ui.c) */
-    if (!bootguard.failed && CPU2_SET) {
+    c1_fell = CPU2_SET && boot_crashed();
+    if (!bootguard.failed && CPU2_SET && !c1_fell) {
         /* (Skiff 1.3, as Felucca 1.6.1) the second core (hal/fm1_cpu1.h; fx.c mix_block hands it tracks), at power-on,
          * before the audio and the timers (started later it never reaches its entry) and before fm1_guard_lock_top
          * (its entry word is at the top of RAM). It starts in the chip's ROM: the PC limits open meanwhile. MENU > CPU
          * 1 CORE ((2.5) the SMK-37's default), a crash in the last boot's first 30 s, or no answer: never started, one
-         * core */
+         * core. ((2.7, #126) The last boot crashed or hung, whenever: never started, and 1 CORE from now on, said in
+         * the loop as a core that stopped answering is; MENU > SYSTEM > CPU 2 CORES turns it on again. Before, a crash
+         * after the first 30 s restarted on 2 CORES: a unit that crashes on 2 CORES did so again and again) */
         fm1_guard_pc_open();
         fm1_cpu1_start();
         fm1_guard_enable(FM1_GUARD_PC);
@@ -292,10 +300,11 @@ static void fm1_main(void)
             bootguard.failed = 0;
         }
 #if FELUCCA_CPU2
-        if (*(volatile uint8_t *)&fm1_c1_gave_up && !c1_told) {   /* ((Skiff 1.3) the ISR's: core 1 misread or
-                                                         * stopped answering on this FM-1: one core from now on, the
-                                                         * setting back to 1 CORE (MENU > CPU 2 CORES tries again at the
-                                                         * next power-on); said once */
+        if ((*(volatile uint8_t *)&fm1_c1_gave_up || c1_fell) && !c1_told) {   /* ((Skiff 1.3) the ISR's: core 1
+                                                         * misread or stopped answering on this FM-1, ((2.7, #126) or
+                                                         * the last boot crashed or hung on 2 CORES: above): one core
+                                                         * from now on, the setting back to 1 CORE (MENU > CPU 2 CORES
+                                                         * tries again at the next power-on); said once */
             c1_told = 1;
             if (CPU2_SET) {
                 CPU2_BYTE &= (uint8_t)~1u;

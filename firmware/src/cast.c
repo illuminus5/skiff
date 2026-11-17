@@ -166,6 +166,9 @@ static __attribute__((noinline)) void cast_cmd(uint32_t op)
         cast_rec('B', fm1_ms, (uint32_t)master_knob | CAST_LAYOUT << 24 | (uint32_t)C1_ON() << 31);
     } else if (op == 0u) {
         cast.on = 0;
+#if FELUCCA_PANEL
+        fm1_in.vbtn = fm1_in.vkey = 0;                 /* ((2.7) and the panel's presses let go) */
+#endif
     } else if (op == 2u) {
         rc = autosave_sig() != as.saved;              /* the copy starts from the stored music: store it first */
         if (rc)
@@ -188,8 +191,12 @@ static __attribute__((noinline)) void cast_flush(void)
         fm1_audio_stop();
         fm1_reboot();
     }
-    if (!ed_w.on)
+    if (!ed_w.on) {
         cast.on = 0;
+#if FELUCCA_PANEL
+        fm1_in.vbtn = fm1_in.vkey = 0;                 /* ((2.7) the Screen tab's panel lets go: editor.c ed_panel) */
+#endif
+    }
     while (cast.on && ed_room() && (cast.on == 2u || cast.r != cast.w)) {
         const uint32_t *q = &cast.q[cast.r % CAST_N * 4u];
         uint32_t i;
