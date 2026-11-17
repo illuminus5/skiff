@@ -61,7 +61,7 @@ DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0,
          "wait_loader": 30.0, "wait_reboot": 40.0, "wait_resume": 120.0}
 RESUME_MAX = 5                              # write attempts (the first and the resumes after a drop)
 
-SMK_MODELS = ("SMK-37 Pro", "SMK-37 Elite", "MKE-P37")
+SMK_MODELS = ("SMK-37 Pro", "SMK-37 Elite", "MKE-P37", "STARRYKEY-37 PLAY")
 
 
 def needs_stock_update(text):
@@ -337,9 +337,11 @@ def model_of(text):
 
 
 def same_model(a, b):
-    """identities a and b name exactly the same model ("ota-" aside): a package installs only on its own model
-    (the SMK-37 Pro, SMK-37 Elite and MKE-P37 builds each on their own model, never an FM-1 and an SMK)"""
-    return model_of(a) == model_of(b)
+    """identities a and b name exactly the same model ("ota-" aside; hyphens do not count: STARRYKEY-37 PLAY's
+    package identity is "STARRYKEY37 PLAY_nnn", without them, the package's marker string keeps 20 characters,
+    while the device keeps the true name): a package installs only on its own model (the SMK-37 Pro, SMK-37
+    Elite, MKE-P37 and STARRYKEY-37 PLAY builds each on their own model, never an FM-1 and an SMK)"""
+    return model_of(a).replace("-", "") == model_of(b).replace("-", "")
 
 
 # ------------------------------------------------------------------ MIDI ---
@@ -559,7 +561,8 @@ class Updater:
         if not back:
             raise InstallError("noreturn", "the device did not come back: power-cycle it")
         back.link.close()
-        if back.id.text != product:
+        # the identity as reported, the "ota-" aside and the hyphens out (STARRYKEY-37 PLAY): the version is checked too
+        if back.id.text.removeprefix("ota-").replace("-", "") != product.removeprefix("ota-").replace("-", ""):
             raise InstallError("mismatch", f"written, but the device reports {back.id.text} (expected {product})")
         step("done", back.id.text)
         return back.id.text

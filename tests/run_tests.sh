@@ -238,14 +238,15 @@ python3 tools/fm1pkg_make.py --board smk37 "$OUT/old_app.bin" build/loader/ota.b
 run "SMK-37 Pro package layout (fm1pkg_make --board smk37): PRCT 0x9D000, the stock region table"     python3 tests/smk_pkg_test.py "$OUT/smk_new.fwsc"
 $CC -DBOARD_SMK37=1 -DOWN_PKG=1 -o "$OUT/ota_test_smk" tests/ota_test.c
 run "M-UPGRADE entry, SMK-37 Pro build (staging 0xBB000, record ota-SMK-37 Pro_016)" "$OUT/ota_test_smk" "$OUT/smk_new.fwsc"
-for m in 1 2; do                         # the MODEL=elite / mke builds of ota.c
+for m in 1 2 3; do                       # the MODEL=elite / mke / starry builds of ota.c
     $CC -DBOARD_SMK37=1 -DT_MODEL=$m -o "$OUT/ota_test_smk_m$m" tests/ota_test.c
-    run "M-UPGRADE entry, SMK model $m build (MODEL=elite / mke: its own record identity)" "$OUT/ota_test_smk_m$m"         "$OUT/smk_new.fwsc"
+    run "M-UPGRADE entry, SMK model $m build (MODEL=elite / mke / starry: its own record identity)" "$OUT/ota_test_smk_m$m"         "$OUT/smk_new.fwsc"
 done
-for m in pro elite mke; do               # the packages BOARD=smk37 MODEL=... sh build.sh made, when present
+for m in pro elite mke starry; do        # the packages BOARD=smk37 MODEL=... sh build.sh made, when present
     f=build/skiff-smk37.fwsc; id="SMK-37 Pro_700"
     [ $m = elite ] && f=build/skiff-smk37-elite.fwsc && id="SMK-37 Elite_700"
     [ $m = mke ] && f=build/skiff-smk37-mke.fwsc && id="MKE-P37_700"
+    [ $m = starry ] && f=build/skiff-smk37-starry.fwsc && id="STARRYKEY37 PLAY_700"
     [ -f $f ] && run "SMK package $f: identity $id, the stock region table" python3 tests/smk_pkg_test.py $f "$id"
 done
 $CC -DBOARD_SMK37=1 -o "$OUT/ldr_test_smk" tests/ldr_test.c

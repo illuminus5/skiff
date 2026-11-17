@@ -15,13 +15,16 @@ const MAXDATA = 512;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const IS_OTA = (id) => /^ota-/i.test(id.model);
 // two models ("ota-" aside) are exactly the same: a package installs only on its own model (the SMK-37 Pro,
-// SMK-37 Elite and MKE-P37 builds each on their own model, never an FM-1 and an SMK)
-export const sameModel = (a, b) => a.replace(/^ota-/i, "") === b.replace(/^ota-/i, "");
+// SMK-37 Elite, MKE-P37 and STARRYKEY-37 PLAY builds each on their own model, never an FM-1 and an SMK).
+// Hyphens do not count: STARRYKEY-37 PLAY's package identity is "STARRYKEY37 PLAY_nnn", without them (the
+// package's marker string keeps 20 characters); the firmware keeps the true name everywhere else
+export const sameModel = (a, b) => a.replace(/^ota-/i, "").replace(/-/g, "") === b.replace(/^ota-/i, "").replace(/-/g, "");
 // the site's package for a device's model, from [{ product, pkg }], or null (no build for that model)
 export const packageFor = (packages, model) => packages.find((p) => sameModel(model, p.product.split("_")[0])) || null;
-// a stock SMK-37 Pro / Elite / MKE-P37 older than V016 (identity _011.._015) is updated with M-VAVE's tool first:
-// the SMK port's install was verified from V016. FM-1s, Skiff (7xx), other ports (9xx) and recovery (000) pass
-export const SMK_MODELS = ["SMK-37 Pro", "SMK-37 Elite", "MKE-P37"];
+// a stock SMK-37 Pro / Elite / MKE-P37 / STARRYKEY-37 PLAY older than V016 (identity _011.._015) is updated with
+// M-VAVE's tool first: the SMK port's install was verified from V016. FM-1s, Skiff (7xx), other ports (9xx) and
+// recovery (000) pass
+export const SMK_MODELS = ["SMK-37 Pro", "SMK-37 Elite", "MKE-P37", "STARRYKEY-37 PLAY"];
 export const needsStockUpdate = (id) => SMK_MODELS.includes(id.model) && id.version > 0 && id.version < 16;
 // (2.0.2, #64) why a running Skiff turned an official FM-1 file away, from where its reads stopped (firmware/src/ota.c
 // ota_stage, the counts pinned by tests/ota_test.c): after the header's 2, flash.bin's size (V16's file, a Skiff before
@@ -29,7 +32,7 @@ export const needsStockUpdate = (id) => SMK_MODELS.includes(id.model) && id.vers
 // #64) An SMK-37's head there is not V016's, the only SMK file the page takes: no version to name. The message's key
 // (index_pkg.html), or null
 export function stockRefusal(product, e) {
-  const smk = SMK_MODELS.includes(product.split("_")[0]);
+  const smk = SMK_MODELS.some((m) => sameModel(m, product.split("_")[0]));
   if (!e || e.code !== "stopped" || (!smk && !/^FM-1_/.test(product))) return null;
   if (e.served === 2 && !smk) return "stockSkiffOld";
   if (e.served >= 4 && e.served <= 35) return smk ? "stockSmkHead" : product === "FM-1_016" ? "stockNeedsV15" : "stockNeedsV16";
@@ -265,7 +268,9 @@ export class Updater {
     const back = await this.waitFor((id) => !IS_OTA(id) && sameModel(id.model, model), 40000);
     if (!back) throw fail("noreturn", "the device did not come back: power-cycle it");
     back.link.close();
-    if (back.id.text !== product) throw fail("mismatch", `installed, but the device reports ${back.id.text}`, back.id.text);
+    // the identity as reported, the "ota-" aside and the hyphens out (STARRYKEY-37 PLAY): the version is checked too
+    if (back.id.text.replace(/^ota-/i, "").replace(/-/g, "") !== product.replace(/^ota-/i, "").replace(/-/g, ""))
+      throw fail("mismatch", `installed, but the device reports ${back.id.text}`, back.id.text);
     step("done", back.id.text);
     return back.id.text;
   }
@@ -315,7 +320,8 @@ export class Updater {
       const back = await this.waitFor((id) => !IS_OTA(id) && sameModel(id.model, model), 40000);
       if (!back) throw fail("noreturn", "The device did not return after resuming the write.");
       back.link.close();
-      if (back.id.text !== product) throw fail("mismatch", "The device reports a different firmware after resuming.", back.id.text);
+      if (back.id.text.replace(/^ota-/i, "").replace(/-/g, "") !== product.replace(/^ota-/i, "").replace(/-/g, ""))
+        throw fail("mismatch", "The device reports a different firmware after resuming.", back.id.text);
       step("done", back.id.text);
     }
     return true;

@@ -401,9 +401,10 @@ def smk():
 
     # a stock SMK older than V016 is updated with M-VAVE's tool (or the official V016 file) first
     ok(I.needs_stock_update("SMK-37 Pro_012") and I.needs_stock_update("SMK-37 Elite_015") and I.needs_stock_update("MKE-P37_013")
+       and I.needs_stock_update("STARRYKEY-37 PLAY_012") and not I.needs_stock_update("STARRYKEY-37 PLAY_016")
        and not I.needs_stock_update("SMK-37 Pro_016") and not I.needs_stock_update("SMK-37 Pro_700")
        and not I.needs_stock_update("SMK-37 Pro_000") and not I.needs_stock_update("FM-1_015"),
-       "stock check: SMK-37 Pro / Elite / MKE-P37 below V016 only")
+       "stock check: SMK-37 Pro / Elite / MKE-P37 / STARRYKEY-37 PLAY below V016 only")
     dev = FakeFM1(image, identity="SMK-37 Pro_012", name="SMK-37 Pro Midi")
     rc, out, err = cli([p, "--yes"], dev)
     ok(rc == 7 and dev.upgrades == 0 and "V016" in err, "Skiff on a stock SMK-37 Pro older than V016 -> exit 7, nothing sent")
@@ -555,19 +556,44 @@ def two_units():
            f"two units, the other one {what} and listed first: the package's own unit, loader and return")
 
 
+def starry():
+    """STARRYKEY-37 PLAY, a fourth name of the SMK-37 keyboard: its package identity has no hyphen
+    ("STARRYKEY37 PLAY_nnn": the package's marker string keeps 20 characters), the unit reports the true name"""
+    p = pkgfile("starry.fwsc", package("STARRYKEY37 PLAY_900"))
+    image = I.logical_image(package("STARRYKEY37 PLAY_900"))
+    dev = FakeFM1(image, identity="STARRYKEY-37 PLAY_016", name="STARRYKEY-37 PLAY Midi", after_write="STARRYKEY-37 PLAY_900",
+                  loader=("ota-STARRYKEY37 PLAY_900", "Felucca Update"))
+    rc, out, err = cli([p, "--yes"], dev)
+    ok(rc == 0 and dev.bad == 0 and dev.upgrades == 2 and "STARRYKEY-37 PLAY_900" in out,
+       "install on a STARRYKEY-37 PLAY: the hyphen-less package on the hyphenated unit")
+    dev = FakeFM1(image, identity="ota-STARRYKEY37 PLAY_900", name="Felucca Update", after_write="STARRYKEY-37 PLAY_900")
+    rc, out, err = cli([p, "--yes"], dev)
+    ok(rc == 0 and dev.upgrades == 1, "a STARRYKEY-37 PLAY in Felucca's update mode -> finishes the write")
+    dev = FakeFM1(image, identity="SMK-37 Pro_016", name="SMK-37 Pro Midi")
+    rc, out, err = cli([p, "--yes"], dev)
+    ok(rc == 6 and dev.upgrades == 0, "STARRYKEY37 PLAY package on an SMK-37 Pro -> exit 6, nothing sent")
+    dev = FakeFM1(image, identity="STARRYKEY-37 PLAY_016", name="STARRYKEY-37 PLAY Midi")
+    rc, out, err = cli([pkgfile("smk.fwsc", package("SMK-37 Pro_900")), "--yes"], dev)
+    ok(rc == 6 and dev.upgrades == 0, "SMK-37 Pro package on a STARRYKEY-37 PLAY -> exit 6, nothing sent")
+
+
 wire()
 installs()
 errors()
 smk()
+starry()
 hardening()
 two_units()
-# a package installs only on exactly its own model: each SMK model's build on that model, never FM-1 <-> SMK
+# a package installs only on exactly its own model: each SMK model's build on that model, never FM-1 <-> SMK.
+# The hyphens do not count (STARRYKEY-37 PLAY's package identity has none), the rest is exact
 ok(I.same_model("SMK-37 Pro_016", "SMK-37 Pro_900") and I.same_model("ota-SMK-37 Elite_900", "SMK-37 Elite_900")
    and I.same_model("MKE-P37_016", "MKE-P37_900") and I.same_model("FM-1_015", "FM-1_900")
+   and I.same_model("STARRYKEY-37 PLAY_016", "STARRYKEY37 PLAY_900")
    and not I.same_model("SMK-37 Elite_016", "SMK-37 Pro_900") and not I.same_model("ota-MKE-P37_900", "SMK-37 Elite_900")
    and not I.same_model("SMK-37 Pro_016", "MKE-P37_900") and not I.same_model("FM-1_015", "SMK-37 Pro_900")
-   and not I.same_model("ota-SMK-37 Pro_900", "FM-1_900") and not I.same_model("XY-9_001", "SMK-37 Pro_900"),
-   "models: a package only for exactly its own model (Pro, Elite, MKE-P37, FM-1)")
+   and not I.same_model("ota-SMK-37 Pro_900", "FM-1_900") and not I.same_model("XY-9_001", "SMK-37 Pro_900")
+   and not I.same_model("STARRYKEY-37 PLAY_016", "SMK-37 Pro_900"),
+   "models: a package only for exactly its own model (Pro, Elite, MKE-P37, STARRYKEY-37 PLAY, FM-1)")
 ok(all(I.PORT_RE.search(n) for n in ("SMK-37 Elite", "MKE-P37", "STARRYKEY-37 PLAY", "Felucca", "Felucca Update")),
    "port names: every SMK model and Felucca probed")
 against_js()

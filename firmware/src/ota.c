@@ -50,6 +50,9 @@ _Static_assert(OTA_AREA + OTA_AREA_LEN <= 0xC0000u && OTA_AREA >= 0x9D000u, "SMK
 #define OTA_FL_V16 0xA9000u                      /* ((2.0.2, #64) M-VAVE's V16, FM-1_016: its PRCT reaches 0xA9000 (DX7.bin
                                                   * in it); the same official loader as V15's writes it */
 #endif
+/* the identity is written into the record's zeroed field, bytes 8..0x27 (ota_session's UPDATA_PARM): it must fit,
+ * the loop would run past it (STARRYKEY-37 PLAY's, the longest, is 25 B) */
+_Static_assert(8u + sizeof OTA_PARM_ID - 2u <= 0x27u, "UPDATA_PARM: the identity fits its zeroed field (8..0x27)");
 #define OTA_LDR_HCRC 0xEBAAu                     /* official update loader (usb_hid_ota.bin) */
 #define OTA_LDR_DCRC 0x5881u
 #define OTA_LDR_LEN 0x4DE1u
