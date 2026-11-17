@@ -637,6 +637,7 @@ static void run_undo(track_t *t, const char *name)
 }
 static void run_done(track_t *t)
 {
+    nc_prune(t);                                        /* ((#92) a condition left on no note goes) */
     undo.after = track_sig(t);
     undo.t_ms = fm1_ms;
 }
@@ -727,8 +728,10 @@ static void ed_close(track_t *t, step_t *w, uint32_t len, uint64_t keep)
         pu = cur;
     }
     fm1_irq_off();                                      /* the audio ISR must not see half a pattern */
+    (void)nc_keep(&ncs[trk_index(t)], w, t->step, 0, len);   /* ((#92) its notes' conditions: where their notes still are) */
     memcpy(t->step, w, len * sizeof *w);
     fm1_irq_on();
+    nc_repitch = 0;
     if (len)                                            /* ((2.0, #44) a note no longer at the part's end: its tail */
         (void)chain_tails(trk_index(t), &last, 0, 0, 0, 0);   /* in a chain's next part goes) */
 }
@@ -807,6 +810,7 @@ static void sel_pitch(track_t *t, int32_t d)
         for (k = 0; k < w[j].n; k++)
             if ((mv[j] >> k) & 1u)
                 last_note = w[j].note[k] = (uint8_t)scale_step(t, w[j].note[k], d);
+    nc_repitch = 1;                                     /* ((#92) a note's condition stays on it, transposed) */
     ed_close(t, w, len, 0);
     run_done(t);
 }
@@ -815,7 +819,10 @@ static void sel_pitch(track_t *t, int32_t d)
 static void steps_rotate(track_t *t, uint32_t x0, uint32_t x1, int32_t u)
 {
     step_t keep;
+    uint8_t to[NSTEP];                                  /* step j goes to to[j] */
     uint32_t j, k = trk_index(t), f;
+    for (j = 0; j < NSTEP; j++)
+        to[j] = (uint8_t)(j < x0 || j > x1 ? j : u > 0 ? (j == x1 ? x0 : j + 1u) : (j == x0 ? x1 : j - 1u));
     if (u > 0) {
         keep = t->step[x1];
         for (j = x1; j > x0; j--)
@@ -830,11 +837,11 @@ static void steps_rotate(track_t *t, uint32_t x0, uint32_t x1, int32_t u)
     f = motion_guard();
     for (j = 0; j < motion.count; j++) {
         motion_event_t *e = &motion.event[j];
-        uint32_t p = e->place & 63u;
-        if ((e->place >> 6) == k && p >= x0 && p <= x1)
-            e->place = (uint16_t)(k << 6 | (u > 0 ? (p == x1 ? x0 : p + 1u) : (p == x0 ? x1 : p - 1u)));
+        if ((e->place >> 6) == k)
+            e->place = (uint16_t)(k << 6 | to[e->place & 63u]);
     }
     motion_unguard(f);
+    nc_drop(t, x0, x1 + 1u);                            /* ((#92) its notes' conditions: gone with the move) */
 }
 /* nothing picked, or every chord of the range picked whole: the selection moves as whole steps */
 static int sel_whole(const track_t *t)
@@ -1032,13 +1039,34 @@ static void feel_set(step_t *s, uint32_t k, int32_t v)
         s->flags = (uint8_t)((s->flags & ~(SF_ACCENT | SF_SLIDE)) | (v & 1 ? SF_ACCENT : 0u) | (v & 2 ? SF_SLIDE : 0u));
     }
 }
+/* (#92) FEEL's KNOB 1 on the notes' own trig conditions (ui.c feel_nc_mode): every picked note of the selection (a drum
+ * track, SHIFT + KNOB 1: every hit of the LANE card's lane in it) to the first one's turned, a detent a condition (--,
+ * FILL .. 4:4); one finding no room: NOTE CONDS FULL. A run of them is one undo */
+static const char SN_NCOND[] = "COND";
+static void feel_nc_turn(track_t *t, uint32_t m, int32_t steps)
+{
+    uint32_t c;
+    if (m == 2u)
+        shift_mark();                                   /* (a SHIFT combo: no HOME tap after) */
+    if ((c = feel_nc(t, m, -1)) == NC_NONE)
+        return;                                         /* (none in the selection: the card says --) */
+    run_undo(t, SN_NCOND);
+    c = feel_nc(t, m, clamp((int32_t)c + (steps > 0 ? 1 : -1), TC_NONE, TC_COUNT - 1));
+    run_done(t);
+    if (c)
+        ui_message("NOTE CONDS FULL");
+}
 /* FEEL's KNOB k: every selected step to the first one's value turned (the tiles show this knob's values after) */
 static void feel_turn(track_t *t, uint32_t k, int32_t steps)
 {
     static const int8_t LO[4] = {0, 1, NUDGE_MIN, 0}, HI[4] = {100 + TC_COUNT - 1, 5, NUDGE_MAX, 3};
-    uint32_t i, f = sel_first(t);
+    uint32_t i, f = sel_first(t), m;
     int32_t v;
     nsel.view = (uint8_t)k;
+    if (k == 0u && (m = feel_nc_mode(t)) != 0u) {      /* ((#92) the notes' own conditions) */
+        feel_nc_turn(t, m, steps);
+        return;
+    }
     if (f == NSTEP)
         return;
     v = feel_get(&t->step[f], k) + (k == 0u ? accel(EN_K1, steps, 110) : k == 2u ? accel(EN_K3, steps, 63) :
@@ -1378,6 +1406,8 @@ static void lock_keys(void)
             else
                 grid_hit(&trk[ui.plk_trk % NTRK], i, ui.plk_lane, 0);
         }
+    if (gone)
+        nc_prune(&trk[ui.plk_trk % NTRK]);              /* ((#92) a hit's condition gone with it) */
     ui.plk_rm &= ~gone;
 }
 
@@ -1866,6 +1896,7 @@ static void seq_entry(uint32_t pressed)
             else {
                 st->n = 0;                                /* (the TIEs after it hold what the keys write: its length) */
                 st->time = ST_NOTE;
+                nc_drop(t, ui.cursor, ui.cursor + 1u);    /* ((#92) a chord entered anew: none of the old one's) */
             }
         }
         ch[0] = (uint8_t)note;                          /* (CHRD OFF, a kit, (2.1) a SOLO black key: the note */
@@ -2602,6 +2633,10 @@ static void ui_input(void)
             }
         } else
             seq_entry(notes);                           /* armed and stopped: step recording at the cursor */
+    } else if (song.seq_mode && cur_page()->graph == GR_FEEL && !drum_track(TSEL) && !((song.rec >> song.sel) & 1u) &&
+               notes && sel_keys(notes)) {
+        ui.force = 1;                                   /* ((#92) FEEL, not armed: a key picks its note too, for KNOB 1's
+                                                         * condition of its own) */
     }
 
     /* #102: the knobs a layer took above are not read again here. The TIMER5 scan (10 kHz) counts detents while this

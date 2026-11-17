@@ -31,9 +31,7 @@ static void ed_ui_state(void)
 #endif
 #ifdef FELUCCA_FAVORITES
     ed_b(favorites.filter);
-    sig = 2166136261u;
-    for (uint32_t i = 0; i < sizeof favorites; i++)
-        sig = (sig ^ ((const uint8_t *)&favorites)[i]) * 16777619u;
+    sig = fnv(2166136261u, &favorites, sizeof favorites);
 #else
     ed_b(127);
 #endif

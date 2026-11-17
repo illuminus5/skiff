@@ -846,6 +846,15 @@ static void fr_columns(void)
                 fr.nst > 1u ? (int32_t)fr.start * 1000 / (int32_t)(fr.nst - 1u) : -1, ICON_PHASE);
     draw_column(3, "TEMPO", fr.set ? "SET" : "KEEP", "", song.g[G_CLOCK] ? VR_DIM : VR_LIVE, fr.set ? 1000 : 0, ICON_TEMPO);
 }
+/* (#92) FEEL's first card on the notes' own conditions (ui.c feel_nc, mode m): the first one's in val, *l its label (a
+ * lane's name on a DRUM track); 0: none in the selection. Out of line: draw_columns' frame stays as it was */
+static __attribute__((noinline)) int feel_nc_card(const track_t *t, uint32_t m, char *val, uint32_t n, const char **l)
+{
+    uint32_t c = feel_nc(t, m, -1);
+    str_cpy(val, TC_NAME[c != NC_NONE ? c : TC_NONE], n);
+    *l = m == 2u ? drum_lane_name(t, ui.lane % NLANE) : "COND";
+    return c != NC_NONE;
+}
 static void draw_columns(void)
 {
     uint32_t c;
@@ -871,16 +880,20 @@ static void draw_columns(void)
                                                         * first step (none: the cursor's; DIM there, or a value at rest) */
         static const char *const FL[4] = {"CHANCE", "RATCHET", "NUDGE", "TYPE"};
         static const uint16_t FI[4] = {ICON_PROB, ICON_X_REPEAT, ICON_TIME, ICON_AUTO};
-        uint32_t f = sel_first(TSEL);
+        uint32_t f = sel_first(TSEL), m = feel_nc_mode(TSEL);
         const step_t *cs = &TSEL->step[f < NSTEP ? f : ui.cursor];
         for (c = 0; c < 4u; c++) {
             int32_t v = feel_get(cs, c);
-            const char *u = feel_text(val, cs, c);
-            if (c == 0u && !step_starts(cs)) {        /* (no note there: no chance to speak of) */
+            const char *u = feel_text(val, cs, c), *l = FL[c];
+            int live = f < NSTEP && (c == 0u || v != (c == 1u ? 1 : 0));
+            if (c == 0u && m) {                       /* ((#92) the picked notes' own condition, a lane's: KICK 1:2) */
+                live = feel_nc_card(TSEL, m, val, sizeof val, &l);
+                u = "";
+            } else if (c == 0u && !step_starts(cs)) { /* (no note there: no chance to speak of) */
                 str_cpy(val, "--", sizeof val);
                 u = "";
             }
-            draw_column(c, FL[c], val, u, f < NSTEP && (c == 0u || v != (c == 1u ? 1 : 0)) ? VR_LIVE : VR_DIM, -1, FI[c]);
+            draw_column(c, l, val, u, live ? VR_LIVE : VR_DIM, -1, FI[c]);
         }
         return;
     }

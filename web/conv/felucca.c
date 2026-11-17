@@ -206,7 +206,7 @@ static uint32_t fel_pats(project_t *q, const motion_store_t *mk)
             continue;
         for (i = 0; i < 5u; i++)
             tv[i] = q->t[k].p[BK_TIME[i]];
-        if (!bk_pack_raw(bk_rec, k, q->t[k].step, tv, &mk[k], mk[k].on != 0))
+        if (!bk_pack_raw(bk_rec, k, q->t[k].step, tv, &mk[k], mk[k].on != 0, 0))
             return 2;
         if ((id = pool_find(bk_rec)) == NPAT && ((id = pool_alloc()) == NPAT || pat_keep_now(id, bk_rec)))
             return 4;

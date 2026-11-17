@@ -1217,7 +1217,31 @@ static const char *feel_text(char *b, const step_t *s, uint32_t k)
     str_cpy(b, TY[v & 3], 8);
     return "";
 }
-
+/* (#92) FEEL's KNOB 1 on the notes' own trig conditions (seq.c ncond.c): 1 the picked notes' (a melodic track: the keys
+ * pick them on NOTES or FEEL), 2 the hits of the LANE card's lane (a drum track, SHIFT + KNOB 1); 0 the steps' CHANCE */
+static int shift_held(void);
+static void shift_mark(void);
+static uint32_t feel_nc_mode(const track_t *t)
+{
+    if (drum_track(t))
+        return shift_held() ? 2u : 0u;
+    return nsel.picked ? 1u : 0u;
+}
+/* .. on the selection's notes it sets (the picked ones; 2: the LANE card's lane's hits): v < 0 the first one's condition,
+ * NC_NONE none there; else each set to v: 1 one found no room */
+#define NC_NONE 0xFFu
+static uint32_t feel_nc(const track_t *t, uint32_t mode, int32_t v)
+{
+    uint32_t i, k, len = (uint32_t)t->p[P_SLEN], lane = NC_LANE + ui.lane % NLANE, full = 0;
+    for (i = sel_lo(); i <= sel_hi() && i < len && i < NSTEP; i++)
+        for (k = 0; sel_step(t, i) && k < NC_LANE + NLANE; k++)
+            if (nc_on(&t->step[i], k) && (mode == 2u ? k == lane : k < NC_LANE && sel_voice(i, k))) {
+                if (v < 0)
+                    return nc_get(t, i, k);
+                full |= (uint32_t)nc_set(t, i, k, (uint32_t)v);
+            }
+    return v < 0 ? NC_NONE : full;
+}
 /* SEQ cursor: wraps inside the pattern length, the bank follows, a step entry ends ((1.3) the bank stays there a while,
  * follow_hold); (2.0) the selection goes; ((#44) stopped on a chain: on into its next part, back into the one before) */
 static void cursor_set(int32_t c)
@@ -1418,10 +1442,13 @@ typedef struct {
 #define UNDO_N 6u                        /* (2.5: 8 before; their 3.3 KiB of .ramx went to the stopped take's log) */
 #define UNDO_WIN 180u                    /* the undo window, frames (~2.7 s): OCT- back, OCT+ redo (undo_step) */
 static undo_t undo_ring[UNDO_N] __attribute__((section(".ramx")));
+/* (#92) each copy's notes' trig conditions (seq.c ncond.c), beside the ring: .ramx has no room for them */
+static ncond_store_t undo_ncs[UNDO_N] __attribute__((section(".pool")));
 static uint8_t undo_n, undo_top, undo_back;
 static const char *undo_label;   /* the next copy's name, set just before its load_begin (tl_undo_take,
                                   * motion_undo_take); 0: by what it changes */
 #define undo (undo_ring[undo_top])
+#define undo_nc (undo_ncs[undo_top])
 /* (2.0) the copies numbered; pin: the copy a SET layer's first change took (SEQ TOOLS, REC: the track as the layer
  * opened, its OCT- puts that back: ui_tools.c tl_put_back; was a copy of its own, 1.1 KB of the pool), kept while the
  * ring turns (undo_push); pin_next: such a layer open, its first copy not taken yet */
@@ -1452,8 +1479,10 @@ static void undo_push(uint32_t what)                       /* a new copy: the ca
     undo_back = 0;
     if (undo_n < UNDO_N)
         undo_n++;
-    else if (upin.pin && undo.seq == upin.pin)             /* ((2.0) the oldest is the put-back's: it takes the next */
+    else if (upin.pin && undo.seq == upin.pin) {           /* ((2.0) the oldest is the put-back's: it takes the next */
         undo_ring[(undo_top + 1u) % UNDO_N] = undo;        /* oldest's place, that one goes) */
+        undo_ncs[(undo_top + 1u) % UNDO_N] = undo_nc;
+    }
     undo.seq = ++upin.seq ? upin.seq : ++upin.seq;         /* (1.., 0: none) */
     if (upin.pin_next) {
         upin.pin = undo.seq;
@@ -1514,13 +1543,6 @@ static void lists_clear(void)                          /* no lists, no patterns 
 static uint8_t load_from;        /* a sound load (the outer one): the engine before it (load_end) */
 static uint8_t load_mo;          /* .. the track's motion paused while the sound changes: bit 0 set, bit 1 it was ON */
 
-static uint32_t fnv(uint32_t h, const void *p, uint32_t n)
-{
-    const uint8_t *b = (const uint8_t *)p;
-    while (n--)
-        h = (h ^ *b++) * 16777619u;
-    return h;
-}
 static uint32_t steps_sig(const track_t *t) { return fnv(2166136261u, t->step, sizeof t->step); }
 static uint32_t track_sig(const track_t *t)      /* the sound (an FM6 track's patch, a DRUM-X track's kit), the steps */
 {
@@ -1531,6 +1553,8 @@ static uint32_t track_sig(const track_t *t)      /* the sound (an FM6 track's pa
         h = fnv(h, dx_kit, sizeof dx_kit);
     for (uint32_t j = 0; j < motion.count; j++)
         if ((motion.event[j].place >> 6) == k) h = fnv(h, &motion.event[j], sizeof motion.event[j]);
+    if (ncs[k].n)                                /* ((#92) its notes' conditions; none: as before) */
+        h = fnv(h, &ncs[k], 1u + 2u * ncs[k].n);
     return h ^ ((motion.on >> k) & 1u);
 }
 static uint32_t motion_sig(const track_t *t)     /* the track's motion only (the sound moves while it plays) */
@@ -1699,6 +1723,7 @@ static void load_begin(track_t *t, uint32_t what)
         memcpy(undo.dx, dx_kit, sizeof undo.dx);
     undo.pid = trk_pid[i];
     motion_snapshot_track(t, &undo.motion_backup);
+    undo_nc = ncs[i];
     load_motion_hold(t, what);
 }
 
@@ -1834,6 +1859,7 @@ static int undo_swap(undo_t *c)
             t->step[i] = c->step[i];
             c->step[i] = s;
         }
+        nc_swap(&undo_ncs[c - undo_ring], &ncs[trk_index(t)]);   /* ((#92) its notes' conditions) */
     }
     if (c->what & UNDO_KIT) {                     /* (phase 7) INIT on DRUM-X: the project's kit as it was */
         dx_lane_t k[DV_NLANE];
@@ -1899,6 +1925,7 @@ static void track_defaults_steps(track_t *t)
     motion_reset(t);
     for (i = 0; i < NSTEP; i++)
         step_clear(&t->step[i]);
+    nc_prune(t);                                 /* ((#92) none on no note) */
 }
 
 

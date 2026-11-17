@@ -383,15 +383,15 @@ static __attribute__((noinline)) uint32_t seq_next(track_t *t, uint32_t len)
 
 #include "take.c"                                   /* Skiff: TAKES' log (input_on/off, the arp, motion_capture) */
 static volatile uint8_t seq_fill;                   /* Skiff: FILL held (GLO + F4, ui_layer.c): the FILL steps play */
-/* Skiff: step s of track t passes its trig condition (core.h TC_*) on this pass of the track's loop (take_pass: the
- * first pass since PLAY is 1; ahead 1: the next pass, a step played early (NUDGE) before its pass starts); a step
- * without one always does. No random number taken (the CHANCE roll after it).
+/* Skiff: trig condition c (core.h TC_*: a step's, (#92) a note's) of track t passes on this pass of the track's loop
+ * (take_pass: the first pass since PLAY is 1; ahead 1: the next pass, a step played early (NUDGE) before its pass
+ * starts); none always does. No random number taken (the CHANCE roll after it).
  * Not inlined, and called only for a step that has one: kept out of the audio ISR's loop (tests/target_budget.py) */
-static __attribute__((noinline)) int step_cond_ok(const track_t *t, const step_t *s, uint32_t ahead)
+static __attribute__((noinline)) int tc_ok(const track_t *t, uint32_t c, uint32_t ahead)
 {
     static const uint8_t A[TC_COUNT] = {0, 0, 0, 1, 2, 1, 2, 3, 1, 2, 3, 4};
     static const uint8_t B[TC_COUNT] = {1, 1, 1, 2, 2, 3, 3, 3, 4, 4, 4, 4};
-    uint32_t c = s->cond, p;
+    uint32_t p;
     if (c == TC_NONE || c >= TC_COUNT)
         return 1;
     if (c == TC_FILL || c == TC_NFILL)
@@ -400,6 +400,7 @@ static __attribute__((noinline)) int step_cond_ok(const track_t *t, const step_t
     return p > 0u && (p - 1u) % B[c] + 1u == A[c];
 }
 #include "motion.c"
+#include "ncond.c"                                  /* Skiff (#92): per-note trig conditions */
 
 /* the ARP's modes (P_AMODE). Append-only: a stored value keeps its meaning (ORD plays as UP, the ORD switch of
  * ARP 2 orders the notes). 1.2 (Discussion #95), over the note list (the held notes low to high, or as played,
@@ -1507,6 +1508,8 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
     }
     for (i = 0; i < s->n && i < 4u; i++) {
         uint32_t x = s->note[i];
+        if ((nc_skip[k] >> i) & 1u & ~(ties >> i))
+            continue;                               /* ((#92) its own condition not met: it doesn't start) */
         if (qseq) {                                 /* QNT SEQ: onto the scale now; two notes snapping */
             x = (uint32_t)clamp(scale_snap(t, (int32_t)x + qtrn), 0, 127);   /* together play once */
             for (j = 0; j < m && nn[j] != x; j++)
@@ -1525,7 +1528,7 @@ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint
     if (m && !miss && !(skip & SEQ_REP))
         fol_step(t, nn, m);                         /* ((2.1) its chord now, for the tracks following it) */
     for (i = 0; i < NLANE; i++)
-        if ((s->hit >> i) & 1u) {
+        if ((s->hit >> i) & 1u & ~(nc_skip[k] >> (NC_LANE + i))) {   /* ((#92) not a hit whose condition failed) */
             nn[m] = DRUM_LANE_NOTE[i];
             vv[m] = (uint8_t)((s->acc >> i) & 1u ? 127u : vel);
             sk |= ((skip >> (8u + i)) & 1u) << m;
@@ -1605,6 +1608,7 @@ static __attribute__((noinline)) void seq_audition(void)
     at = t->seq_idx;
     fi = t->fire_idx;
     t->seq_idx = t->fire_idx = (uint16_t)idx;
+    nc_skip[i] = 0;                                 /* ((#92) every note of it: a preview) */
     seq_step(t, &t->step[idx], div_samples(2), SEQ_ROLLED);
     t->seq_idx = at;
     t->fire_idx = fi;
@@ -1649,10 +1653,13 @@ static __attribute__((noinline)) void seq_fire(track_t *t, uint32_t idx, uint32_
     t->fire_idx = (uint8_t)idx;
     /* the chance first (the one roll, as seq_step made it): a step that does not play applies no lock; the
      * automation and the locks before the notes, so a note-on reads them (eng_drum's KIT, ..) */
-    if (s->cond && !step_cond_ok(t, s, ahead))      /* (Skiff) its trig condition first: not this pass, no roll */
+    nc_skip[trk_index(t)] = 0;
+    if (s->cond && !tc_ok(t, s->cond, ahead))       /* (Skiff) its trig condition first: not this pass, no roll */
         skip = SEQ_MISS;
     else if (step_chance(s) < 100u && rng() % 100u >= step_chance(s))
         skip = SEQ_MISS;
+    else if (ncs[trk_index(t)].n && nc_fails(t, s, idx, ahead))
+        skip = SEQ_MISS;                            /* ((#92) its notes' own: none met, the step plays nothing) */
     mo_motion(t, idx, skip == SEQ_ROLLED);
     if (t->rskip_n && t->rskip_idx == idx) {
         for (k = 0; k < t->rskip_n; k++) {

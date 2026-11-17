@@ -374,8 +374,10 @@ the page: click or tap the buttons and keys, drag or scroll a knob, Shift-click 
 - **Sequencer:** 64 steps a track with chords, accent, slide, velocity, per-step chance and trig
   conditions (1:2, 3:4 ..), ratchets and **FLAM**, **NUDGE** (a step early or late, in 64ths), a step's own
   GATE, play direction (FWD, RVRS, PING, RAND); a drum grid (white keys steps, black keys lanes; a step's chance,
-  ratchet and condition cover every hit on it); live loop recording with overdub, **FEEL** (recording keeps where
-  you played), step recording, count-in and click. While playing, the step pages follow the playhead past step 16
+  ratchet and condition cover every hit on it); a note of a chord or a lane's hit can have a condition of its own,
+  so one step plays differently from pass to pass (SEQ › FEEL); live loop recording with overdub, **FEEL**
+  (recording keeps where you played), step recording, count-in and click. While playing, the step pages follow the
+  playhead past step 16
   (1.3); MENU › STEP PREVIEW sounds the step the cursor lands on (1.3); QUANTIZE SEQ+T transposes the
   sequencer's notes by TRANSP before it snaps them to the scale (1.3)
 - **NOTES and FEEL** (2.0): two step pages, PRESETS the cursor on both. SEQ › NOTES, the piano roll, edits a
@@ -385,8 +387,13 @@ the page: click or tap the buttons and keys, drag or scroll a knob, Shift-click 
   key picks one note of a chord. **SHIFT + OCT− / OCT+** copy and paste the selection, **SHIFT + EDIT** deletes it
   (on the drum grid copy and paste follow the LANE: a figure moved from lane to lane). SEQ › FEEL, 16 tiles, sets
   CHANCE (OFF, 1–100 %, then the trig conditions), RATCHET (×1–4, FLAM), NUDGE and TYPE (accent, slide) on every
-  selected step. A new note is 1 STEP long (PATTERN's GATE 100 %); PATTERN's PRESETS turns the direction. (2.5) With a
-  note in the selection, NOTES' footer says SHIFT + EDIT: DELETE
+  selected step. With notes picked (REC off, their keys) FEEL's KNOB 1 is COND, those notes' own condition (--, FILL,
+  !FILL, 1:2 to 4:4): C on 1:4, E on 2:4, G on 3:4 and B on 4:4 play one a pass. On a drum track **SHIFT + KNOB 1**
+  sets it for the LANE's hits in the selection (the card says SNARE 1:2). A note plays when its step's CHANCE and its
+  own condition both pass: leave CHANCE at 100 % for the notes' own to decide alone. A pattern holds 32; firmware 2.7
+  and older ignores them and plays every note, and a save there drops them. A new note is 1 STEP long (PATTERN's
+  GATE 100 %); PATTERN's PRESETS turns the direction. (2.5) With a note in the selection, NOTES' footer says
+  SHIFT + EDIT: DELETE
 - **Patterns and songs:** 64 patterns shared by every project; each track has a list of 16 entries (A–P),
   each a pattern played REPS times; **SONG** plays each track down its list. Patterns keep themselves: no save
   needed. (2.0) Entries on **CHAIN** play and edit as one long pattern, **SONG ONCE** plays the lists once and stops,
@@ -562,7 +569,9 @@ by the keys, with what each key is in Skiff.
   lists it picks, (2.5) on DELAY it turns the MODE and on INSERT the MIX (a card says so). With SAVE › PRESETS' LIST
   on a type (BASS, PAD ..) it steps through that type only
 - On NOTES and FEEL, **SHIFT + PRESETS** stretches the selection over a range of steps, **SHIFT + OCT− / OCT+** copy
-  and paste it, **SHIFT + EDIT** deletes it; with REC off a key picks its note in the selection
+  and paste it, **SHIFT + EDIT** deletes it; with REC off a key picks its note in the selection (the same key
+  drops it), and FEEL's KNOB 1 sets the picked notes' own condition
+- On a drum track's FEEL, **SHIFT + KNOB 1** sets the condition of the LANE's hits in the selection
 - (2.5) On SEQ › SONG, **SHIFT + PLAY** plays the song from the entry KNOB 1 is on, **SHIFT + EDIT** empties it
 - On action pages and in dialogs, **OCT+** does it and **OCT−** goes back
 - Hold a step on SEQ › NOTES (on the drum grid its white key; on the piano roll the step you are entering, REC armed

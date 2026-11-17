@@ -164,7 +164,7 @@ static int record(void)
     static const int16_t TV[5] = {8, 2, 0, 64, 0};
     static motion_store_t ms;
     static step_t st[NSTEP], back;
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     uint8_t b[9];
     int bad = 0, ok;
     uint32_t i;
@@ -182,11 +182,11 @@ static int record(void)
     st[0] = (step_t){{C4}, 1, ST_NOTE, 0, 100};
     st[1] = (step_t){{0}, 0, ST_TIE, 0, 0};
     st[2] = (step_t){{C4, E4}, 2, ST_NOTE, 0, 100};
-    ok = bk_pack_raw(r, 0, st, TV, &ms, 0) && r[0] == BK_VER;
+    ok = bk_pack_raw(r, 0, st, TV, &ms, 0, 0) && r[0] == BK_VER;
     for (i = 0; i < NSTEP; i++)
         ok &= r[BK_STEPS + i * 9u + 7u] == 0u;
     st[2].acc = 1;                                     /* (C4 tied on step 3) */
-    ok &= bk_pack_raw(r, 0, st, TV, &ms, 0) && r[0] == BK_VER3 && bk_ver(r[0]) && !(r[0] == 1u || r[0] == 2u);
+    ok &= bk_pack_raw(r, 0, st, TV, &ms, 0, 0) && r[0] == BK_VER3 && bk_ver(r[0]) && !(r[0] == 1u || r[0] == 2u);
     ok &= step_get9(&back, r + BK_STEPS + 2u * 9u) && step_ties(&back) == 1u;
     bad += check("  a record without ties stays version 1 (byte 7 of every hitless step 0); with one it is version 3: "
                  "2.0 reads it back, 1.4 (versions 1 and 2) shows it empty", ok);

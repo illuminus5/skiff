@@ -717,7 +717,7 @@ static void pool_lists(void)
 {
     static const uint8_t U[][2] = {{1, 3}, {2, 1}, {3, 1}, {5, 2}, {6, 2}, {7, 1}, {9, 1}, {10, 1}, {13, 1}, {14, 2},
                                    {15, 1}, {16, 1}, {17, 0}, {21, 4}, {22, 4}, {23, 0}, {24, 1}, {31, 1}, {33, 0}};
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     uint32_t i, j, e = 0;
     song.playing = 0;
     lists_clear();
@@ -739,7 +739,7 @@ static void song_lists(int playing)
                                        {{9, 4}, {10, 4}}, {{13, 1}, {0, 1}, {14, 1}, {15, 1}, {16, 1}, {14, 1}},
                                        {{17, 2}, {18, 1}}, {{19, 1}, {19, 1}, {20, 1}, {21, 3}}};
     static const uint8_t CUR[6] = {1, 2, 0, 3, 0, 2}, NX[6] = {2, 3, 1, 4, 1, 3};
-    static uint8_t r[BK_REC];
+    static uint8_t r[BK_RX];
     uint32_t k, e;
     song.playing = 0;
     lists_clear();
@@ -1371,7 +1371,7 @@ static void setup(int s)
         break;
     case S_NOTES_CHAIN: {                           /* ((2.0, #44) NOTES on T1's B (02), the second of A-B: 64 steps
                                                      * each, the cursor on B's 7th (ROLL_ACID's): step 71 of 128 */
-        static uint8_t r[BK_REC];
+        static uint8_t r[BK_RX];
         roll_scene(S_ROLL_ACID);
         lists_clear();
         TSEL->p[P_SLEN] = 64;
