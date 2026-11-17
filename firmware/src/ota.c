@@ -54,6 +54,25 @@ _Static_assert(OTA_AREA + OTA_AREA_LEN <= 0xC0000u && OTA_AREA >= 0x9D000u, "SMK
 #define OTA_LDR_DCRC 0x5881u
 #define OTA_LDR_LEN 0x4DE1u
 #define OTA_FRAME_MAX 640u                       /* 512-B response = 605 wire bytes */
+#if !BOARD_SMK37 && !defined(FELUCCA_LOADER)
+/* (Skiff) the way back to V15. Skiff's pattern pool (bank.c bk_sector: 0xE7000..0xE8FFF, 0xEA000..0xFBFFF) is V15's
+ * USR region: its factory DX7 voices from 0xEA000 (A/B), its run-time records from 0xF2000, its factory table at
+ * 0xFA000, all from the package's USR entry (type 50, 73,226 bytes for 0xEA000), and its system record at 0xE8000.
+ * Nothing on the way back rewrites that region, so V15 found Skiff's leftovers there (seen on a unit: most voices mono
+ * and legato after Skiff, through every reinstall, until 0xF2000..0xFBFFF was reset from the package). For V15's
+ * package the app writes the USR entry back over the pool, and erases a pool sector at 0xE7000 / 0xE8000 that holds a
+ * pattern chunk (V15 rebuilds its system record when it finds it erased), before the host's confirmation. */
+#define OTA_USR 1
+#define OTA_USR_TYPE 50u
+#define OTA_USR_LO 0xEA000u                      /* the USR entry's place (fm1_flash_map.h FL_USR) */
+#define OTA_USR_HI 0xFC000u
+#define OTA_USR_KEY 0x980Fu                      /* its cipher: JieLi ENC, key ^ (image offset >> 2) per 32-byte block */
+#define OTA_POOL_LO 0xE7000u                     /* the pool's two sectors below BTIF (FL_BANK) */
+#define OTA_POOL_HI 0xE9000u
+static uint32_t ota_usr_off, ota_usr_len, ota_usr_crc;   /* (ota_ufw) the USR entry; len 0: none */
+#else
+#define OTA_USR 0
+#endif
 
 static int ota_wire_send(const uint8_t *p, uint32_t n);
 static int ota_frame_get(const uint8_t **p, uint32_t *n);
@@ -268,6 +287,9 @@ static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *o
 {
     uint32_t i, nent;
     *fl_off = *fl_len = *ota_off = *ota_len = 0;
+#if OTA_USR
+    ota_usr_off = ota_usr_len = ota_usr_crc = 0;
+#endif
     if (ota_read(0, hdr, 512) || ota_read(512, hdr + 512, 512))
         return -1;
     ota_jl_enc(hdr, 0x40);
@@ -286,9 +308,78 @@ static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *o
             *ota_off = ota_rd32(e + 8);
             *ota_len = ota_rd32(e + 12);
         }
+#if OTA_USR
+        if (ota_rd16(e) == OTA_USR_TYPE) {                 /* (Skiff) V15's USR image; its CRC16 is the plaintext's */
+            ota_usr_off = ota_rd32(e + 8);
+            ota_usr_len = ota_rd32(e + 12);
+            ota_usr_crc = ota_rd16(e + 4);
+        }
+#endif
     }
     return 0;
 }
+
+#if OTA_USR
+/* (Skiff) 512 bytes of the USR image from at, decrypted; 0xFF past its end */
+static int ota_usr_get(uint32_t at, uint8_t *p)
+{
+    uint32_t i, k = 0, pos = ota_usr_off + at, n = at >= ota_usr_len ? 0u : ota_usr_len - at;
+    if (n > 512u)
+        n = 512u;
+    if (n && ota_read(pos, p, n))
+        return -1;
+    for (i = 0; i < n; i++) {
+        if (!(i & 31u))
+            k = (OTA_USR_KEY ^ ((pos + i) >> 2)) & 0xFFFFu;
+        p[i] ^= (uint8_t)k;
+        k = ((k << 1) ^ (k & 0x8000u ? 0x1021u : 0u)) & 0xFFFFu;
+    }
+    for (i = n; i < 512u; i++)
+        p[i] = 0xFFu;
+    return 0;
+}
+
+/* (Skiff) V15's USR region from its package, sector by sector over the pool: a sector already equal is left, one that
+ * differs is erased, written and read back (a sector that comes in different the second time is written again); then
+ * the whole image's CRC16 must be its entry's. -16 on any failure: the app stays on Skiff (it reads the pool's sectors
+ * without its commit records as empty), so a bad image never reaches V15 */
+static int ota_usr_restore(uint8_t *b, uint8_t *mine)
+{
+    uint32_t s, i, at, crc = 0, want, got, dirty, tries;
+    if (ota_usr_len > OTA_USR_HI - OTA_USR_LO || (ota_usr_off & 31u))
+        return -16;
+    for (s = OTA_USR_LO; s < OTA_USR_HI; s += 0x1000u) {
+        for (i = 0, want = 0, dirty = 0; i < 0x1000u; i += 512u) {
+            at = s - OTA_USR_LO + i;
+            if (ota_usr_get(at, b) || ota_fread(s + i, mine, 512))
+                return -16;
+            if (at < ota_usr_len)
+                crc = ota_crc16(b, ota_usr_len - at > 512u ? 512u : ota_usr_len - at, crc);
+            want = ota_crc16(b, 512, want);
+            dirty |= !ota_memeq(b, mine, 512);
+        }
+        for (tries = 0; dirty && tries < 2u; tries++) {
+            if (ota_erase(s))
+                return -16;
+            for (i = 0, got = 0, dirty = 0; i < 0x1000u; i += 512u) {
+                if (ota_usr_get(s - OTA_USR_LO + i, b) || ota_prog(s + i, b, 512) || ota_fread(s + i, mine, 512))
+                    return -16;
+                got = ota_crc16(b, 512, got);
+                dirty |= !ota_memeq(b, mine, 512);
+            }
+            dirty |= got != want;
+        }
+        if (dirty)
+            return -16;
+    }
+    if (crc != ota_usr_crc)
+        return -16;
+    for (s = OTA_POOL_LO; s < OTA_POOL_HI; s += 0x1000u)   /* a pattern chunk's commit record ("SKB1", bank.c) */
+        if (ota_fread(s, b, 4) || (ota_memeq(b, (const uint8_t *)"SKB1", 4) && ota_erase(s)))
+            return -16;
+    return 0;
+}
+#endif
 
 #if BOARD_SMK37 && !defined(FELUCCA_LOADER)
 /* (SMK-37 Pro) for M-VAVE's own package the app stages ITS OWN loader, not the package's: M-VAVE's loader, staged by
@@ -315,8 +406,9 @@ static int ota_ldr_read(uint32_t pkg_off, uint32_t off, uint8_t *dst, uint32_t n
 #define OTA_OWN_LDR 0
 #endif
 
-/* ota_stage's failures from step 4's first erase on (-8 .. -13; the steps before: -1 .. -7 and -15, nothing written) */
-#define OTA_STAGED_RC(rc) ((rc) <= -8 && (rc) >= -13)
+/* ota_stage's failures from step 4's first erase on (-8 .. -13, (Skiff) -16; the steps before: -1 .. -7 and -15,
+ * nothing written) */
+#define OTA_STAGED_RC(rc) (((rc) <= -8 && (rc) >= -13) || (rc) == -16)
 static int ota_stage(void)                       /* steps 1..6; 0 = host said success */
 {
     static uint8_t hdr[0x400], b[512], mine[512];
@@ -405,6 +497,11 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
     }
     if (ota_stage_head(len))
         return -12;
+#if OTA_USR
+    /* 4b. (Skiff) V15's package (flash.bin V15's size, a USR entry): its USR region back over the pool */
+    if (official && fl_len == OTA_FL_LEN && ota_usr_len && (rc = ota_usr_restore(b, mine)) != 0)
+        return rc;
+#endif
     /* 6. the host confirms: nothing is committed without it */
     ota_show(4, 0);
     for (i = 0; i < 4u; i++)
