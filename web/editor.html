@@ -186,18 +186,6 @@
   .seg button[aria-pressed="true"], button.tog[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
   .panel { margin: 12px 0; }
   .hint { margin: 16px 0; color: var(--dim); }
-  /* sequencer: a step grid over the selected track (16 per row, 8 on a phone) */
-  .grid { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 2px; margin: 6px 0 12px; }
-  @media (max-width: 600px) { .grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
-  .grid button { background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 2px; min-width: 0; height: 52px;
-                 display: flex; flex-direction: column; justify-content: flex-start; gap: 1px; text-align: left; overflow: hidden; font-size: 10px; line-height: 1.15; }
-  .grid button .n { color: var(--dim); }
-  .grid button .x { overflow: hidden; overflow-wrap: anywhere; flex: 1; }
-  .grid button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-  .grid button.on .n { color: inherit; opacity: .6; }
-  .grid button.acc .x { font-weight: 700; }
-  .grid button.tie { border-style: dashed; border-color: var(--fg); }
-  .grid button.beat { border-left-color: var(--fg); }
   #steps tr.hl td { outline: 1px solid var(--fg); }
   /* mixer: a channel strip per track (six; Skiff phase 6) as on the device's MIXER page */
   .mixer { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; max-width: 900px; margin: 6px 0; }
@@ -252,7 +240,6 @@
   .strip .num { font: 700 26px "Barlow Condensed", sans-serif; background: none; }
   .strip .num[aria-pressed="true"] { background: var(--s); color: var(--on-trk); }   /* (selected: as the track bar's) */
   .strip input[type=range] { accent-color: var(--s); }
-  .grid button.on { background: var(--trk); border-color: var(--trk); color: var(--on-trk); }
   .lists tbody th { font: 700 15px "Barlow Condensed", sans-serif; }
   .lists button, .pool button { background: var(--raise); border-color: var(--raise); border-radius: 3px; }
   .lists button.empty, .pool button.empty { background: var(--tile); border-color: var(--tile); }
@@ -273,6 +260,86 @@
                 image-rendering: pixelated; border-radius: 6px; cursor: zoom-in; }
   #scr-wrap:fullscreen { background: black; }
   #scr-wrap:fullscreen #scr-screen { width: min(100vw, 100vh); border-radius: 0; cursor: zoom-out; }
+  /* ((Skiff 2.2) the sequencer as a DAW's: a piano roll (or the drum lanes) over the steps, a controller lane under it
+     (velocity, chance, nudge, ratchet) drawn with the mouse, the picked step's knobs beside; the table stays below) */
+  .sqtool { margin: 4px 0 6px; }
+  .sqtool label { display: inline-flex; gap: 6px; align-items: center; }
+  .sqtool input[type=range] { width: 90px; }
+  .sq { background: var(--tile); border-radius: 6px; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  .sq-main { position: relative; overflow: auto; height: 360px; outline: none; overscroll-behavior: contain; }
+  .sq-main.drum { height: auto; max-height: none; }
+  .sq-inner { position: relative; }
+  .sq-ruler { position: sticky; top: 0; z-index: 4; height: 22px; background: var(--raise); border-bottom: 1px solid var(--line); }
+  .sq-ruler .corner { position: sticky; left: 0; z-index: 2; width: var(--kw); height: 22px; background: var(--raise);
+    border-right: 1px solid var(--line); box-sizing: border-box; font: 500 12px "Barlow Condensed", sans-serif; color: var(--dim);
+    display: flex; align-items: center; justify-content: center; }
+  .sq-ruler .br { position: absolute; top: 0; height: 22px; margin: 0; padding-left: 4px; border-left: 1px solid var(--line);
+    font: 700 13px "Barlow Condensed", sans-serif; color: var(--fg); display: block; line-height: 22px; pointer-events: none; }
+  .sq-ruler .beat { position: absolute; bottom: 0; height: 6px; border-left: 1px solid var(--line); pointer-events: none; }
+  .sq-ruler .end { position: absolute; top: 0; width: 14px; height: 22px; margin-left: -7px; cursor: ew-resize; z-index: 1;
+    background: var(--trk); clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); }
+  .sq-ruler .loop { position: absolute; top: 18px; height: 4px; background: color-mix(in srgb, var(--trk) 55%, transparent); pointer-events: none; }
+  .sq-body { display: flex; }
+  .sq-keys { position: sticky; left: 0; z-index: 3; flex: none; width: var(--kw); background: var(--raise); border-right: 1px solid var(--line); }
+  .sq-keys div { box-sizing: border-box; height: var(--rh); font: 500 10px/1 "Barlow Condensed", sans-serif; display: flex;
+    align-items: center; justify-content: flex-end; padding-right: 4px; color: var(--dim); border-bottom: 1px solid var(--tile); }
+  .sq-keys div.w { background: color-mix(in srgb, var(--fg) 82%, var(--bg)); color: var(--bg); }
+  .sq-keys div.k { background: var(--bg); color: var(--dim); width: 64%; }
+  .sq-keys div.c { color: var(--bg); font-weight: 700; }
+  .sq-keys div.lane { width: auto; background: none; color: var(--fg); font: 700 13px/1 "Barlow Condensed", sans-serif;
+    justify-content: flex-start; padding-left: 6px; border-bottom: 1px solid var(--tile); }
+  .sq-grid { position: relative; flex: none; cursor: crosshair; touch-action: none;
+    background-image: linear-gradient(to right, var(--fg) 1px, transparent 1px),
+      linear-gradient(to right, var(--line) 1px, transparent 1px),
+      linear-gradient(to right, color-mix(in srgb, var(--line) 45%, transparent) 1px, transparent 1px);
+    background-size: calc(var(--cw) * 16) 100%, calc(var(--cw) * 4) 100%, var(--cw) 100%; }
+  .sq-grid .rw { position: absolute; left: 0; right: 0; height: var(--rh); display: block; min-height: 0; pointer-events: none;
+    box-sizing: border-box; border-bottom: 1px solid color-mix(in srgb, var(--line) 30%, transparent); }
+  .sq-grid .rw.k { background: color-mix(in srgb, var(--bg) 45%, transparent); }
+  .sq-grid .rw.c { border-bottom-color: var(--line); }
+  .sq-grid .off { position: absolute; top: 0; bottom: 0; right: 0; background: color-mix(in srgb, var(--bg) 60%, transparent); pointer-events: none; }
+  .sq-note { position: absolute; box-sizing: border-box; height: calc(var(--rh) - 1px); border-radius: 3px; cursor: grab;
+    background: color-mix(in srgb, var(--trk) var(--vm, 100%), var(--bg)); border: 1px solid var(--trk); color: var(--on-trk);
+    font: 700 10px/1 "Barlow Condensed", sans-serif; padding-left: 3px; overflow: hidden; white-space: nowrap; display: flex; align-items: center; }
+  .sq-note::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+  .sq-note.sel { outline: 2px solid var(--fg); outline-offset: 0; z-index: 1; }
+  .sq-note.acc { box-shadow: inset 0 -3px 0 var(--fg); }
+  .sq-hit { position: absolute; box-sizing: border-box; border-radius: 4px; margin: 3px; pointer-events: none;
+    background: color-mix(in srgb, var(--trk) var(--vm, 100%), var(--bg)); }
+  .sq-hit.acc { box-shadow: inset 0 0 0 2px var(--fg); }
+  .sq-hit.sel { outline: 2px solid var(--fg); }
+  .sq-col { position: absolute; top: 0; bottom: 0; pointer-events: none; background: color-mix(in srgb, var(--fg) 7%, transparent); }
+  .sq-lanes { border-top: 2px solid var(--line); }
+  .sq-lanetabs { display: flex; gap: 2px; padding: 4px 6px; align-items: center; background: var(--raise); }
+  .sq-lanetabs .seg button { padding: 1px 8px; }
+  .sq-lane { position: relative; overflow: hidden; height: 96px; touch-action: none; }
+  .sq-lane .inner { position: relative; height: 100%; display: flex; }
+  .sq-lane .lab { position: sticky; left: 0; z-index: 2; flex: none; width: var(--kw); background: var(--raise); border-right: 1px solid var(--line);
+    font: 500 10px "Barlow Condensed", sans-serif; color: var(--dim); display: flex; flex-direction: column; justify-content: space-between;
+    align-items: flex-end; padding: 2px 4px; box-sizing: border-box; }
+  .sq-lane .area { position: relative; flex: none; cursor: ns-resize; background-image: linear-gradient(to right, var(--line) 1px, transparent 1px);
+    background-size: calc(var(--cw) * 4) 100%; }
+  .sq-lane .mid { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); pointer-events: none; }
+  .sq-vbar { position: absolute; bottom: 0; box-sizing: border-box; pointer-events: none; background: color-mix(in srgb, var(--trk) 70%, var(--tile));
+    border-top: 3px solid var(--trk); }
+  .sq-vbar.acc { border-top-color: var(--fg); }
+  .sq-vbar.sel { background: var(--trk); }
+  .sq-vbar.neg { border-top: 0; border-bottom: 3px solid var(--trk); }
+  .sq-insp { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; background: var(--tile); border-radius: 6px;
+    padding: 8px 12px; margin: 8px 0; min-height: 70px; }
+  .sq-insp .ttl { font: 700 18px "Barlow Condensed", sans-serif; min-width: 110px; }
+  .sq-insp .ttl small { display: block; font: 500 12px "Barlow Condensed", sans-serif; color: var(--dim); }
+  .sq-insp .grp { display: grid; gap: 4px; justify-items: center; font: 500 12px "Barlow Condensed", sans-serif; color: var(--dim); }
+  .knob { display: grid; justify-items: center; gap: 1px; cursor: ns-resize; touch-action: none; outline: none;
+    font: 500 12px "Barlow Condensed", sans-serif; color: var(--dim); }
+  .knob svg { width: 44px; height: 44px; display: block; }
+  .knob .tr { stroke: var(--raise); }
+  .knob .va { stroke: var(--trk); }
+  .knob .pt { stroke: var(--fg); }
+  .knob b { font: 700 14px "Barlow Condensed", sans-serif; color: var(--fg); }
+  .knob:focus-visible svg { outline: 2px solid var(--fg); border-radius: 50%; }
+  details.sqlist { margin-top: 10px; }
+  details.sqlist summary { cursor: pointer; font: 700 14px "Barlow Condensed", sans-serif; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -355,11 +422,18 @@
     <div class="groups" id="seqgroups"></div>
     <div id="steps">
       <h2 data-t="steps" data-ic="note_eight"></h2>
-      <p class="bar"><button id="reloadsteps" data-t="reload" data-ic="control_arrow_loop"></button>
-        <button id="clearseq" data-t="clearSeq" data-ic="symbol_trash"></button>
-        <span class="dim" id="noteshelp"></span></p>
-      <div class="grid" id="stepgrid"></div>
-      <div class="stepcols" id="steptables"></div>
+      <p class="bar sqtool"><span class="seg" id="sqview" role="group"><button type="button" data-v="roll" data-t="sqRoll"
+        data-ic="symbol_keyboard"></button><button type="button" data-v="drum" data-t="sqDrum" data-ic="symbol_grid"></button></span>
+        <label><span data-t="sqZoom"></span> <input type="range" id="sqzoom" min="12" max="64" step="1"></label>
+        <button id="squndo" data-t="sqUndo"></button>
+        <button id="reloadsteps" data-t="reload" data-ic="control_arrow_loop"></button>
+        <button id="clearseq" data-t="clearSeq" data-ic="symbol_trash"></button></p>
+      <p class="dim" id="sqhelp"></p>
+      <div class="sq" id="sq"></div>
+      <div class="sq-insp" id="sqinsp"></div>
+      <details class="sqlist"><summary data-t="sqList"></summary>
+        <p class="dim" id="noteshelp"></p>
+        <div class="stepcols" id="steptables"></div></details>
     </div>
     <div id="motion-panel" hidden style="margin-top:16px">
       <h2 data-t="motion"></h2>
@@ -3523,6 +3597,10 @@ const TEXT = {
     saveFile: "ファイルに保存", loadFile: "ファイルを読み込む", projects: "プロジェクト",
     load: "読込", save: "保存", used: "使用中", empty: "空", unknown: "—",
     steps: "ステップ", reload: "再読み込み", clearSeq: "シーケンスを消去",
+    sqRoll: "ピアノロール", sqDrum: "ドラム", sqZoom: "ズーム", sqUndo: "元に戻す", sqList: "ステップ一覧（テキスト入力）", sqStep: "ステップ",
+    sqEnd: "パターンの長さ（ドラッグ）", sqFull: "1 ステップに 4 音まで", sqPick: "ノートかステップをクリックすると、ここで編集できます",
+    sqHelpRoll: "空いた所をクリックで入力、ドラッグで長さ · ノートをドラッグで移動、右端で長さ · 右クリック／ダブルクリックで削除 · ⌫ 削除 · ↑↓ 移調（Shift: オクターブ）· ←→ 移動 · ⌘Z 元に戻す",
+    sqHelpDrum: "クリックでヒット、ドラッグで塗る · 右クリック／Alt+クリックでアクセント · ⌘Z 元に戻す",
     notesHelp: "ノートは C4 E4 G4 のように入力（最大 4 音、C4 = 60）。ヒットは DRUM のレーン名（KICK >SNARE HATCL、> はアクセント）。",
     notes: "ノート", hits: "ヒット", time: "タイム", acc: "アクセント", slide: "スライド", vel: "ベロシティ",
     foot: "Chrome か Edge で使えます。", iconsCredit: "アイコン: Fukiai（MIT）Hügelton Instruments",
@@ -3677,6 +3755,10 @@ const TEXT = {
     saveFile: "Save to file", loadFile: "Load file", projects: "Projects",
     load: "Load", save: "Save", used: "used", empty: "empty", unknown: "—",
     steps: "Steps", reload: "Reload", clearSeq: "Clear sequence",
+    sqRoll: "Piano roll", sqDrum: "Drums", sqZoom: "Zoom", sqUndo: "Undo", sqList: "Step list (text entry)", sqStep: "Step",
+    sqEnd: "Pattern length (drag)", sqFull: "Up to 4 notes on a step", sqPick: "Click a note or a step to edit it here",
+    sqHelpRoll: "Click empty space to draw, drag for length · drag a note to move it, its right edge to resize · right-click or double-click deletes · ⌫ deletes · ↑↓ transpose (Shift: octave) · ←→ move · ⌘Z undo",
+    sqHelpDrum: "Click to set a hit, drag to paint · right-click or Alt-click for an accent · ⌘Z undo",
     notesHelp: "Enter notes like C4 E4 G4 (up to 4, C4 = 60). Hits are DRUM lanes: KICK >SNARE HATCL (> = accent).",
     notes: "Notes", hits: "Hits", time: "Time", acc: "Accent", slide: "Slide", vel: "Velocity",
     foot: "Works in Chrome or Edge.", iconsCredit: "Icons: Fukiai (MIT), Hügelton Instruments",
@@ -4940,7 +5022,7 @@ function renderSteps() {
   const box = $("steptables");
   const shape = String(len);
   $("noteshelp").textContent = t("notesHelp");
-  renderGrid();
+  sqRender();
   /* keep the rows the user is typing in */
   if (box.contains(document.activeElement) && box.dataset.len === shape) { updateStepRows(); return; }
   box.dataset.len = shape;
@@ -5008,35 +5090,552 @@ function updateStepRows() {
     if (tr.contains(document.activeElement)) continue;
     fillStep(tr, dev.steps[+tr.dataset.i]);
   }
-  renderGrid();
+  sqRender();
 }
-/* the step grid: one cell per step up to LEN; a cell jumps to its row in the table */
-function renderGrid() {
-  const box = $("stepgrid");
+/* ((Skiff 2.2) the sequencer as a DAW's: the steps drawn as a piano roll (a note: the step it starts on, as long as the
+   steps after it hold it, TIE or (2.0) its tie), or as the DRUM lanes; under them a controller lane drawn with the mouse
+   (VELOCITY, CHANCE, NUDGE, RATCHET: a step's own, as the device keeps them), the picked step's knobs beside. Each edit
+   writes only the steps it changes (STEP_SET, as the table), so a pattern, a project file and a backup stay as before) */
+const sq = { view: {}, lane: "vel", sel: new Set(), step: -1, drag: null, undo: [], vel: 96, len: 1 };
+const SQ_KW = 52, SQ_RH = 14, SQ_DRH = 28, SQ_LANEH = 96;
+const sqZoom = () => sq.cw || (sq.cw = (() => { try { return +localStorage.getItem("skiff-sq-zoom") || 28; } catch (e) { return 28; } })());
+const sqCw = () => Math.max(sqZoom(), sq.fit || 0);   /* (at least as wide as the page) */
+const sqTies = () => !!(dev.info.skiff & 64);
+const sqDrumDefault = () => ["DRUM", "DRUM-X"].includes(engName());
+const sqIsDrum = () => (sq.view[dev.sel || 0] ?? (sqDrumDefault() ? "drum" : "roll")) === "drum";
+const sqCols = (len) => Math.min(dev.info.nstep, Math.max(16, Math.ceil((len + 1) / 16) * 16));
+const sqKey = (n) => n.start + ":" + n.pitch;
+const sqClone = (s) => ({ ...s, notes: s.notes.slice() });
+/* the notes the steps play: {start, len, pitch} */
+function sqNotes() {
+  const len = stepLen(), out = [];
+  let act = new Map();
+  for (let i = 0; i < len; i++) {
+    const s = dev.steps[i];
+    if (!s || s.time === 2) { act = new Map(); continue; }
+    if (s.time === 1) { for (const nt of act.values()) nt.len++; continue; }
+    const ties = stepTies(s), now = new Map();
+    for (let k = 0; k < s.n; k++) {
+      const p = s.notes[k], prev = act.get(p);
+      if (now.has(p)) continue;
+      if (ties >> k & 1 && prev) { prev.len++; now.set(p, prev); }
+      else { const nt = { start: i, len: 1, pitch: p }; out.push(nt); now.set(p, nt); }
+    }
+    act = now;
+  }
+  return out;
+}
+/* step i as the notes would have it (old: the step now; its other settings kept) */
+function sqEncode(i, notes, old) {
+  const s = sqClone(old);
+  const start = notes.filter((n) => n.start === i).map((n) => n.pitch);
+  const held = notes.filter((n) => n.start < i && n.start + n.len > i).map((n) => n.pitch);
+  const before = notes.filter((n) => n.start <= i - 1 && n.start + n.len > i - 1).length;
+  const tc = sqTies();
+  if (!start.length && !held.length) {
+    if (!stepOn(old) && !stepTie(old)) return old;
+    Object.assign(s, { time: old.hit ? 0 : 2, n: 0, ties: 0 });
+  } else if (!start.length && (!tc || held.length === before)) {
+    Object.assign(s, { time: 1, n: 0, ties: 0 });
+  } else {
+    const ps = (tc ? held : []).concat(start).slice(0, 4);
+    s.time = 0;
+    s.n = ps.length;
+    s.notes = ps.concat(old.notes.slice(ps.length)).slice(0, 4);
+    s.ties = tc ? (1 << Math.min(4, held.length)) - 1 : 0;
+    if (start.length && (!stepOn(old) || !old.vel)) s.vel = old.vel && stepOn(old) ? old.vel : sq.vel;
+  }
+  return s;
+}
+const sqSame = (a, b) => a.n === b.n && a.time === b.time && a.flags === b.flags && a.vel === b.vel && (a.hit | 0) === (b.hit | 0) &&
+  (a.acc | 0) === (b.acc | 0) && (a.ties | 0) === (b.ties | 0) && a.notes.slice(0, a.n).join() === b.notes.slice(0, b.n).join() &&
+  a.chance === b.chance && a.ratchet === b.ratchet && !!a.flam === !!b.flam && (a.cond | 0) === (b.cond | 0) && (a.nudge | 0) === (b.nudge | 0);
+/* the steps the notes change: old -> next (only where a note differs, and the step after each) */
+function sqCommitNotes(old, next) {
+  const len = stepLen(), ks = (a) => new Set(a.map((n) => `${n.start}:${n.len}:${n.pitch}`)), ka = ks(old), kb = ks(next);
+  const span = new Set();
+  for (const n of old.filter((x) => !kb.has(`${x.start}:${x.len}:${x.pitch}`)).concat(next.filter((x) => !ka.has(`${x.start}:${x.len}:${x.pitch}`))))
+    for (let i = n.start; i <= n.start + n.len && i < len; i++) span.add(i);
+  const ch = new Map();
+  for (const i of [...span].sort((a, b) => a - b)) {
+    const s = sqEncode(i, next, dev.steps[i]);
+    const count = next.filter((n) => n.start <= i && n.start + n.len > i && (sqTies() || n.start === i)).length;
+    if (count > 4) { sayK("sqFull"); sqRender(); return false; }
+    if (!sqSame(s, dev.steps[i])) ch.set(i, s);
+  }
+  sqWrite(ch);
+  return true;
+}
+/* write the steps: shown at once, then sent; each edit undoable (Ctrl+Z) */
+function sqWrite(ch, undoable = true) {
+  if (!ch.size) { sqRender(); return; }
+  if (undoable) { sq.undo.push(new Map([...ch.keys()].map((i) => [i, sqClone(dev.steps[i])]))); if (sq.undo.length > 50) sq.undo.shift(); }
+  for (const [i, s] of ch) { if (!sqTies()) delete s.ties; dev.steps[i] = s; stepEdit.set(i, performance.now()); }
+  updateStepRows();
+  const d = dev;
+  op(async () => {
+    for (const [i, s] of ch) {
+      const r = parse[CMD.STEP_SET](await rq(req.stepSet(i, s)));
+      if (d !== dev) return;
+      if (dev.steps[i] === s) dev.steps[i] = r;
+      stepEdit.set(i, performance.now());
+    }
+    updateStepRows();
+  });
+}
+function sqUndo() {
+  const u = sq.undo.pop();
+  if (u && dev) sqWrite(u, false);
+}
+/* a DRUM lane on step i on or off; its accent */
+function sqHit(i, l, on) {
+  const o = dev.steps[i], s = sqClone(o);
+  if (on) {
+    if (s.time !== 0 || !stepOn(o)) { s.time = 0; s.n = 0; s.ties = 0; s.hit = 0; s.acc = 0; }
+    if (o.hit == null) { if (s.n < 4) s.notes[s.n++] = LANE_NOTE[l]; }
+    else s.hit |= 1 << l;
+    if (!stepOn(o) || !s.vel) s.vel = sq.vel;
+  } else {
+    const keep = s.notes.slice(0, s.n).filter((n) => drumLane(n) !== l);
+    s.notes = keep.concat(s.notes.slice(keep.length)).slice(0, 4);
+    s.n = keep.length;
+    s.ties = 0;
+    s.hit = (s.hit | 0) & ~(1 << l);
+    s.acc = (s.acc | 0) & ~(1 << l);
+    if (!s.n && !s.hit) s.time = 2;
+  }
+  return s;
+}
+function sqAccent(i, l) {
+  const o = dev.steps[i];
+  if (!(stepLanes(o) >> l & 1)) return null;
+  const s = sqClone(o);
+  if (o.hit == null) { s.flags ^= 1; return s; }
+  const acc = stepAccents(o) ^ (1 << l);
+  s.flags &= ~1;
+  s.acc = acc & stepLanes(o);
+  return s;
+}
+
+/* the controller lanes: a step's value, its range */
+function sqLanes() {
+  const i = dev.info;
+  /* (a step's ACCENT plays it at 127 whatever its velocity (seq.c seq_step): a velocity set takes the accent off; 0: 96) */
+  return [{ k: "vel", t: t("vel"), min: 1, max: 127, def: 96, get: (s) => (s.flags & 1 ? 127 : s.vel || 96), set: (s, v) => { s.vel = v; s.flags &= ~1; } },
+    ...(i.chance ? [{ k: "chance", t: t("chance"), min: 0, max: 100, def: 100, get: (s) => s.chance ?? 100, set: (s, v) => { s.chance = v; } }] : []),
+    ...(i.stepx ? [{ k: "nudge", t: t("nudge"), min: -32, max: 31, def: 0, bi: true, get: (s) => s.nudge | 0, set: (s, v) => { s.nudge = v; } }] : []),
+    ...(i.ratchet ? [{ k: "ratchet", t: t("ratchet"), min: 1, max: Math.min(4, i.ratchet), def: 1, get: (s) => s.ratchet ?? 1, set: (s, v) => { s.ratchet = v; } }] : [])];
+}
+
+/* a knob: drag up and down (Shift: fine), the wheel, the arrow keys; a double click: its default */
+function knob({ label, min, max, value, def, fmt = String, change }) {
+  let v = value, timer = 0;
+  const arc = (a0, a1) => {
+    const p = (a) => [22 + 17 * Math.cos(a), 22 + 17 * Math.sin(a)], [x0, y0] = p(a0), [x1, y1] = p(a1);
+    return `M${x0.toFixed(2)} ${y0.toFixed(2)}A17 17 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  };
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 44 44");
+  const mk = (c, w) => { const e = document.createElementNS(ns, "path"); e.setAttribute("class", c); e.setAttribute("fill", "none");
+    e.setAttribute("stroke-width", w); e.setAttribute("stroke-linecap", "round"); svg.append(e); return e; };
+  const A0 = Math.PI * 0.75, A1 = Math.PI * 2.25;
+  const tr = mk("tr", 4), va = mk("va", 4), pt = mk("pt", 2.5);
+  tr.setAttribute("d", arc(A0, A1));
+  const out = el("b");
+  const box = el("div", { class: "knob", tabindex: 0, role: "slider", "aria-label": label, "aria-valuemin": min, "aria-valuemax": max },
+    svg, out, el("span", { text: label }));
+  const show = () => {
+    const f = (v - min) / (max - min), a = A0 + f * (A1 - A0);
+    const z = min < 0 ? A0 + (-min / (max - min)) * (A1 - A0) : A0;
+    va.setAttribute("d", Math.abs(a - z) < 0.01 ? "" : arc(Math.min(a, z), Math.max(a, z)));
+    pt.setAttribute("d", `M22 22L${(22 + 13 * Math.cos(a)).toFixed(2)} ${(22 + 13 * Math.sin(a)).toFixed(2)}`);
+    out.textContent = fmt(v);
+    box.setAttribute("aria-valuenow", v);
+  };
+  const set = (nv, final) => {
+    nv = Math.max(min, Math.min(max, Math.round(nv)));
+    if (nv === v && !final) return;
+    v = nv; show();
+    clearTimeout(timer);
+    if (final) change(v); else timer = setTimeout(() => change(v), 300);
+  };
+  let y0 = 0, v0 = 0;
+  box.addEventListener("pointerdown", (e) => { box.setPointerCapture(e.pointerId); y0 = e.clientY; v0 = v; box.focus(); e.preventDefault(); });
+  box.addEventListener("pointermove", (e) => {
+    if (!box.hasPointerCapture(e.pointerId)) return;
+    v = Math.max(min, Math.min(max, Math.round(v0 + (y0 - e.clientY) * (max - min) / (e.shiftKey ? 600 : 150)))); show();
+  });
+  box.addEventListener("pointerup", (e) => { if (box.hasPointerCapture(e.pointerId) && v !== v0) change(v); });
+  box.addEventListener("dblclick", () => set(def, true));
+  box.addEventListener("wheel", (e) => { e.preventDefault(); set(v + (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 10 : 1)); }, { passive: false });
+  box.addEventListener("keydown", (e) => {
+    const d = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
+    if (d) { e.preventDefault(); set(v + d * (e.shiftKey ? 10 : 1)); }
+  });
+  show();
+  return box;
+}
+
+/* the roll (or the lanes), the ruler with the pattern's end to drag, the controller lane */
+function sqRender() {
+  const box = $("sq");
+  if (!dev || !dev.steps.length) { box.replaceChildren(); $("sqinsp").replaceChildren(); return; }
+  if (sq.drag) return;                              /* (a drag draws itself; polling waits) */
+  if (sq.track !== (dev.sel || 0)) {                /* (another track: nothing picked, nothing to undo there) */
+    sq.track = dev.sel || 0; sq.sel.clear(); sq.step = -1; sq.undo = [];
+  }
+  const drum = sqIsDrum(), len = stepLen(), cols = sqCols(len), rh = drum ? SQ_DRH : SQ_RH;
+  sq.fit = Math.floor((box.clientWidth - SQ_KW - 2) / cols);
+  const cw = sqCw();
+  for (const b of $("sqview").children) b.setAttribute("aria-pressed", String((b.dataset.v === "drum") === drum));
+  $("sqzoom").value = String(sqZoom());
+  $("squndo").disabled = !sq.undo.length;
+  $("sqhelp").textContent = t(drum ? "sqHelpDrum" : "sqHelpRoll");
+  const rows = drum ? LANES.length : 128, W = cols * cw, H = rows * rh;
+  box.style.setProperty("--kw", SQ_KW + "px");
+  box.style.setProperty("--cw", cw + "px");
+  box.style.setProperty("--rh", rh + "px");
+  let main = box.querySelector(".sq-main"), keep = null;
+  const fresh = !main || main.dataset.mode !== (drum ? "drum" : "roll");
+  if (main) keep = [main.scrollLeft, main.scrollTop];
+  /* the ruler: bars, beats, the loop and its end */
+  const ruler = el("div", { class: "sq-ruler", style: `width:${SQ_KW + W}px` }, el("div", { class: "corner", text: `${len}/${dev.info.nstep}` }));
+  for (let i = 0; i < cols; i += 4)
+    ruler.append(i % 16 ? el("div", { class: "beat", style: `left:${SQ_KW + i * cw}px` })
+      : el("div", { class: "br", style: `left:${SQ_KW + i * cw}px`, text: String(i / 16 + 1) }));
+  ruler.append(el("div", { class: "loop", style: `left:${SQ_KW}px;width:${len * cw}px` }));
+  const end = el("div", { class: "end", title: t("sqEnd"), style: `left:${SQ_KW + len * cw}px` });
+  end.addEventListener("pointerdown", (e) => sqEndDrag(e, end));
+  ruler.append(end);
+  /* the keys */
+  const keys = el("div", { class: "sq-keys", style: `height:${H}px` });
+  const grid = el("div", { class: "sq-grid", style: `width:${W}px;height:${H}px` });
+  const BLACK = [1, 3, 6, 8, 10];
+  for (let r = 0; r < rows; r++) {
+    if (drum) {
+      keys.append(el("div", { class: "lane", text: LANES[r] }));
+      grid.append(el("div", { class: "rw", style: `top:${r * rh}px` }));
+    } else {
+      const p = 127 - r, k = BLACK.includes(p % 12), c = p % 12 === 0;
+      keys.append(el("div", { class: [k ? "k" : "w", c && "c"].filter(Boolean).join(" "), text: c ? noteName(p) : "" }));
+      grid.append(el("div", { class: ["rw", k && "k", c && "c"].filter(Boolean).join(" "), style: `top:${r * rh}px` }));
+    }
+  }
+  if (sq.step >= 0 && sq.step < len) grid.append(el("div", { class: "sq-col", style: `left:${sq.step * cw}px;width:${cw}px` }));
+  if (len < cols) grid.append(el("div", { class: "off", style: `left:${len * cw}px` }));
+  sq.layer = el("div");
+  grid.append(sq.layer);
+  sqDrawNotes(drum ? null : sqNotes(), grid);
+  grid.addEventListener("pointerdown", (e) => (drum ? sqDrumDown(e, grid) : sqRollDown(e, grid)));
+  grid.addEventListener("contextmenu", (e) => e.preventDefault());
+  grid.addEventListener("dblclick", (e) => { if (!drum) sqRollDbl(e, grid); });
+  const inner = el("div", { class: "sq-inner", style: `width:${SQ_KW + W}px` }, ruler, el("div", { class: "sq-body" }, keys, grid));
+  main = el("div", { class: "sq-main" + (drum ? " drum" : ""), tabindex: 0, "data-mode": drum ? "drum" : "roll", "aria-label": t("steps") }, inner);
+  /* the controller lane */
+  const lanes = sqLanes(), ln = lanes.find((x) => x.k === sq.lane) || lanes[0];
+  sq.lane = ln.k;
+  const tabs = el("span", { class: "seg", role: "group" }, ...lanes.map((x) => el("button", { type: "button", "aria-pressed": String(x === ln),
+    text: x.t, onclick: () => { sq.lane = x.k; sqRender(); } })));
+  const area = el("div", { class: "area", style: `width:${W}px` });
+  const vy = (v) => (v - ln.min) / (ln.max - ln.min) * (SQ_LANEH - 6);
+  if (ln.bi) area.append(el("div", { class: "mid", style: `bottom:${vy(0)}px` }));
+  for (let i = 0; i < len; i++) {
+    const s = dev.steps[i];
+    if (!stepOn(s)) continue;
+    area.append(el("div", sqBar(ln, vy, i)));
+  }
+  area.addEventListener("pointerdown", (e) => sqLaneDown(e, area, ln, vy));
+  const lane = el("div", { class: "sq-lane", style: `height:${SQ_LANEH}px` }, el("div", { class: "inner", style: `width:${SQ_KW + W}px` },
+    el("div", { class: "lab" }, el("span", { text: String(ln.max) }), el("span", { text: String(ln.min) })), area));
+  const lanesBox = el("div", { class: "sq-lanes" }, el("div", { class: "sq-lanetabs" }, tabs), lane);
+  main.addEventListener("scroll", () => { lane.scrollLeft = main.scrollLeft; });
+  const hadFocus = box.contains(document.activeElement) && document.activeElement.classList.contains("sq-main");
+  box.replaceChildren(main, lanesBox);
+  if (keep && !fresh) { main.scrollLeft = keep[0]; main.scrollTop = keep[1]; }
+  else if (!drum) {                                 /* (opened: the notes in view, else C4) */
+    const ns = sqNotes(), mid = ns.length ? ns.reduce((a, n) => a + n.pitch, 0) / ns.length : 60;
+    main.scrollTop = Math.max(0, (127 - mid) * rh - 170);
+  }
+  lane.scrollLeft = main.scrollLeft;
+  if (hadFocus) main.focus({ preventScroll: true });
+  sqInspector();
+}
+/* the notes (roll) or hits (lanes) on the grid */
+function sqDrawNotes(notes, grid) {
+  const cw = sqCw(), drum = !notes, len = stepLen(), layer = sq.layer;
+  const items = [];
+  if (drum) {
+    for (let i = 0; i < len; i++) {
+      const s = dev.steps[i], lanes = stepLanes(s), acc = stepAccents(s);
+      for (let l = 0; l < LANES.length; l++) if (lanes >> l & 1)
+        items.push(el("div", { class: ["sq-hit", acc >> l & 1 && "acc", i === sq.step && "sel"].filter(Boolean).join(" "),
+          style: `left:${i * cw}px;top:${l * SQ_DRH}px;width:${cw - 6}px;height:${SQ_DRH - 6}px;--vm:${35 + Math.round((s.flags & 1 ? 127 : s.vel || 96) / 127 * 65)}%` }));
+    }
+  } else {
+    for (const n of notes) {
+      const s = dev.steps[n.start];
+      items.push(el("div", { class: ["sq-note", sq.sel.has(sqKey(n)) && "sel", s && s.flags & 1 && "acc"].filter(Boolean).join(" "),
+        "data-k": sqKey(n), title: `${noteName(n.pitch)} · ${n.start + 1} · ${n.len}`,
+        style: `left:${n.start * cw}px;top:${(127 - n.pitch) * SQ_RH}px;width:${n.len * cw}px;--vm:${s ? 35 + Math.round((s.flags & 1 ? 127 : s.vel || 96) / 127 * 65) : 100}%`,
+        text: n.len * cw > 26 ? noteName(n.pitch) : "" }));
+    }
+  }
+  layer.replaceChildren(...items);
+}
+const sqAt = (e, grid, rh) => {
+  const r = grid.getBoundingClientRect();
+  return { i: Math.floor((e.clientX - r.left) / sqCw()), row: Math.floor((e.clientY - r.top) / rh), x: e.clientX - r.left };
+};
+/* the roll: an empty place draws a note (dragged: as long), a note moves (its right edge: its length), Shift adds to the
+   picked; the right button deletes */
+function sqRollDown(e, grid) {
+  if (e.button > 2) return;
+  grid.closest(".sq-main").focus({ preventScroll: true });
+  const len = stepLen(), { i, row, x } = sqAt(e, grid, SQ_RH), pitch = 127 - row;
+  if (i < 0 || i >= len || pitch < 0 || pitch > 127) return;
+  const notes = sqNotes(), hit = notes.find((n) => n.pitch === pitch && n.start <= i && n.start + n.len > i);
+  if (e.button === 2) { if (hit) sqCommitNotes(notes, notes.filter((n) => n !== hit)); return; }
+  grid.setPointerCapture(e.pointerId);
+  let model = notes, moving;
+  if (hit) {
+    if (!sq.sel.has(sqKey(hit))) { if (!e.shiftKey) sq.sel.clear(); sq.sel.add(sqKey(hit)); }
+    else if (e.shiftKey) { sq.sel.delete(sqKey(hit)); }
+    moving = notes.filter((n) => sq.sel.has(sqKey(n)));
+    sq.drag = { mode: x > (hit.start + hit.len) * sqCw() - 7 ? "size" : "move", i0: i, p0: pitch, x0: e.clientX, y0: e.clientY, moved: false };
+    sq.step = hit.start;
+  } else {
+    if (!e.shiftKey) sq.sel.clear();
+    const nt = { start: i, len: Math.min(sq.len, len - i), pitch };
+    model = notes.concat(nt);
+    moving = [nt];
+    sq.sel = new Set([sqKey(nt)]);
+    sq.drag = { mode: "draw", i0: i, p0: pitch, base: nt.len, moved: true };
+    sq.step = i;
+  }
+  const apply = (ds, dp) => {
+    const moved = new Set(moving), mv = moving.map((n) => {
+      const m = { ...n, mv: true };
+      if (sq.drag.mode === "move") {
+        m.start = Math.max(0, Math.min(len - 1, n.start + ds));
+        m.pitch = Math.max(0, Math.min(127, n.pitch + dp));
+        m.len = Math.min(n.len, len - m.start);
+      } else m.len = Math.max(1, Math.min(len - n.start, (sq.drag.mode === "draw" ? sq.drag.base : n.len) + ds));
+      return m;
+    });
+    /* a moved note over another of its pitch: the other gives way (cut short, or gone when its start is covered) */
+    const rest = [];
+    for (const n of model) {
+      if (moved.has(n) || mv.some((m) => m.pitch === n.pitch && m.start <= n.start && n.start < m.start + m.len)) continue;
+      const m = mv.find((m) => m.pitch === n.pitch && n.start < m.start && n.start + n.len > m.start);
+      rest.push(m ? { ...n, len: m.start - n.start } : n);
+    }
+    return rest.concat(mv);
+  };
+  let cur = sq.drag.mode === "draw" ? apply(0, 0) : model;
+  const show = () => { sqDrawNotes(cur, grid); for (const d of sq.layer.children) d.classList.toggle("sel", cur.some((n) => n.mv && sqKey(n) === d.dataset.k)); };
+  if (sq.drag.mode === "draw") show();
+  else sqRenderSel();
+  const mv = (ev) => {
+    const at = sqAt(ev, grid, SQ_RH), ds = at.i - sq.drag.i0, dp = (127 - at.row) - sq.drag.p0;
+    if (!sq.drag.moved && Math.abs(ev.clientX - sq.drag.x0) < 3 && Math.abs(ev.clientY - sq.drag.y0) < 3) return;
+    sq.drag.moved = true;
+    cur = apply(ds, sq.drag.mode === "move" ? dp : 0);
+    show();
+  };
+  const up = () => {
+    grid.removeEventListener("pointermove", mv);
+    grid.removeEventListener("pointerup", up);
+    grid.removeEventListener("pointercancel", up);
+    const d = sq.drag;
+    sq.drag = null;
+    if (!d.moved) { sqRender(); return; }
+    const res = cur.map(({ mv: m, ...n }) => n);
+    sq.sel = new Set(cur.filter((n) => n.mv).map(sqKey));
+    const sized = cur.find((n) => n.mv);
+    if (sized && d.mode !== "move") sq.len = sized.len;
+    if (sized) sq.step = sized.start;
+    if (!sqCommitNotes(notes, res)) sq.sel.clear();
+  };
+  grid.addEventListener("pointermove", mv);
+  grid.addEventListener("pointerup", up);
+  grid.addEventListener("pointercancel", up);
+}
+function sqRenderSel() { for (const d of sq.layer.children) d.classList.toggle("sel", sq.sel.has(d.dataset.k)); sqInspector(); }
+function sqRollDbl(e, grid) {
+  const { i, row } = sqAt(e, grid, SQ_RH), notes = sqNotes();
+  const hit = notes.find((n) => n.pitch === 127 - row && n.start <= i && n.start + n.len > i);
+  if (hit && hit.start !== i) return;
+  if (hit) sqCommitNotes(notes, notes.filter((n) => n !== hit));
+}
+/* the lanes: a click sets or clears a hit, a drag paints; Alt or the right button: its accent */
+function sqDrumDown(e, grid) {
+  grid.closest(".sq-main").focus({ preventScroll: true });
+  const len = stepLen(), { i, row: l } = sqAt(e, grid, SQ_DRH);
+  if (i < 0 || i >= len || l < 0 || l >= LANES.length) return;
+  sq.step = i;
+  if (e.button === 2 || e.altKey) { const s = sqAccent(i, l); if (s) sqWrite(new Map([[i, s]])); else sqRender(); return; }
+  const on = !(stepLanes(dev.steps[i]) >> l & 1), ch = new Map();
+  const paint = (k) => {
+    if (k < 0 || k >= len || ch.has(k) || !!(stepLanes(dev.steps[k]) >> l & 1) === on) return;
+    ch.set(k, sqHit(k, l, on));
+  };
+  const old = new Map();
+  const show = () => {
+    for (const [k, s] of ch) { if (!old.has(k)) old.set(k, dev.steps[k]); dev.steps[k] = s; }
+    sqDrawNotes(null, grid);
+  };
+  paint(i); show();
+  grid.setPointerCapture(e.pointerId);
+  sq.drag = { mode: "paint" };
+  const mv = (ev) => { const at = sqAt(ev, grid, SQ_DRH); paint(at.i); show(); };
+  const up = () => {
+    grid.removeEventListener("pointermove", mv);
+    grid.removeEventListener("pointerup", up);
+    sq.drag = null;
+    for (const [k, s] of old) dev.steps[k] = s;     /* (back, for the undo to keep them) */
+    sqWrite(ch);
+  };
+  grid.addEventListener("pointermove", mv);
+  grid.addEventListener("pointerup", up);
+}
+/* the controller lane: a click sets a step's value, a drag draws over the steps */
+function sqBar(ln, vy, i) {
+  const s = dev.steps[i], cw = sqCw(), v = ln.get(s), base = ln.bi ? vy(0) : 0, top = vy(v);
+  return { class: ["sq-vbar", s.flags & 1 && "acc", i === sq.step && "sel", ln.bi && v < 0 && "neg"].filter(Boolean).join(" "),
+    "data-i": i, title: `${i + 1}: ${v}`, style: `left:${i * cw + 2}px;width:${Math.max(3, cw - 4)}px;bottom:${Math.min(base, top)}px;` +
+      `height:${Math.max(ln.bi ? 2 : 3, Math.abs(top - base))}px` };
+}
+function sqLaneDown(e, area, ln, vy) {
+  const len = stepLen(), cw = sqCw(), old = new Map(), ch = new Map();
+  area.setPointerCapture(e.pointerId);
+  sq.drag = { mode: "lane" };
+  const at = (ev) => {
+    const r = area.getBoundingClientRect(), i = Math.floor((ev.clientX - r.left) / cw);
+    const f = Math.max(0, Math.min(1, (r.bottom - ev.clientY - 1) / (SQ_LANEH - 6)));
+    return { i, v: Math.round(ln.min + f * (ln.max - ln.min)) };
+  };
+  let last = null;
+  const put = (i, v) => {
+    if (i < 0 || i >= len || !stepOn(old.get(i) || dev.steps[i])) return;
+    if (!old.has(i)) old.set(i, dev.steps[i]);
+    const s = sqClone(old.get(i));
+    ln.set(s, v);
+    ch.set(i, s);
+    dev.steps[i] = s;
+    const bar = area.querySelector(`.sq-vbar[data-i="${i}"]`), a = sqBar(ln, vy, i);
+    if (bar) { bar.className = a.class; bar.setAttribute("style", a.style); bar.title = a.title; }
+  };
+  const go = (ev) => {
+    const p = at(ev);
+    if (last && last.i !== p.i) {                  /* (a fast drag: the steps between, on the line) */
+      const d = p.i > last.i ? 1 : -1;
+      for (let k = last.i + d; k !== p.i; k += d) put(k, Math.round(last.v + (p.v - last.v) * (k - last.i) / (p.i - last.i)));
+    }
+    put(p.i, p.v);
+    last = p;
+  };
+  const up = () => {
+    area.removeEventListener("pointermove", go);
+    area.removeEventListener("pointerup", up);
+    area.removeEventListener("pointercancel", up);
+    sq.drag = null;
+    for (const [k, s] of old) dev.steps[k] = s;     /* (back, for the undo to keep them) */
+    if (ch.size && ln.k === "vel") sq.vel = ln.get([...ch.values()].pop());
+    const p = last && last.i >= 0 && last.i < len ? last.i : -1;
+    if (p >= 0 && stepOn(dev.steps[p])) sq.step = p;
+    sqWrite(ch);
+  };
+  area.addEventListener("pointermove", go);
+  area.addEventListener("pointerup", up);
+  area.addEventListener("pointercancel", up);
+  go(e);
+}
+/* the ruler's end: the pattern's LENGTH */
+function sqEndDrag(e, end) {
+  e.stopPropagation();
+  const d = dev.pdesc[pSlen()], id = pSlen(), x0 = e.clientX, len0 = stepLen(), cw = sqCw();
+  const max = Math.min(dev.info.nstep, d ? d.max : dev.info.nstep), min = Math.max(1, d ? d.min : 1);
+  end.setPointerCapture(e.pointerId);
+  let v = len0;
+  end.onpointermove = (ev) => {
+    v = Math.max(min, Math.min(max, len0 + Math.round((ev.clientX - x0) / cw)));
+    end.style.left = SQ_KW + v * cw + "px";
+    end.parentNode.querySelector(".loop").style.width = v * cw + "px";
+    end.parentNode.querySelector(".corner").textContent = `${v}/${dev.info.nstep}`;
+  };
+  end.onpointerup = () => {
+    end.onpointermove = end.onpointerup = null;
+    if (v !== len0) { userSet(0, id, v, true); $("steptables").dataset.len = ""; renderSteps(); }
+  };
+}
+/* keys: Delete, the arrows (Shift: an octave, a bar), Ctrl+A, Ctrl+Z */
+function sqKey_(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); sqUndo(); return; }
+  if (sqIsDrum()) return;
+  const notes = sqNotes(), sel = notes.filter((n) => sq.sel.has(sqKey(n))), len = stepLen();
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") { e.preventDefault(); sq.sel = new Set(notes.map(sqKey)); sqRenderSel(); return; }
+  if (!sel.length) return;
+  if (e.key === "Delete" || e.key === "Backspace") {
+    e.preventDefault(); sq.sel.clear(); sqCommitNotes(notes, notes.filter((n) => !sel.includes(n))); return;
+  }
+  const dp = { ArrowUp: 1, ArrowDown: -1 }[e.key] * (e.shiftKey ? 12 : 1) || 0, ds = { ArrowRight: 1, ArrowLeft: -1 }[e.key] * (e.shiftKey ? 4 : 1) || 0;
+  if (!dp && !ds) return;
+  e.preventDefault();
+  if (sel.some((n) => n.pitch + dp < 0 || n.pitch + dp > 127 || n.start + ds < 0 || n.start + n.len + ds > len)) return;
+  const moved = sel.map((n) => ({ ...n, start: n.start + ds, pitch: n.pitch + dp }));
+  const rest = notes.filter((n) => !sel.includes(n) && !moved.some((m) => m.pitch === n.pitch && m.start < n.start + n.len && n.start < m.start + m.len));
+  sq.sel = new Set(moved.map(sqKey));
+  if (sq.step >= 0) sq.step = Math.max(0, Math.min(len - 1, sq.step + ds));
+  sqCommitNotes(notes, rest.concat(moved));
+}
+/* the picked step: its notes, its knobs */
+function sqInspector() {
+  const box = $("sqinsp"), len = stepLen();
   if (!dev || !dev.steps.length) { box.replaceChildren(); return; }
-  const len = stepLen();
-  if (box.children.length !== len) {
-    box.replaceChildren(...Array.from({ length: len }, (_, i) => el("button", { type: "button", "data-i": i, onclick: () => focusStep(i) })));
+  if (sq.step < 0 || sq.step >= len || !stepOn(dev.steps[sq.step])) {
+    box.replaceChildren(el("span", { class: "dim", text: t("sqPick") }));
+    return;
   }
-  for (const b of box.children) {
-    const i = +b.dataset.i, s = dev.steps[i];
-    const on = stepOn(s), tie = stepTie(s);
-    const txt = on ? [stepNotes(s), hitsText(s.hit | 0, s.acc | 0)].filter(Boolean).join(" ") : tie ? "—" : "";
-    const marks = s && on ? (s.flags & 1 ? " >" : "") + (s.flags & 2 ? " ~" : "") + (s.ratchet > 1 ? " x" + s.ratchet : "") +
-      (s.flam ? " f" : "") + (s.cond ? " " + TC_NAMES[s.cond] : "") + (s.nudge ? " " + (s.nudge > 0 ? "+" : "") + s.nudge : "") : "";
-    b.className = [on && "on", tie && "tie", on && s.flags & 1 && "acc", i % 4 === 0 && "beat"].filter(Boolean).join(" ");
-    b.title = `${i + 1}: ${on ? txt : tie ? "TIE" : "REST"}${marks}`;
-    b.replaceChildren(el("span", { class: "n", text: String(i + 1) + marks }), el("span", { class: "x", text: txt }));
-  }
+  const i = sq.step, s = dev.steps[i], info = dev.info;
+  const edit = (f) => { const n = sqClone(dev.steps[i]); f(n); sqWrite(new Map([[i, n]])); };
+  const what = sqIsDrum() ? hitsText(stepLanes(s), stepAccents(s)) : stepNotes(s);
+  const tog = (k, on, f) => el("button", { type: "button", class: "tog", "aria-pressed": String(!!on), text: t(k), onclick: () => edit(f) });
+  box.replaceChildren(
+    el("div", { class: "ttl", text: `${t("sqStep")} ${i + 1}` }, el("small", { text: what || "—" })),
+    knob({ label: t("vel"), min: 1, max: 127, value: s.flags & 1 ? 127 : s.vel || 96, def: 96,
+      change: (v) => { sq.vel = v; edit((n) => { n.vel = v; n.flags &= ~1; }); } }),
+    ...(info.chance ? [knob({ label: t("chance"), min: 0, max: 100, value: s.chance ?? 100, def: 100, fmt: (v) => v + "%",
+      change: (v) => edit((n) => { n.chance = v; }) })] : []),
+    ...(info.stepx ? [knob({ label: t("nudge"), min: -32, max: 31, value: s.nudge | 0, def: 0, fmt: (v) => (v > 0 ? "+" : "") + v,
+      change: (v) => edit((n) => { n.nudge = v; }) })] : []),
+    ...(info.ratchet ? [el("div", { class: "grp" }, el("span", { class: "seg", role: "group" }, ...Array.from({ length: Math.min(4, info.ratchet) },
+      (_, k) => el("button", { type: "button", "aria-pressed": String((s.ratchet ?? 1) === k + 1), text: "x" + (k + 1),
+        onclick: () => edit((n) => { n.ratchet = k + 1; }) }))), el("span", { text: t("ratchet") }))] : []),
+    ...(info.stepx ? [el("div", { class: "grp" }, el("select", { "aria-label": t("cond"), onchange: (e) => edit((n) => { n.cond = +e.target.value; }) },
+      ...TC_NAMES.map((nm, k) => el("option", { value: k, text: nm, selected: (s.cond | 0) === k }))), el("span", { text: t("cond") }))] : []),
+    el("div", { class: "grp" }, el("span", { class: "seg" },
+      tog("acc", s.flags & 1, (n) => { n.flags ^= 1; }),
+      ...(sqIsDrum() ? [] : [tog("slide", s.flags & 2, (n) => { n.flags ^= 2; })]),
+      ...(info.stepx ? [tog("flam", s.flam, (n) => { n.flam = !n.flam; })] : []))));
 }
-function focusStep(i) {
-  const tr = $("steptables").querySelector(`tr[data-i="${i}"]`);
-  if (!tr) return;
-  tr.scrollIntoView({ block: "center", behavior: "smooth" });
-  tr._c.notes.focus({ preventScroll: true });
-  tr.classList.add("hl");
-  setTimeout(() => tr.classList.remove("hl"), 1200);
-}
+$("sqview").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || !dev) return;
+  sq.view[dev.sel || 0] = b.dataset.v;
+  sq.sel.clear();
+  sqRender();
+});
+$("sqzoom").addEventListener("input", () => {
+  sq.cw = +$("sqzoom").value;
+  try { localStorage.setItem("skiff-sq-zoom", String(sq.cw)); } catch (e) { /* no storage */ }
+  sqRender();
+});
+$("squndo").addEventListener("click", sqUndo);
+document.addEventListener("keydown", (e) => {     /* (the roll's keys while the Sequencer shows, not while typing) */
+  if (tab !== "sequencer" || !dev || !dev.steps.length || e.target.closest("input, select, textarea, details, .knob")) return;
+  sqKey_(e);
+});
+window.addEventListener("resize", () => { if (tab === "sequencer" && dev && dev.steps.length) sqRender(); });
 async function writeStep(i, tr) {
   const c = tr._c;
   const notes = parseNotes(c.notes.value), hits = parseHits(c.hits.value);
