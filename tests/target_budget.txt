@@ -40,7 +40,7 @@ dv_metal_mix 16
 slice_render 453
 slc_rev 120
 fm1_alnk0_irq 1266
-fm1_timer5_irq 24139
+fm1_timer5_irq 21078
 events_block 821
 keyboard_block 1244
 ep1_tx 40

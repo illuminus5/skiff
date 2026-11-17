@@ -376,4 +376,5 @@ static const engine_t ENG_TRIO = {
     .note_on = trio_note_on,
     .render = trio_render,
     .knob = {P_E5, P_E6, P_E7, P_E1},
+    .keep = 0x33,                /* ((2.7, #118) the filter, the late sample, the drift: a retrigger lost them, a pop) */
 };

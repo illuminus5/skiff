@@ -16,6 +16,23 @@
 
 /* (SMK_KV_BYTE, SMK_MASTER_BYTE: ui.c, settings bytes) */
 
+/* the frame's reading of the faders, the wheels and the pedal (smk_ui_frame, before it acts): read once, so that what
+ * the frame does is what the cast told (cast.c cast_smk, A) and the scan's next frame can't come between its reads */
+static struct { uint8_t fader[4], ready; uint16_t wheel[2], pedal; } smk_rd __attribute__((section(".pool")));
+static void smk_read(void)
+{
+    uint32_t j;
+    for (j = 0; j < 4u; j++)
+        smk_rd.fader[j] = fm1_in.fader[j];
+    smk_rd.wheel[0] = fm1_in.wheel[0];
+    smk_rd.wheel[1] = fm1_in.wheel[1];
+    smk_rd.pedal = fm1_in.pedal;
+    smk_rd.ready = fm1_in.frames >= 300u;            /* (the first readings settle) */
+}
+#ifndef SMK_MIDI_PUT                                 /* (the cast's copy: the unit's own came as its M records) */
+#define SMK_MIDI_PUT(pkt) midi_enqueue((pkt), 1)
+#endif
+
 /* ------------------------------------------------------------------------------------------------- pads --- */
 static int smk_pads_keys(void)                     /* 1: the pads are the white keys (the keys' own map, a layer's) */
 {
@@ -127,9 +144,11 @@ static void smk_pads(void)
 {
     int32_t e;
     smk_pad_steps = (uint8_t)!smk_pads_keys();
-    while ((e = smk_padq_take()) >= 0)
+    while ((e = smk_padq_take()) >= 0) {
+        CAST(cast_rec('D', (uint32_t)e, 0u));        /* (Skiff Studio: the tap as taken) */
         if (e & 0xFF)
             smk_pad_tap(((uint32_t)e >> 8) & 15u, (uint32_t)e & 0xFFu);
+    }
 }
 
 /* ----------------------------------------------------------------------------------------------- faders --- */
@@ -140,10 +159,10 @@ static struct { uint8_t tgt, last, picked; int16_t wrote; } smk_fd[4] = {{0xFF},
 static void smk_faders(void)
 {
     uint32_t top = trk_top(), j;
-    if (fm1_in.frames < 300u)                        /* (the first readings settle) */
+    if (!smk_rd.ready)                               /* (the first readings settle) */
         return;
     for (j = 0; j < 4u; j++) {
-        uint32_t k = top + j, id = SMK_FB_P[smk_fbank % 4u], v = fm1_in.fader[j], tgt = k | smk_fbank << 4;
+        uint32_t k = top + j, id = SMK_FB_P[smk_fbank % 4u], v = smk_rd.fader[j], tgt = k | smk_fbank << 4;
         track_t *t = &trk[k % NTRK];
         int32_t cur = t->p[id] - TP[id].min;
         char b[24], val[8];
@@ -184,7 +203,7 @@ static void smk_faders(void)
 static void smk_midi(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)   /* as if it came in over USB-MIDI */
 {
     fm1_irq_off();                                   /* (usb_poll fills the queue from the timer) */
-    midi_enqueue((st >> 4) | (st | ch) << 8 | (d1 & 127u) << 16 | (d2 & 127u) << 24, 1);
+    SMK_MIDI_PUT((st >> 4) | (st | ch) << 8 | (d1 & 127u) << 16 | (d2 & 127u) << 24);
     fm1_irq_on();
 }
 /* the wheels, self-calibrating (after genkigenki's layer: the pitch wheel's rest is its centre, taken at power-on and
@@ -196,8 +215,9 @@ static void smk_wheels(void)
 {
     enum { DEAD = 12, SPAN0 = 80, MOD_LO = 485, MOD_HI = 615 };
     static int32_t pc, plo, phi, mlo, mhi, rest, prest, sb = 0, sm = 0, sp = 0, sch = -1;
-    int32_t p = fm1_in.wheel[0], m = fm1_in.wheel[1], d, b, mw, pd, ch = (int32_t)trk_midi_ch(song.sel);
-    if (fm1_in.frames < 300u)
+    int32_t p = smk_rd.wheel[0], m = smk_rd.wheel[1], pedal = smk_rd.pedal, d, b, mw, pd,
+            ch = (int32_t)trk_midi_ch(song.sel);
+    if (!smk_rd.ready)
         return;
     if (!pc) {
         pc = p;
@@ -205,7 +225,7 @@ static void smk_wheels(void)
         phi = p + SPAN0;
         mlo = m < MOD_LO ? m : MOD_LO;
         mhi = m > MOD_HI ? m : MOD_HI;
-        prest = fm1_in.pedal;
+        prest = pedal;
     }
     plo = p < plo ? p : plo;
     phi = p > phi ? p : phi;
@@ -225,8 +245,7 @@ static void smk_wheels(void)
         b = clamp(b, -8192, 8191);
     }
     mw = mhi - m <= DEAD ? 0 : clamp((mhi - m - DEAD) * 127 / (mhi - mlo - DEAD > 1 ? mhi - mlo - DEAD : 1), 0, 127);
-    pd = sp ? ((int32_t)fm1_in.pedal - prest > 150 || prest - (int32_t)fm1_in.pedal > 150)
-            : ((int32_t)fm1_in.pedal - prest > 250 || prest - (int32_t)fm1_in.pedal > 250);
+    pd = sp ? (pedal - prest > 150 || prest - pedal > 150) : (pedal - prest > 250 || prest - pedal > 250);
     if (ch != sch) {                                 /* another track: the one before back to rest */
         if (sch >= 0) {
             if (sb)
@@ -259,7 +278,7 @@ static void smk_wheels(void)
 static void smk_buttons(void)
 {
     static uint32_t prev;
-    uint32_t now = fm1_in.buttons, pr = now & ~prev;
+    uint32_t now = smk_btn_seen, pr = now & ~prev;   /* (as ui_input's last pass saw them: the cast's T) */
     prev = now;
     if (ui.menu || ui.confirm || name_on() || ui.layer)
         return;
@@ -313,6 +332,8 @@ static void smk_ui_boot(void)
 static void smk_ui_frame(void)
 {
     smk_kv_mode = (uint8_t)(SMK_KV_BYTE % SMK_KV_N);
+    smk_read();
+    CAST(cast_smk());                                /* (Skiff Studio: the reading, when it changed) */
     smk_pads();
     smk_faders();
     smk_wheels();

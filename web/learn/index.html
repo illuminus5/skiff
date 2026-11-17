@@ -345,9 +345,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="install/python">
       <h3>With Python</h3>
-      <p>Without Chrome or Edge, or from a terminal: download <code>skiff-2.6.fwsc</code> from
+      <p>Without Chrome or Edge, or from a terminal: download <code>skiff-2.7.fwsc</code> from
         <a href="https://github.com/illuminus5/skiff/releases/latest">the latest release</a> and, with the repository's <code>tools/</code>
-        folder and Python 3, run <code>pip install mido python-rtmidi</code>, then <code>python tools/fm1_install.py skiff-2.6.fwsc</code>.
+        folder and Python 3, run <code>pip install mido python-rtmidi</code>, then <code>python tools/fm1_install.py skiff-2.7.fwsc</code>.
         It does what the page does, and finishes an install left in update mode too, but it converts nothing: from 1.x or Felucca
         to 2.0, take a backup in the editor first and restore it after, and the Restore converts it.</p>
     </li>
@@ -2194,9 +2194,17 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
   </ol>
   <p class="meta"><b>The other tabs.</b> Sound: every parameter of the selected track, its engine and presets, and files of single
-    sounds. Sequencer: the steps of the selected track, its automation and locks. Song: each track's list, the scenes and the
+    sounds. Sequencer: the selected track's steps as a piano roll (on a drum track, its lanes) with a velocity lane under it, the
+    step table, its automation and locks. Song: each track's list, the scenes and the
     pattern pool (<a href="#song">chapter 14</a>). Mixer: the six strips. Library: sounds kept on the computer, dragged to and from the
     unit's 32 user slots.</p>
+  <p class="meta"><b>The Screen tab.</b> The FM-1's screen on the computer, as large as the window. Start takes a backup, restarts
+    the FM-1 and follows it from then on: a copy of Skiff in the page does what the unit does, so the music is kept and the FM-1's USB
+    audio stays on. Full screen fills the display, a phone's or a tablet's too (Chrome on Android, the FM-1 plugged into it).
+    Controls draws the FM-1's panel round the screen: click or tap its buttons and keys, drag a knob or roll the mouse wheel on it,
+    right-click a button to hold it (HOME held is SHIFT), or play from the computer's keyboard as on <a href="../try/">Try Skiff</a>.
+    The FM-1 takes them as its own presses, and the panel's lights follow the unit's. MASTER stays on the unit. An SMK-37 gets
+    the screen alone: Controls are the FM-1's, and need Skiff 2.7.</p>
 </section>
 
 <!-- ================================================================ REFERENCE -->

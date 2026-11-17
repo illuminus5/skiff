@@ -3,13 +3,15 @@
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 """Build Felucca: the app, the update loader and an installable .fwsc package.
 
-  tools/build.py [--release X.Y[-suffix]] [--board fm1|smk37] [--model pro|elite|mke]
+  tools/build.py [--release X.Y[-suffix]] [--console] [--board fm1|smk37] [--model pro|elite|mke]
 
 Outputs in build/: felucca.bin (app), loader/ota.bin (update loader),
 felucca.fwsc (package). A release build (--release X.Y) writes skiff-X.Y.fwsc and a folder
-release-X.Y/ with the package, the app, SHA256SUMS, the samples' attributions and the licence files; (Skiff 2.0) it
-leaves the serial console out (FELUCCA_CDC=0, a developer tool: FELUCCA_CDC=1 keeps it), so the unit is a plain audio
-+ MIDI device (macOS 13-15 see its USB audio input) and MENU has no USB SERIAL.
+release-X.Y/ with the package, the app, SHA256SUMS, the samples' attributions and the licence files.
+Every build leaves the serial console out ((Skiff 2.0) a release's, (2.7) every one's: FELUCCA_CDC=0), so the unit
+is a plain audio + MIDI device (macOS 13-15 see its USB audio input) and MENU has no USB SERIAL. --console (a
+developer tool) builds it in (FELUCCA_CDC=1) and leaves the Skiff Editor's Screen tab out (FELUCCA_CAST=0), so the
+FM-1's app still fits its slot; FELUCCA_CDC=1 alone keeps the cast too, if it fits.
 See BUILDING.md for the toolchain and the SDK.
 
 BOARD=smk37 (or --board smk37) builds Skiff for the M-VAVE SMK-37 Pro (after genkigenki's SMK-37 layer for Felucca):
@@ -220,7 +222,7 @@ def build_app():
     flags = [*CFLAGS, *BOARD_DEFS[BOARD], "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_OTA_RAMONLY", "FELUCCA_CDC",
                  "FELUCCA_UART", "FELUCCA_UAC", "FELUCCA_UAC_TONE", "FELUCCA_UAC_48K", "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_FM4",
-                 "FELUCCA_CDC_DEFAULT", "FELUCCA_CPU2"):
+                 "FELUCCA_CDC_DEFAULT", "FELUCCA_CPU2", "FELUCCA_CAST"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
@@ -377,6 +379,8 @@ def main():
     global PRODUCT, VERSION, BOARD, APP_SLOT
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_7XY, version string vX.Y")
+    ap.add_argument("--console", action="store_true",
+                    help="with the USB serial console (FELUCCA_CDC=1), without the Screen tab's cast (FELUCCA_CAST=0)")
     ap.add_argument("--board", choices=sorted(BOARD_PRODUCT), default=None,
                     help="target board: fm1 (default) or smk37 (default: $BOARD, else fm1)")
     ap.add_argument("--model", choices=sorted(MODELS), default=None,
@@ -406,8 +410,11 @@ def main():
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z, X.Y.Z.W or X.Y-suffix, one digit each")
         PRODUCT = BOARD_PREFIX[BOARD] + m[1] + m[2]
         VERSION = "v" + a.release.lower()      # e.g. v1.0, v1.1-rc1
-        os.environ.setdefault("FELUCCA_CDC", "0")   # (Skiff 2.0) no serial console in a release (see the top)
         name = f"{stem}-{a.release}.fwsc"
+    if a.console:                   # (2.7) the console in, the cast out: the FM-1's app fits (see the top)
+        os.environ["FELUCCA_CDC"] = "1"
+        os.environ.setdefault("FELUCCA_CAST", "0")
+    os.environ.setdefault("FELUCCA_CDC", "0")   # ((Skiff 2.0) a release's, (2.7) every build's: no serial console)
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:

@@ -813,6 +813,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_PROJECT_CLEAR, S_CONFIRM_CLEAR_SONG, S_CONFIRM_CLEAR_TRKS,                             /* (2.5) */
        S_INS_FILTER, S_INS_FILTER_HP,                                                         /* (2.5, 6B) */
        S_CHORD_STRUM, S_CHORD_STRUM_ALT,                                                      /* (2.5, 7B) */
+       S_MENU_SYNC, S_MENU_SYNC_R, S_MENU_PPQN, S_MENU_SYNCINV,                               /* MENU > AUDIO > SYNC OUT */
        S_SHIFT_SONG, S_HINT_FREE,                                                             /* (2.5) */
        S_MOCK_HOME, S_MOCK_PRESETS, S_MOCK_SEQ, S_MOCK_DRUM, S_MOCK_MIXER, S_MOCK_DIALOG, S_MOCK_MENU, S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
@@ -849,7 +850,7 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "song_sound", "song_sounds", "song_chains", "song_chain_copy", "drum_kit_usr", "lanes_usr",
     "follow", "follow_scale", "follow_fit", "follow_off", "follow_wait", "free_take", "free_take_turned", "dly_mono", "dly_ping", "fx_delay", "fx_reverb", "fx_sends", "pattern_64", "song_strip", "project_new",
     "project_clear", "confirm_clear_song", "confirm_clear_trks", "insert_filter", "insert_filter_hp", "chord_strum",
-    "chord_strum_alt", "shift_song", "hint_free_take", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
+    "chord_strum_alt", "menu_sync", "menu_sync_r", "menu_ppqn", "menu_syncinv", "shift_song", "hint_free_take", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
 
 /* the scenes of the UI design screens: the state the UI-redesign
  * prototype drew them from (its setup(): two pattern tracks, the drum pattern on track 4, a synthetic scope),
@@ -1085,6 +1086,11 @@ static void setup(int s)
     case S_COUNTIN: song.playing = 0; song.rec = 1; cin_total = 4; cin_left = 3; go_home(); break;
     case S_COUNTIN2: song.playing = 0; song.rec = 1; cin_total = 8; cin_left = 8; go_page(GR_ROLL); break;
     case S_MENU_AUDIO: ui.menu = 1; ui.menu_sel = MI_CLICK; rp_put(RP_CLICK, 1u); rp_put(RP_COUNTIN, 1u); break;
+    /* MENU > AUDIO > SYNC OUT, SYNC PPQN, SYNC INVERT (sync_out.c): AUDIO scrolled to them; the longest name; 24 PPQN; INVERT OFF */
+    case S_MENU_SYNC: ui.menu = 1; ui.menu_sel = MI_SYNC; menu_put(MI_SYNC, 1); break;
+    case S_MENU_SYNC_R: ui.menu = 1; ui.menu_sel = MI_SYNC; menu_put(MI_SYNC, 2); break;
+    case S_MENU_PPQN: ui.menu = 1; ui.menu_sel = MI_PPQN; menu_put(MI_PPQN, 23); break;
+    case S_MENU_SYNCINV: ui.menu = 1; ui.menu_sel = MI_SYNCINV; menu_put(MI_SYNC, 1); menu_put(MI_SYNCINV, 1); break;
     /* 1.2: the header's three slots (ui_draw.c draw_head): playing with the selected track armed; another track armed;
      * the BPM being turned (the accent's); BPM LOCK ON (the lock right of the BPM), and its message after a turn;
      * GLO with the tempo turned and BPM LOCK ON (the label right of the lock); the metronome on the bar's 1st beat

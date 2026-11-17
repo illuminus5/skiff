@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Felucca menu (HOME held): its rows in tabs (1.0.5: DISPLAY CONTROL AUDIO SYSTEM; ALGORITHM between them, PRESETS
- * within one; no scrolling), the rows in menu_items.c (the settings, shared with the editor's MENU_DESC / MENU_SET).
+/* Felucca menu (HOME held): its rows in tabs (1.0.5: DISPLAY CONTROL AUDIO SYSTEM; ALGORITHM ((2.7) or SELECT) between
+ * them, PRESETS within one; no scrolling), the rows in menu_items.c (the settings, shared with the editor's MENU_DESC / MENU_SET).
  * No BACK row: HOME closes it (ui_input.c). The two-valued rows are bits of ui_prefs (MENU_FLAGS). PRESETS scrolls from
  * ABOUT through all credits (OCT- back to the tabs). ui.menu: 1 the tabs, 2 information. */
 /* ------------------------------------------------------------ menu --- */
@@ -513,16 +513,17 @@ static void menu_close(void)
         page_entered();
 }
 
-/* menu: ALGORITHM steps between the tabs, PRESETS between the rows of one (both wrap; a tab comes back at the row
- * last picked in it), any of KNOB 1..4 or OCT+ / OCT- change a value (menu_items.c menu_step), OCT+ opens CALIBRATION /
- * ABOUT (OCT- nothing there); OCT- in ABOUT goes back to the tabs. HOME closes it, from ABOUT too (ui_input.c) */
+/* menu: ALGORITHM ((2.7) or SELECT) steps between the tabs, PRESETS between the rows of one (both wrap; a tab comes
+ * back at the row last picked in it), any of KNOB 1..4 or OCT+ / OCT- change a value (menu_items.c menu_step), OCT+
+ * opens CALIBRATION / ABOUT (OCT- nothing there); OCT- in ABOUT goes back to the tabs. HOME closes it, from ABOUT too
+ * (ui_input.c). (The footer says ALGO TAB only: a fourth hint would not fit) */
 static void menu_move(int32_t s)                       /* PRESETS: the next / previous row of the tab */
 {
     uint32_t t = menu_tab(), f = mtab_first(t), n = mtab_rows(t), k = (ui.menu_sel - f + (s > 0 ? 1u : n - 1u)) % n;
     ui.menu_sel = (uint8_t)(f + k);
     ui.menu_row[t] = (uint8_t)k;
 }
-static void menu_tab_go(int32_t s)                     /* ALGORITHM: the next / previous tab, at its last row */
+static void menu_tab_go(int32_t s)                     /* ALGORITHM, SELECT: the next / previous tab, at its last row */
 {
     uint32_t t = menu_tab(), k;
     ui.menu_row[t] = (uint8_t)(ui.menu_sel - mtab_first(t));
@@ -544,7 +545,7 @@ static void menu_input(uint32_t oct)                  /* oct: ui_input.c oct_tap
     }
     if ((s = panel_enc(EN_PRESET)) != 0)
         menu_move(s);
-    if ((s = panel_enc(EN_ALGO)) != 0)
+    if ((s = panel_enc(EN_ALGO) + panel_enc(EN_SELECT)) != 0)   /* ((2.7) SELECT too: it turns pages elsewhere) */
         menu_tab_go(s);
     for (s = 0, k = 0; k < 4u; k++)                    /* KNOB 1..4, any of them */
         s += panel_enc(EN_K1 + k);

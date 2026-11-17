@@ -52,6 +52,11 @@ On Linux x86-64 the toolchain runs natively and Docker is not needed.
 `web/make_site.py build/skiff-1.2.fwsc 1.2 OUT` makes the GitHub Pages site from it: the browser installer, the
 editor and the package with its licences.
 
+No build has the USB serial console (MENU > SYSTEM > USB SERIAL), a developer tool: the unit is a plain audio + MIDI
+device, as a release (before 2.7 every build but `--release` had it). `./build.sh --console` builds it in, and leaves
+out the cast behind the Skiff Editor's Screen tab (`FELUCCA_CAST=0`), so the FM-1's app still fits its flash. Run the
+tests on a default build: a console build's TIMER5 interrupt polls the console too, past its target budget.
+
 `BOARD=smk37 ./build.sh` builds for the M-VAVE SMK-37 Pro instead ([SMK37.md](SMK37.md)): `build/skiff-smk37.fwsc`,
 identity `SMK-37 Pro_700` (a release `SMK-37 Pro_7XY`, `skiff-smk37-X.Y.fwsc`). `MODEL=elite` or `MODEL=mke` makes the
 same firmware under the SMK-37 Elite's or the MKE-P37's model name (`skiff-smk37-elite.fwsc`, `skiff-smk37-mke.fwsc`),
@@ -59,14 +64,16 @@ so each unit's stock updater still takes its factory package later. The FM-1 bui
 Both boards write the same files in `build/`: build the SMK first, copy its package out, build the FM-1 last, then
 run the tests (they read the FM-1's binaries; the SMK packages left in `build/` are checked too).
 
-Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `core.h` and `icons.c`):
+Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`, `core.h` and `icons.c`, `FELUCCA_CDC`'s
+in `tools/build.py`: the host tests build the console in):
 
 | Flag | Default | |
 | --- | --- | --- |
 | `FELUCCA_FLASH` | 1 | settings, presets and projects in flash |
 | `FELUCCA_OTA` | 1 | update entry (needs `FELUCCA_FLASH`) |
-| `FELUCCA_CDC` | 1 | USB serial console and MENU > SYSTEM > USB SERIAL (a `--release` build: 0, unless set to 1) |
+| `FELUCCA_CDC` | 0 | USB serial console and MENU > SYSTEM > USB SERIAL (`--console`; `1` keeps the cast too, if it fits) |
 | `FELUCCA_CDC_DEFAULT` | 1 | `0`: the console is built in but left out of USB from boot (as MENU > USB SERIAL OFF) |
+| `FELUCCA_CAST` | 1 | the FM-1's cast, the Skiff Editor's Screen tab (`--console`: 0; the SMK-37 has none) |
 | `FELUCCA_UAC` | 1 | USB audio input (the master output, stereo, 44.1 or 48 kHz) |
 | `FELUCCA_UAC_48K` | 1 | `0`: the USB audio input at 44.1 kHz only, as up to 1.0.5.2 (`firmware/src/usb.c`) |
 | `FELUCCA_UART` | 1 | TRS MIDI IN |

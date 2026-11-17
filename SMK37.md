@@ -14,7 +14,7 @@ keyboard; the Starrykey 37 Play is not supported yet.
    its Bluetooth pairings, which no download can replace. Skiff never writes them, but a backup is the way back if
    anything else goes wrong.
 3. **Install:** the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) (Chrome or Edge) finds the
-   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.6-smk37.fwsc` (`-elite`, `-mke` for those
+   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.7-smk37.fwsc` (`-elite`, `-mke` for those
    models, not tried on a keyboard yet). About two minutes.
 
 Keep it plugged in and switched on while it writes. If the cable or the power is cut anyway, the keyboard stays in
@@ -29,7 +29,7 @@ This needs a computer with Windows or Linux, Python 3, this repository's `tools/
 reads the whole 1 MiB through the chip's built-in boot mode:
 
 1. With the keyboard on M-VAVE's V016 (or on Skiff) and connected:
-   `python tools/fm1_install.py --uboot skiff-2.6-smk37.fwsc`. The keyboard starts Skiff's update loader without
+   `python tools/fm1_install.py --uboot skiff-2.7-smk37.fwsc`. The keyboard starts Skiff's update loader without
    writing the firmware, then switches to the chip's boot mode: the computer sees a USB disk named `WL82 UBOOT1.00`.
    **If Windows offers to format it, cancel.**
 2. In an **administrator** terminal (on Linux: with `sudo`, and `/dev/sgN` as the device), from jl-uboot-tool's folder,
@@ -142,6 +142,9 @@ loader 7,859 B (the limit: 7,936 B, below).
 - **Sample slots:** USR1 only (layout A, below). SAMPLE's SET, GRAIN's SOURCE and SLICE's source stop at USR1, and
   the editor lists one slot.
 - **Screen:** the SMK's pins and SPI group, with no backlight pin. SCREEN OFF only puts the panel to sleep.
+- **The editor's Screen tab** (2.7, #142 by Mewsse): the SMK's screen in the Skiff Editor, its keys, pads, faders,
+  wheels and pedal followed by a copy of the SMK build (`felucca_cast_smk.wasm`). The screen alone: the Controls
+  around it are the FM-1's.
 - **MIDI:** USB as on the FM-1. TRS MIDI IN is off and the build refuses it, because its pin PH8 is a key-matrix row on
   the SMK, so MENU > MIDI > CLOCK offers INT and USB only (a saved TRS loads as USB). The SMK's jack is MIDI OUT
   (UART1 TX on PC7, 31250 baud). It sends what USB MIDI OUT sends (2.2: the same events at the same moments, the clock
@@ -195,7 +198,7 @@ loader 7,859 B (the limit: 7,936 B, below).
   as well as the FM-1's V15. A write cut short is resumed when the same model's loader answers again (up to five
   tries, two minutes each), and the bar moves forward only. `fm1_install.py --info` on an SMK loader prints its
   start record and clocks in words.
-- **Console** (MENU > USB SERIAL, in a build without `--release`: Skiff 2.0's releases have no console): `smk`
+- **Console** (MENU > USB SERIAL, in a `--console` build: Skiff 2.0's releases and (2.7) other builds have none): `smk`
   (inputs, the store's owner state, the calibration marker), `padtest`,
   `leds`, `flr 0xC1224 8` (should read `trimdat`).
 - **2.5 on the SMK:** the same firmware, with the SMK's names where 2.5 shows a control: the PRESETS card says K4
@@ -277,7 +280,7 @@ Left for the unit, because the host can't show them:
 
 1. A full flash backup, verified, before anything (the kit's recovery notes). Then install with
    `tools/fm1_install.py build/skiff-smk37.fwsc` (the Pro; `-elite` / `-mke` for those models).
-2. Turn on MENU > USB SERIAL, restart, open the console (a build without `--release`: a release has none).
+2. Turn on MENU > USB SERIAL, restart, open the console (a `--console` build: no other has one).
 3. Check, in order: `smk` (adc_ok rising, adc_miss near 0; buttons and knobs one step a detent; pads idle at their
    base; faders 0..127; wheels move), `padtest` (the bottom row's first four: red, green, blue, white), every key
    C3..C6, a project saved and found again after a power cycle, `flr 0xC1224 8` still reading `trimdat`. Then the

@@ -320,7 +320,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -w $LEGACY -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_legacy" tests/ui_test.c -lm
     run "UI, the converter's build (FELUCCA_LEGACY): DIGITAL sounds, SAMPLE PERC and old GM projects converted as 1.x did" "$OUT/ui_test_legacy"
     $CC -w -DFELUCCA_CDC=0 -Ibuild/gen -Ifirmware/src -o "$OUT/ui_test_rel" tests/ui_test.c -lm
-    run "UI as a release builds it (FELUCCA_CDC=0, build.py --release): no USB SERIAL row, the rest as above" "$OUT/ui_test_rel"
+    run "UI as build.py builds it (FELUCCA_CDC=0, (2.7) all but --console): no USB SERIAL row, the rest as above" "$OUT/ui_test_rel"
     FV=$(sed -n 's/^#define FELUCCA_VERSION "\([^"]*\)".*/\1/p' firmware/src/felucca.c)   # (the splash, ABOUT: the real version)
     # (Skiff 2.0) ABOUT's build date fixed, so the UI golden holds from day to day
     $CC -O1 -w "-DFELUCCA_VERSION=\"$FV\"" '-D__DATE__="Jan  1 2026"' -Ibuild/gen -Ifirmware/src -Itests \
@@ -341,6 +341,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "(2.5, #110) TAIL: a fading note keeps its shape to the DAC (24 bits) and USB (dithered 16), MASTER 100 % and 25 %" "$OUT/tail_test"
     $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/click_test" tests/click_test.c -lm
     run "metronome and count-in: beats sample for sample (internal and external clock), accent, level, MASTER, not in USB, count-in timing, notes onto step 1" "$OUT/click_test"
+    $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/sync_out_test" tests/sync_out_test.c -lm
+    run "MENU > AUDIO > SYNC OUT: NO SYNC bit for bit (an old STYLE byte too), L / R SYNC mono + pulses, PPQN 1..24 on the grid, the pulse width, none stopped, USB unchanged" "$OUT/sync_out_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test" tests/persistence_test.c -lm
     run "persistence: deferred settings, retry and failed-save rollback; (2.0) a FUN5 slot OLD FORMAT" "$OUT/persistence_test"
     $CC -w $LEGACY -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test_legacy" tests/persistence_test.c -lm
@@ -367,7 +369,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "editor: real C protocol, malformed transfers, queue recovery, MENU settings (writes build/host/menu.json)" \
         env MENU_JSON="$OUT/menu.json" "$OUT/editor_test"
     $CC -w -DFELUCCA_CDC=0 -Ibuild/gen -Ifirmware/src -o "$OUT/editor_test_rel" tests/editor_test.c -lm
-    run "editor as a release builds it (FELUCCA_CDC=0): MENU settings without USB SERIAL (17; id 11 refused)" "$OUT/editor_test_rel"
+    run "editor as build.py builds it (FELUCCA_CDC=0): MENU settings without USB SERIAL (17; id 11 refused)" "$OUT/editor_test_rel"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/robust_test" tests/robust_test.c -lm
     run "robustness: crafted sample slots, engine numbers, retained old projects, preset patterns, malformed requests" \
         "$OUT/robust_test"

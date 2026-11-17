@@ -42,6 +42,7 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
         out[2u * i] = out[2u * i] * (1 << OUT_SHIFT) + dac_lo[2u * i];
         out[2u * i + 1u] = out[2u * i + 1u] * (1 << OUT_SHIFT) + dac_lo[2u * i + 1u];
     }
+    sy_render(out, n);                                  /* MENU > AUDIO > SYNC OUT: mono + sync pulses, the DAC only (sync_out.c) */
 }
 
 /* Overload: two halves in a row above 85 % (the render plus TIMER5 nested in it), fade one voice over the

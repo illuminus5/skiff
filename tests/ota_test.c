@@ -127,10 +127,18 @@ static int ota_frame_get(const uint8_t **p, uint32_t *n)
 static void ota_frame_done(void) { rx_full = 0; }
 static uint32_t ota_now_ms(void) { return now_ms; }
 static void ota_idle(void) { now_ms += 1; }
+#if T_SMK
+#define T_POOL(off, n) 0
+#else                                    /* (Skiff) the way back to V15: the pattern pool, 0xE7000..0xE8FFF + 0xEA000..0xFBFFF */
+#define T_POOL(off, n) (((off) >= 0xE7000u && (off) + (n) <= 0xE9000u) || ((off) >= 0xEA000u && (off) + (n) <= 0xFC000u))
+#endif
+static uint32_t pool_erases;
 static int ota_erase(uint32_t off)
 {
-    if (off < T_AREA || off >= T_AREA_HI || (off & 0xFFFu)) { bad_erase++; return -8; }
+    int pool = T_POOL(off, 0x1000u);
+    if ((!pool && (off < T_AREA || off >= T_AREA_HI)) || (off & 0xFFFu)) { bad_erase++; return -8; }
     erases++;
+    pool_erases += pool;
     memset(nor + off, 0xFF, 4096);
     return 0;
 }
@@ -138,7 +146,7 @@ static int ota_prog(uint32_t off, const void *src, uint32_t n)
 {
     const uint8_t *s = src;
     uint32_t i;
-    if (off < T_AREA || off + n > T_AREA_HI) { bad_erase++; return -8; }
+    if (!T_POOL(off, n) && (off < T_AREA || off + n > T_AREA_HI)) { bad_erase++; return -8; }
     for (i = 0; i < n; i++) nor[off + i] &= s[i];
     return 0;
 }
@@ -219,10 +227,43 @@ static int area_erased(void)
     return 1;
 }
 
+/* (Skiff) the USR entry (type 50, V15's package only) in the logical image: offset, length, CRC16; 0: none */
+static uint32_t usr_off, usr_len, usr_crc;
+static void find_usr(void)
+{
+    uint8_t h[0x400];
+    uint32_t i, n;
+    memcpy(h, logical, sizeof h);
+    ota_jl_enc(h, 0x40);
+    n = ota_rd16(h + 8);
+    usr_off = usr_len = usr_crc = 0;
+    for (i = 0; i < n; i++) {
+        uint8_t *e = h + 0x40 + i * 0x50u;
+        ota_jl_enc(e, 0x50);
+        if (ota_rd16(e) == 50) { usr_off = ota_rd32(e + 8); usr_len = ota_rd32(e + 12); usr_crc = ota_rd16(e + 4); }
+    }
+}
+
+/* (Skiff) the device as Skiff leaves it: pattern chunks ("SKB1") and other bytes all over the pool, BTIF at 0xE9000 and
+ * Skiff's globals 0xFC000.. around it; pool_before keeps them */
+static uint8_t pool_before[0xFF000 - 0xE7000];
+static void fill_pool(void)
+{
+    uint32_t i;
+    for (i = 0xE7000u; i < 0xFF000u; i++)
+        nor[i] = (uint8_t)(i * 29u + 3u);
+    memcpy(nor + 0xE7000u, "SKB1", 4);
+    memcpy(nor + 0xE8000u, "SKB1", 4);
+    memcpy(nor + 0xF3000u, "SKB1", 4);
+    memcpy(pool_before, nor + 0xE7000u, sizeof pool_before);
+    pool_erases = 0;
+}
+
 static void reset_dev(void)
 {
     memset(nor, 0xFF, sizeof nor);
     memcpy(nor, logical + 0x400, 0x4000);                 /* device flash head = package flash.bin head */
+    fill_pool();
     rx_full = 0; requests = 0; ident_replies = 0; committed = 0; last_code = 0;
     mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0;
 }
@@ -232,7 +273,8 @@ int main(int argc, char **argv)
     FILE *f;
     uint8_t *raw;
     size_t n, i;
-    int bad = 0, rc, official = argc > 2 && !strcmp(argv[2], "official");
+    int bad = 0, rc, official = argc > 2 && !strcmp(argv[2], "official"), usr;
+    uint32_t usr_reads;
     size_t blocks = 20;
     if (argc < 2) { printf("usage: ota_test FILE.fwsc [official]\n"); return 2; }
 #if BOARD_SMK37
@@ -263,6 +305,9 @@ int main(int argc, char **argv)
     }
 
     /* full session */
+    find_usr();
+    usr = official && !T_SMK && usr_len;
+    usr_reads = usr ? 2u * ((usr_len + 511u) / 512u) : 0u;   /* (Skiff) every sector compared, then written */
     reset_dev();
     rc = ota_session();
     printf("  %u requests\n", requests);
@@ -270,7 +315,8 @@ int main(int argc, char **argv)
     if (official && T_SMK)
         bad += check("headers + the head check + confirm, no loader read", requests >= 36u && requests <= 40u);
     else if (official)                                     /* ((2.0.2) the FM-1's: M-VAVE's loader read and staged too) */
-        bad += check("headers + the head check + the loader + confirm", requests >= 70u && requests <= 85u);
+        bad += check("headers + the head check + the loader (+ USR) + confirm",
+                     requests >= 70u + usr_reads && requests <= 85u + usr_reads);
     else
         bad += check("headers + loader + confirm, no head reads", requests >= 10u && requests <= 30u);
     {
@@ -293,11 +339,43 @@ int main(int argc, char **argv)
         bad += check("record CRC / type / magic / ota_addr",
                      (p[0] | p[1] << 8) == ota_crc16(p + 2, 78, 0) && (p[2] | p[3] << 8) == 0x5A0D &&
                      (p[6] | p[7] << 8) == 0x5441 && ota_rd32(p + 72) == T_AREA);
-        bad += check("nothing written outside the staging area", bad_erase == 0);
+        bad += check("nothing written outside the staging area (and the pool)", bad_erase == 0);
     }
     /* boot cleanup erases it */
     bad += check("boot cleanup erases the area", ota_boot_cleanup() == 1 && area_erased());
     bad += check("second boot: nothing to do", ota_boot_cleanup() == 0);
+    /* (Skiff) the way back to V15: its USR image over the pool, the pool's chunks below BTIF erased, nothing else */
+    if (usr) {
+        uint32_t k, ff = 1, pre = 0;
+        for (k = usr_len; k < 0x12000u; k++)
+            ff &= nor[0xEA000u + k] == 0xFF;
+        bad += check("V15: USR image at 0xEA000, its CRC16 the entry's, 0xFF to 0xFC000",
+                     ota_crc16(nor + 0xEA000u, usr_len, 0) == usr_crc && ff);
+        bad += check("V15: the factory voices' two copies equal (0xEA000, 0xEE000)",
+                     !memcmp(nor + 0xEA000u, nor + 0xEE000u, 0x4000));
+        for (k = 0xE7000u; k < 0xE9000u; k++)
+            pre |= nor[k] != 0xFF;
+        bad += check("V15: pattern chunks at 0xE7000 / 0xE8000 erased", !pre);
+        bad += check("V15: BTIF 0xE9000, Skiff's globals 0xFC000.. untouched",
+                     !memcmp(nor + 0xE9000u, pool_before + 0x2000u, 0x1000) &&
+                     !memcmp(nor + 0xFC000u, pool_before + 0x15000u, 0x3000));
+        /* the same unit again (USR already V15's), with bytes that are no pattern chunk below BTIF (0xE8000: V15's own
+         * system record): compared, nothing erased */
+        memcpy(nor + 0xE7000u, "????", 4);
+        memcpy(nor + 0xE8000u, "\x55\xAA\xAA\x55", 4);
+        pool_erases = 0; committed = 0;
+        rc = ota_session();
+        bad += check("V15 again: the USR region already right, no pool erase", rc == 0 && committed && pool_erases == 0);
+        bad += check("V15: a pool sector below BTIF that is no pattern chunk kept",
+                     !memcmp(nor + 0xE7000u, "????", 4) && !memcmp(nor + 0xE8000u, "\x55\xAA\xAA\x55", 4));
+        reset_dev();                                       /* a damaged USR entry: no commit, the staging erased */
+        corrupt_at = logical + usr_off + usr_len - 100u;
+        rc = ota_session();
+        bad += check("V15: damaged USR entry -> -16, no commit, staging erased", rc == -16 && !committed && area_erased());
+        corrupt_at = NULL;
+    } else
+        bad += check("not V15's package: the pool untouched", pool_erases == 0 &&
+                     !memcmp(nor + 0xE7000u, pool_before, sizeof pool_before));
 
     /* 1.6.1: another board's package (flash.bin not this board's app area size): refused in step 1, nothing erased;
      * ((2.0.2) after the header's 2 reads exactly: web/fm1ota.js stockRefusal counts on it) */

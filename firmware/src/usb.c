@@ -213,7 +213,13 @@ static int midi_enqueue(uint32_t pkt, uint32_t source)
  * within the poll's 0.5 ms. Producers never overlap: the audio ISR (only a nested TIMER5, which produces nothing, can
  * preempt it), TIMER5 outside a render, the main loop with IRQs off. (SMK-37) the TRS jack takes the same events (mo_trs,
  * its own read index rt): a slot is free once both have passed it. Off the ISR's merged globals (the ISR's code keeps
- * its layout) and out of .pool (the SMK's is near its guard) */
+ * its layout) and out of .pool (the SMK's is near its guard). (A host test on macOS: none, Mach-O names a section
+ * "segment,section") */
+#ifdef __MACH__
+#define MO_SECTION
+#else
+#define MO_SECTION __attribute__((section(".bss.mo")))
+#endif
 static struct {
     uint32_t due[MQO];
     uint32_t tick, now;          /* the block being rendered plays at; TIMER5's tick */
@@ -222,7 +228,7 @@ static struct {
     volatile uint32_t rt;        /* the TRS jack's read index */
 #endif
     uint8_t wait;                /* polls the last packet has waited for the host */
-} mo __attribute__((section(".bss.mo")));
+} mo MO_SECTION;
 
 /* (2.2) MENU > MIDI's settings the ISRs read, in the unit's settings (ui.c mset_io: favorites.factory; a build without
  * the UI: none, every one at its default, 0): NOTES OUT and the switches in [15][17] (MO_*), REMOTE's channel in
