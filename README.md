@@ -657,7 +657,7 @@ and BREAK 1.1's own break.
 
 Hold **HOME** and let it go for the menu. It is in five tabs: **DISPLAY** (THEME, PLAYHEAD, LARGE, ANIM, LEDS,
 SCREEN OFF, HINTS), **CONTROL** (HOLD, KNOB ACCEL, BPM LOCK, SCALE LEDS, STEP PREVIEW, RETURN, KEEP SENDS), **AUDIO** (SPEAKER EQ,
-USB LEVEL, CLICK, CLICK LEVEL, COUNT-IN, TUNE), **SYSTEM** (RESTORE LAST, CPU, CPU CLOCK, HARDWARE CALIBRATION, RESET
+USB LEVEL, CLICK, CLICK LEVEL, COUNT-IN, TUNE, SYNC OUT, SYNC PPQN, SYNC INVERT), **SYSTEM** (RESTORE LAST, CPU, CPU CLOCK, HARDWARE CALIBRATION, RESET
 SETTINGS, ABOUT) and **MIDI** (CLOCK, CLOCK OUT, MIDI IN, AUTO CHANNEL, T1–T6 CHANNEL, NOTES OUT, CC OUT, THRU, REMOTE,
 MIDI LEARN, LEARN CLEAR); a tab of more than six rows scrolls.
 ALGORITHM moves between the tabs and PRESETS through the rows of one; any of KNOB 1–4, or OCT+ / OCT−,
@@ -763,6 +763,16 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
   bar's first beat higher. **CLICK LEVEL:** LOW, MID (default) or HIGH; MASTER sets it too
 - **COUNT-IN:** OFF (default), 1 BAR or 2 BARS: with a track armed, PLAY counts in first (clicking even with
   CLICK OFF), and a note played in the last half beat lands on step 1. Not with an external clock
+- **SYNC OUT:** NO SYNC: STEREO (default), L SYNC: MONO/SYNC or R SYNC: SYNC/MONO: an analog sync out of the
+  headphone / line out for gear that follows pulses on its audio input. L SYNC puts the pulses on the left and the music,
+  summed to mono, on the right: a Teenage Engineering Pocket Operator in **SY4** (or SY5) follows it. R SYNC is the
+  other way round. The pulses follow the sequencer (the internal clock or CLOCK USB / TRS), the first with step 1, and
+  only while it plays, so the PO starts and stops with Skiff; 20 ms each at full level (shorter at a high PPQN),
+  whatever MASTER is, and just below zero between them, PocketSync's shape (as JAN3000 found it). USB audio stays
+  stereo. **SYNC PPQN:** 1–24 pulses a quarter note, 2 by default (the Pocket Operator's and the Volca's).
+  **SYNC INVERT:** ON (default) or OFF: the FM-1's headphone output turns the signal upside down, so with ON the PO
+  gets the pulse the right way up; OFF for an output that doesn't (the browser emulator through a computer). All three
+  are the unit's, as CLOCK OUT, so loading a project never changes them
 - **USB SERIAL** (2.0: only in a build from source without `--release`, see [BUILDING.md](BUILDING.md)): the serial
   console, a developer tool. A release has none, so the FM-1 is a plain audio + MIDI device and macOS 13–15 see its
   USB audio input

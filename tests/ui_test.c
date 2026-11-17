@@ -1592,7 +1592,7 @@ static int test_menu_tabs(void)
     bad += check("MENU tabs: DISPLAY CONTROL AUDIO SYSTEM MIDI ((1.3) MIDI appended), rows in a run, 6 shown fit the page; "
                  "tab gaps constant (S, LARGE)",
                  ok && MTAB_COUNT == 5u && str_eq(MTAB_NAME[0], "DISPLAY") && str_eq(MTAB_NAME[MTAB_MIDI], "MIDI") &&
-                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 7u && mtab_rows(MTAB_AUDIO) == 6u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS) */
+                 mtab_rows(MTAB_DISPLAY) == 7u && mtab_rows(MTAB_CONTROL) == 7u && mtab_rows(MTAB_AUDIO) == 9u &&   /* (#27; (2.0) RETURN; (2.5) KEEP SENDS; AUDIO: SYNC OUT, PPQN, INVERT) */
                  mtab_rows(MTAB_SYSTEM) == 6u + FELUCCA_CDC && mtab_rows(MTAB_MIDI) == 16u);   /* ((Skiff) SYSTEM: CPU
                                                          * CLOCK; (Skiff 2.0) USB SERIAL with the console only; (2.2)
                                                          * MIDI: CLOCK OUT, AUTO CHANNEL, NOTES OUT, CC OUT, THRU, REMOTE) */
@@ -7175,11 +7175,53 @@ static int test_click_menu(void)
     turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_COUNTIN;
     turn(EN_K4, 1); ok &= cin_bars == 1u;
     turn(EN_K4, 1); ok &= cin_bars == 2u;
-    turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_TUNE;     /* ((U3) TUNE, AUDIO's last) */
+    turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_TUNE;     /* ((U3) TUNE) */
+    turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_SYNC;     /* (SYNC OUT, SYNC PPQN: AUDIO's last) */
+    turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_PPQN;
+    turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_SYNCINV;
     turn(EN_PRESET, 1); ok &= ui.menu_sel == MI_LOWCUT;   /* (wraps within AUDIO) */
     press(B_HOME);
     ok &= !ui.menu;
     bad += check("MENU > AUDIO: PRESETS to CLICK, CLICK LEVEL, COUNT-IN; knobs / OCT step them, applied at once", ok);
+    {   /* SYNC OUT, SYNC PPQN, SYNC INVERT (sync_out.c): the unit's, in [15][29] (STYLE's, retired): bit 7 INVERT OFF,
+         * SYNC OUT bits 5..6, PPQN - 1 XOR 1 bits 0..4; 0 = NO SYNC, 2 PPQN, INVERT ON */
+        static const char *const SN[3] = {"NO SYNC: STEREO", "L SYNC: MONO/SYNC", "R SYNC: SYNC/MONO"};
+        uint8_t was = ui_sync, rec = ui_rec_prefs;          /* (RESET SETTINGS below: CLICK's, the checks after use) */
+        ok = str_eq(MI_NAME[MI_SYNC], "SYNC OUT") && str_eq(MI_NAME[MI_PPQN], "SYNC PPQN") &&
+             str_eq(MI_NAME[MI_SYNCINV], "SYNC INVERT") && MI_TAB[MI_SYNC] == MTAB_AUDIO && MI_TAB[MI_PPQN] == MTAB_AUDIO &&
+             MI_TAB[MI_SYNCINV] == MTAB_AUDIO && menu_n(MI_SYNC) == 3u && menu_n(MI_PPQN) == 24u && menu_n(MI_SYNCINV) == 2u;
+        for (i = 0; i < 3u; i++) ok &= str_eq(menu_vname(MI_SYNC, i), SN[i]);
+        ok &= str_eq(menu_vname(MI_PPQN, 0), "1") && str_eq(menu_vname(MI_PPQN, 23), "24") &&
+              str_eq(menu_vname(MI_SYNCINV, 0), "ON") && str_eq(menu_vname(MI_SYNCINV, 1), "OFF");
+        ui_sync = 0;                                   /* (a new unit's: NO SYNC, 2 PPQN, INVERT ON) */
+        ok &= menu_get(MI_SYNC) == 0u && menu_get(MI_PPQN) == 1u && menu_get(MI_SYNCINV) == 0u && sy_mode(ui_sync) == SO_STEREO;
+        for (i = 0; i < 4u; i++) {                     /* (a STYLE kept from before: NO SYNC, a PPQN, INVERT ON) */
+            ui_sync = (uint8_t)i;
+            ok &= menu_get(MI_SYNC) == 0u && menu_get(MI_PPQN) < 24u && menu_get(MI_SYNCINV) == 0u && sy_mode(ui_sync) == SO_STEREO;
+        }
+        ui_sync = 0;
+        menu_put(MI_PPQN, 23);                         /* (PPQN first: SYNC OUT stays NO SYNC) */
+        ok &= menu_get(MI_PPQN) == 23u && menu_get(MI_SYNC) == 0u && menu_get(MI_SYNCINV) == 0u && sy_mode(ui_sync) == SO_STEREO;
+        menu_put(MI_SYNC, 1);
+        ok &= ui_sync == (1u << 5 | (23u ^ 1u)) && sy_mode(ui_sync) == SO_LEFT && menu_get(MI_PPQN) == 23u;
+        ok &= menu_step(MI_SYNCINV, 1) == 0u;           /* (a knob right: ON, as every ON / OFF row; ON already) */
+        menu_put(MI_SYNCINV, menu_step(MI_SYNCINV, -1));   /* (left: OFF) */
+        ok &= ui_sync == (0x80u | 1u << 5 | (23u ^ 1u)) && menu_get(MI_SYNCINV) == 1u && sy_mode(ui_sync) == SO_LEFT;
+        menu_put(MI_SYNC, menu_step(MI_SYNC, 1));
+        ok &= sy_mode(ui_sync) == SO_RIGHT && menu_step(MI_SYNC, 1) == 2u && menu_get(MI_SYNCINV) == 1u;   /* (stops at the end) */
+        menu_put(MI_PPQN, menu_step(MI_PPQN, 1));
+        ok &= menu_get(MI_PPQN) == 23u;
+        menu_put(MI_PPQN, menu_step(MI_PPQN, -1));
+        ok &= menu_get(MI_PPQN) == 22u && sy_mode(ui_sync) == SO_RIGHT && menu_get(MI_SYNCINV) == 1u;
+        menu_put(MI_SYNCINV, menu_step(MI_SYNCINV, 1));    /* (right: ON again) */
+        ok &= menu_get(MI_SYNCINV) == 0u && menu_get(MI_PPQN) == 22u && sy_mode(ui_sync) == SO_RIGHT;
+        settings_reset();
+        ok &= !ui_sync && menu_get(MI_SYNC) == 0u && menu_get(MI_PPQN) == 1u && menu_get(MI_SYNCINV) == 0u;
+        ui_sync = was;
+        ui_rec_prefs = rec; rp_apply();
+        bad += check("MENU > AUDIO > SYNC OUT (NO / L / R SYNC), SYNC PPQN 1..24, SYNC INVERT (ON by default): "
+                     "the unit's byte, a STYLE kept reads NO SYNC, RESET SETTINGS", ok);
+    }
     {
         sks_t p;
         persist_t q;                                    /* ((2.0) a record of before: PER3) */
