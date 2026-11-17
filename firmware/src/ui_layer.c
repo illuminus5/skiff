@@ -1444,9 +1444,11 @@ static void shift_map(smap_t *m)
     m[3] = (smap_t){"KEYS", drum ? "DRUMS" : "NOTES", 0};
     m[4] = !ui.home && act_cols() ? (smap_t){"OCT+", "DO IT", 1} : (smap_t){"OCT- +", "OCTAVE", 0};
     m[5] = (smap_t){"PLAY", song.playing ? "STOP" : "START", 0};   /* (what it would do now) */
-    if (step_page(g) && !drum) {                     /* ((2.0) NOTES: the keys pick, with REC write) */
-        m[3] = (smap_t){"KEYS", "PICK", 1};
-        m[4] = (smap_t){"KEYS + REC", "WRITE", 1};
+    if (step_page(g) && !drum) {                     /* ((2.0) NOTES: the keys pick, with REC write; (2.2) an empty
+                                                     * step they write, REC or not, playing too; the cursor's step
+                                                     * with notes: they add or delete, SHIFT + a key picks) */
+        m[3] = (smap_t){"KEYS", draw_on(0) ? "WRITE" : keys_on() ? "ADD/DEL" : "PICK", 1};
+        m[4] = keys_on() ? (smap_t){"+ KEY", "PICK", 2} : (smap_t){"KEYS + REC", "REPLACE", 1};
         m[5] = (smap_t){"EDIT + REC", "CLEAR", 1};
     } else if (step_page(g)) {                       /* (the grid: the keys its steps) */
         m[3] = (smap_t){"KEYS", "STEPS", 1};
