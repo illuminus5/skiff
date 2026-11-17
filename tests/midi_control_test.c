@@ -409,9 +409,87 @@ static int clock_tempo_test(void)
     bad += check("  16ths swung 60:40 at 120: 120 from the first beat on (2.2: 100 and 150 in turn)", lo == 120 && hi == 120);
     return bad;
 }
+/* (Skiff) the ARP on the tempo's grid: each step leaves what the block ran past it to the next, so 256 steps at a tempo
+ * whose 1/16 is no whole number of blocks each fire in the block that holds their line (before: up to a block late a
+ * step, adding up); the first key starts it on the grid's nearest line (from PLAY), SWING's lines too */
+static uint32_t ag_at[300], ag_n;                  /* the block start (samples from PLAY) each arp step fired in */
+static void ag_blocks(uint32_t blocks, uint32_t *s)
+{
+    for (uint32_t b = 0; b < blocks; b++, *s += CTL) {
+        uint32_t idx = trk[0].arp_idx;
+        events_block(CTL);
+        if (trk[0].arp_idx != idx && trk[0].arp_idx != 0xFFFFFFFFu && ag_n < 300u)   /* (arp_add: 0xFFFFFFFF) */
+            ag_at[ag_n++] = *s;
+    }
+}
+static void ag_setup(uint32_t swing)
+{
+    midi_test_reset();
+    song.g[G_BPM] = 133;
+    trk[0].p[P_AMODE] = 1; trk[0].p[P_AHOLD] = 0; trk[0].p[P_ARATE] = 2; trk[0].p[P_AGATE] = 60;
+    trk[0].p[P_AOCT] = 1; trk[0].p[P_APROB] = 127; trk[0].p[P_ASWING] = (int16_t)swing;
+    trk[0].arp_idx = 777;                          /* (not what the first step leaves: 0) */
+    ag_n = 0;
+}
+static uint32_t ag_line(uint32_t k, uint32_t period, uint32_t sw)   /* grid line k from PLAY */
+{
+    return (k / 2u) * 2u * period + (k & 1u ? period - sw : 0u);
+}
+static int ag_on_lines(uint32_t first, uint32_t from, uint32_t period, uint32_t sw)   /* fires from..: lines first.. */
+{
+    for (uint32_t i = from; i < ag_n; i++) {
+        uint32_t l = ag_line(first + i - from, period, sw);
+        if (l < ag_at[i] || l > ag_at[i] + CTL)
+            return 0;
+    }
+    return ag_n > from;
+}
+static int arp_grid_test(void)
+{
+    int bad = 0;
+    uint32_t s = 0, period, sw, press, ph;
+    ag_setup(0);
+    period = div_samples(2);
+    transport_req = 1;
+    midi_enqueue(0x9u | 0x90u << 8 | 60u << 16 | 100u << 24, 1);
+    ag_blocks(256u * period / CTL + 4u, &s);
+    bad += check("ARP: 256 steps of 1/16 at 133 BPM, each in the block of its line (no drift)",
+                 period % CTL && ag_n >= 256u && ag_on_lines(0, 0, period, 0));
+
+    ag_setup(0);                                   /* a key just after a line: played now, then on the lines */
+    s = 0; transport_req = 1; events_block(CTL); s += CTL;
+    while ((s % period) < period / 5u || (s % period) > period / 3u) { events_block(CTL); s += CTL; }
+    press = s; ph = s % period;
+    midi_enqueue(0x9u | 0x90u << 8 | 60u << 16 | 100u << 24, 1);
+    ag_blocks(20u * period / CTL, &s);
+    bad += check("ARP: a key just after a grid line plays at once, then on the lines",
+                 ag_n > 4u && ag_at[0] == press && ag_on_lines(press / period + 1u, 1, period, 0) && ph < period / 2u);
+
+    ag_setup(0);                                   /* just before one: from that line */
+    s = 0; transport_req = 1; events_block(CTL); s += CTL;
+    while ((s % period) < period * 2u / 3u || (s % period) > period * 4u / 5u) { events_block(CTL); s += CTL; }
+    press = s;
+    midi_enqueue(0x9u | 0x90u << 8 | 60u << 16 | 100u << 24, 1);
+    ag_blocks(20u * period / CTL, &s);
+    bad += check("ARP: a key just before a grid line waits for it, then on the lines",
+                 ag_n > 4u && ag_at[0] > press && ag_on_lines(press / period + 1u, 0, period, 0));
+
+    ag_setup(50);                                  /* SWING 50: the even steps a fifth shorter, the odd ones longer */
+    sw = 50 * period / 250u;
+    s = 0; transport_req = 1; events_block(CTL); s += CTL;
+    while ((s % (2u * period)) < period + period / 2u || (s % (2u * period)) > period + period * 3u / 4u) {
+        events_block(CTL); s += CTL;                /* (in an odd step, past its middle) */
+    }
+    press = s;
+    midi_enqueue(0x9u | 0x90u << 8 | 60u << 16 | 100u << 24, 1);
+    ag_blocks(40u * period / CTL, &s);
+    bad += check("ARP: SWING's lines kept, the start waiting for the next even one",
+                 ag_n > 8u && ag_on_lines((press / (2u * period) + 1u) * 2u, 0, period, sw));
+    return bad;
+}
 int main(void)
 {
     int bad = controls_test() + sustain_test() + ownership_test() + clock_test(1) + clock_test(2) + clock_arp_and_boundaries() +
-              arp_ext_stop_test() + usb_burst_test() + route_test() + cc_map_test() + clock_tempo_test();
+              arp_ext_stop_test() + arp_grid_test() + usb_burst_test() + route_test() + cc_map_test() + clock_tempo_test();
     printf("%s\n", bad ? "MIDI CONTROL/CLOCK TEST FAILED" : "MIDI control/clock integration tests passed"); return bad != 0;
 }
