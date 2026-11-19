@@ -641,7 +641,12 @@ static struct {
     int32_t madc;                          /* MASTER's last reading (master_poll) */
     uint32_t lb, ln, chk, reboot;          /* the buttons and keys last told, the last check's ms, a restart's ms | 1 */
     uint32_t q[CAST_N * 4u];
+#if BOARD_SMK37
+    uint32_t la, lw;                       /* (SMK) the faders and the wheels, the pedal last told (A, cast_smk) */
+} cast __attribute__((section(".ramx")));  /* (SMK: the pool keeps its 8 KiB spare; .ramx is zeroed at boot too) */
+#else
 } cast __attribute__((section(".pool")));
+#endif
 static void cast_rec(uint32_t type, uint32_t a, uint32_t b);   /* a record, stamped (cast.c) */
 #define cast_ev(type) cast_rec((type), 0u, 0u)
 static void cast_take(uint32_t pressed, uint32_t struck);
@@ -651,6 +656,9 @@ static void cast_piece(void);
 static void cast_flush(void);
 static void cast_cmd(uint32_t op);
 static void cast_boot_hold(void);
+#if BOARD_SMK37
+static void cast_smk(void);
+#endif
 #if FELUCCA_WEB
 static void web_cast_block(void);          /* (the browser's copy: what the unit's ISR took at this block) */
 #define CAST_BLOCK() (cast.blocks++, web_cast_block())
@@ -673,6 +681,8 @@ static int cast_audio_late(void);
 #define CAST_READ() ((void)0)
 #define CAST_AUDIO_LATE() 0
 #endif
+#define FELUCCA_PANEL (FELUCCA_CAST && !BOARD_SMK37)   /* (2.7) the Screen tab's panel, PANEL cmd 84 (editor.c ed_panel): the
+                                                     * FM-1's (its virtual contacts: hal/fm1_input.h vbtn, vkey) */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
 #define BOOTGUARD_MAGIC 0x42475244u

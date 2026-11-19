@@ -5,6 +5,8 @@
  *   build/host/stdelay_test [DEMODIR]          (run_tests.sh: build/fx_demo)
  * 1. MONO bit for bit as 2.2: fx_buses against a copy of 2.2's buses (the chorus in each MODE, with FEEDBACK, then the
  *    delay), 20 s of noise sends with the settings moving; no stereo side. (The goldens say the same for the mix.)
+ *    ((2.7, #101) the copy's PHASER at an eighth, as fx.c's; a full-scale send at FEEDBACK 127 through cho_mode equals
+ *    its loop in 64-bit products: no product wraps)
  * 2. STEREO keeps an echo on its side: a burst on the left send echoes on the left only (the right within 2 LSB of
  *    silence), the right likewise; a centred one alike on both, as loud as MONO's (1 dB) and as late (3 samples).
  * 3. PING: a centred burst's echoes cross, left, right, left, right (the other side within 2 LSB each time).
@@ -51,14 +53,14 @@ static void ref_buses(const int32_t *cho_in, const int32_t *dly_in, int32_t *wet
         rf.cho_ph += cinc * n;
         a = -31130 + mulq15(lfo, 3000 + depth * 205);
         for (i = 0; i < n; i++) {
-            int32_t x = (cho_in[i] >> 1) + mulq15(rf.cho_y, fb);
+            int32_t x = (cho_in[i] >> 3) + mulq15(rf.cho_y, fb);   /* ((2.7, #101) at an eighth, as fx.c) */
             for (k = 0; k < 4u; k++) {
-                int32_t w = clamp(x - mulq15(rf.ph_s[k], a), -262144, 262144);
+                int32_t w = clamp(x - mulq15(rf.ph_s[k], a), -65535, 65535);
                 x = mulq15(w, a) + rf.ph_s[k];
                 rf.ph_s[k] = w;
             }
-            rf.cho_y = clamp(x, -65536, 65536);
-            wet[i] = rf.cho_y << 1;
+            rf.cho_y = clamp(x, -16384, 16384);
+            wet[i] = rf.cho_y << 3;
         }
     } else if (mode || fb) {
         for (i = 0; i < n; i++) {
@@ -208,6 +210,44 @@ static void test_mono_identical(void)
         side += hl.side;
     }
     check("MONO: the chorus (each MODE, FEEDBACK) and the delay bit for bit as 2.2, 20 s of noise; no side", !diff && !side);
+}
+
+/* (2.7, #101) PHASER: a full-scale send at FEEDBACK 127 while DEPTH turns, cho_mode against its loop in 64-bit
+ * products, bit for bit: none of mulq15's 32-bit products wraps (2.6's loop, at a half, did: a loud squeal) */
+static int32_t mq64(int32_t a, int32_t b) { return (int32_t)(((int64_t)a * b) >> 15); }
+static void test_phaser_wrap(void)
+{
+    static int32_t c[CTL], w0[CTL];
+    uint32_t b, i, k, ph = 0, diff = 0, cinc;
+    int32_t y = 0, s[4] = {0}, top = 0, fb = 127 * 240;
+    char what[160];
+    fresh(DM_MONO);
+    song.g[G_CMODE] = 2;
+    song.g[G_CFDBK] = 127;
+    cinc = LFO_INC[song.g[G_CRATE] & 127] / CTL;
+    for (b = 0; b < 3u * FS / CTL; b++) {
+        int32_t lfo = (osc_sine(ph) + 32768) >> 1, a;
+        song.g[G_CDEPTH] = (int16_t)(b / 8u % 128u);
+        for (i = 0; i < CTL; i++)
+            c[i] = noise(262143);
+        cho_mode(c, w0, CTL, cinc);
+        ph += cinc * CTL;
+        a = -31130 + mulq15(lfo, 3000 + song.g[G_CDEPTH] * 205);
+        for (i = 0; i < CTL; i++) {
+            int32_t x = (c[i] >> 3) + mq64(y, fb);
+            for (k = 0; k < 4u; k++) {
+                int32_t w = clamp(x - mq64(s[k], a), -65535, 65535);
+                x = mq64(w, a) + s[k];
+                s[k] = w;
+                top = abs(w) > top ? abs(w) : top;
+            }
+            y = clamp(x, -16384, 16384);
+            diff += w0[i] != y << 3;
+        }
+    }
+    snprintf(what, sizeof what, "PHASER (#101): a full-scale send, FEEDBACK 127, DEPTH turning: as 64-bit products "
+             "(states to %d), %u differ", top, diff);
+    check(what, !diff && top == 65535);
 }
 
 static void test_sides(void)
@@ -513,6 +553,7 @@ static void demo(const char *dir, const char *name, int16_t mode, int chorus)
 int main(int argc, char **argv)
 {
     test_mono_identical();
+    test_phaser_wrap();
     test_sides();
     test_ping();
     test_feedback();

@@ -641,7 +641,9 @@ static void rev_model(uint32_t m, const int32_t *rev_in, int32_t *out, uint32_t 
  * FLANGER: the same line swept 1 .. 7 ms, its comb against the dry tracks the jet. PHASER: four first-order allpasses on
  * the send, swept together by the chorus LFO once a block (RATE; DEPTH the sweep), notches against the dry. CHORUS
  * without FEEDBACK is the loop in fx_buses, bit for bit. (2.5) In a stereo DELAY MODE CHORUS and FLANGER are cho_st's;
- * PHASER stays mono */
+ * PHASER stays mono. (2.7, #101) PHASER at an eighth of the send: its states within +-65535 and |a| <= 31130 keep each
+ * product under 2^31 (mulq15 multiplies in 32 bits); at a half (+-262144) one wrapped once a state passed ~69,000, a
+ * loud high squeal at a high FEEDBACK. The same headroom as before */
 static inline int32_t cho_sweep(uint32_t mode, uint32_t ph, int32_t depth)   /* the tap, Q8 samples back */
 {
     return mode == 1u ? (44 << 8) + ((osc_sine(ph) + 32768) * depth >> 7)   /* FLANGER: 1 .. 7 ms */
@@ -663,14 +665,14 @@ static __attribute__((noinline)) void cho_mode(const int32_t *cho_in, int32_t *w
         fx.cho_ph += cinc * n;
         a = -31130 + mulq15(lfo, 3000 + depth * 205);
         for (i = 0; i < n; i++) {
-            int32_t x = (cho_in[i] >> 1) + mulq15(fx.cho_y, fb);
+            int32_t x = (cho_in[i] >> 3) + mulq15(fx.cho_y, fb);   /* ((2.7, #101) at an eighth: see the top) */
             for (k = 0; k < 4u; k++) {                  /* (a + z^-1) / (1 + a z^-1): w = x - a w1, y = a w + w1 */
-                int32_t w = clamp(x - mulq15(fx.ph_s[k], a), -262144, 262144);
+                int32_t w = clamp(x - mulq15(fx.ph_s[k], a), -65535, 65535);
                 x = mulq15(w, a) + fx.ph_s[k];
                 fx.ph_s[k] = w;
             }
-            fx.cho_y = clamp(x, -65536, 65536);
-            wet[i] = fx.cho_y << 1;
+            fx.cho_y = clamp(x, -16384, 16384);
+            wet[i] = fx.cho_y << 3;
         }
     } else
     for (i = 0; i < n; i++) {                           /* CHORUS (with FEEDBACK), FLANGER */
@@ -1087,8 +1089,10 @@ static __attribute__((noinline)) void ins_swept(ins_t *s, const track_t *t, int3
 /* (2.5, the user's 6B) FILTR: ANALOG's 2-pole state-variable filter (dsp.c tsvf, trapezoidal: stable as CUTOFF sweeps)
  * at CUTOFF (A) and RES (B), its output by SHAPE (C): LP (0) into BP (64) into HP (127), the two beside it blended; BP
  * level-matched (k v1: at the cutoff as loud as LP's flat part), so a sweep of SHAPE keeps its level. The signal at a
- * half in it (its states within +-150000; RES's peak clips there, as ANALOG's); the states are lp1 and lp2: no new RAM */
-static __attribute__((noinline)) void ins_filter(ins_t *s, const track_t *t, int32_t *b, uint32_t n, int32_t tw)
+ * half in it (its states within +-150000; RES's peak clips there, as ANALOG's). Its two states at z: ((2.7, #119) one
+ * pair a signal, track_insert's) PHASR's px and py, which FILTR never runs with: no new RAM */
+static __attribute__((noinline)) void ins_filter(ins_t *s, int32_t *z, const track_t *t, int32_t *b, uint32_t n,
+                                                 int32_t tw)
 {
     tsvf_t c;
     int32_t sh = clamp(t->p[P_IC], 0, 127), k = 8192 - clamp(t->p[P_IB], 0, 127) * 7600 / 127;   /* damping, Q12 */
@@ -1096,12 +1100,12 @@ static __attribute__((noinline)) void ins_filter(ins_t *s, const track_t *t, int
     uint32_t i;
     tsvf_coef_k(&c, clamp(t->p[P_IA], 0, 127) << 8, k);
     for (i = 0; i < n; i++) {
-        int32_t x = b[i], in = clamp(x, -262143, 262143) >> 1, v3 = in - s->lp2, v1, v2, bp;   /* (|HP| x 4096 < 2^31) */
+        int32_t x = b[i], in = clamp(x, -262143, 262143) >> 1, v3 = in - z[1], v1, v2, bp;   /* (|HP| x 4096 < 2^31) */
         s->w += clamp(tw - s->w, -SL_SLOPE, SL_SLOPE);
-        v1 = (c.a1 * s->lp1 + c.a2 * v3 + 4096) >> 13;  /* (rounded: floored, the integrators turned its bias into a DC */
-        v2 = s->lp2 + ((c.a2 * s->lp1 + c.a3 * v3 + 4096) >> 13);   /* of ~7 % at a low CUTOFF) */
-        s->lp1 = clamp(2 * v1 - s->lp1, -150000, 150000);
-        s->lp2 = clamp(2 * v2 - s->lp2, -150000, 150000);
+        v1 = (c.a1 * z[0] + c.a2 * v3 + 4096) >> 13;    /* (rounded: floored, the integrators turned its bias into a DC */
+        v2 = z[1] + ((c.a2 * z[0] + c.a3 * v3 + 4096) >> 13);   /* of ~7 % at a low CUTOFF) */
+        z[0] = clamp(2 * v1 - z[0], -150000, 150000);
+        z[1] = clamp(2 * v2 - z[1], -150000, 150000);
         bp = (k * v1) >> 12;
         b[i] = pf_mix(x, (v2 * wl + bp * wb + (in - bp - v2) * wh) >> 11, s->w);   /* (Q12 shares, x2: the half back) */
     }
@@ -1114,8 +1118,9 @@ static __attribute__((noinline)) AUDIO_RAM void ins_rest(track_t *t)
     t->ins_run = 0;
 }
 
-/* the track's INSERT on its block b (mix_part): nothing while TYPE is OFF or MIX is 0 and faded */
-static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint32_t n)
+/* the track's INSERT on its block b (mix_part): nothing while TYPE is OFF or MIX is 0 and faded. ((2.7, #119) d, e:
+ * mix_spread's side signals, or 0: FILTR runs them as b, each with its states, from the same wet share) */
+static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, int32_t *d, int32_t *e, uint32_t n)
 {
     ins_t *s = &ins[(uint32_t)(t - trk) % NTRK];
     int32_t ty = clamp(t->p[P_ITYPE], 0, IT_N - 1), tw;
@@ -1130,9 +1135,18 @@ static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint3
         memset(s, 0, sizeof *s);                        /* starting: no stale line or filter */
         s->type = (uint8_t)ty;
     }
-    if (s->type == IT_FILTER)
-        ins_filter(s, t, b, n, tw);
-    else if (s->type >= IT_PHASER)
+    if (s->type == IT_FILTER) {
+        int32_t w0 = s->w;
+        ins_filter(s, s->px, t, b, n, tw);
+        if (d) {
+            s->w = w0;
+            ins_filter(s, s->px + 2, t, d, n, tw);
+        }
+        if (e) {
+            s->w = w0;
+            ins_filter(s, s->py, t, e, n, tw);
+        }
+    } else if (s->type >= IT_PHASER)
         ins_swept(s, t, b, n, tw);
     else
         ins_drive(s, t, b, n, tw);
@@ -1145,11 +1159,14 @@ static __attribute__((noinline)) void track_insert(track_t *t, int32_t *b, uint3
  * always) and the left ones (spread_buf); here d = left - right, the side signal, so for a pair of pans L = b (gla +
  * glb) / 2 + d (gla - glb) / 2 (R alike): the mono sum is b's. b goes through DRIVE, the INSERT, the SLICER, the FX
  * layer's mute key and the DUCK as always; d gets the SLICER's gate, the mute's and the DUCK's gains and passes DRIVE
- * and the INSERT by (the spread of a driven chord is its voices' clean difference). The sends take b, mono, as before.
+ * and the INSERT by (the spread of a driven chord is its voices' clean difference), but for the INSERT's FILTR ((2.7,
+ * #119): a linear filter, so d through it too, as b; passed by, both sides kept the voices unfiltered). The sends take
+ * b, mono, as before.
  * SPREAD 0, MONO or LEGATO: mix_part's own loop, bit for bit as before.
  * (2.0, #36) A drum kit with a lane panned (t->lpan_on, voice.c lpan_render) mixes here too: b is every lane, d (spread_buf)
  * what its left channel loses to the lanes panned right, e (lpan_buf) what the right loses to those panned left, each
- * through the same gains as d is; then the track's PAN over both. The kit's DRIVE, INSERT and sends hear b as before. (A
+ * through the same gains as d is; then the track's PAN over both. The kit's DRIVE, INSERT and sends hear b as before
+ * ((2.7, #119) FILTR d and e too). (A
  * SPREAD a kit kept from another engine, hidden, spreads its hits as in 1.x until a lane is panned) */
 /* .. (2.0, #36) a panned kit's end: each channel less its far side's sum (d the left's, e the right's), then the track's
  * PAN; the sends from b, mono, as mix_part's */
@@ -1219,7 +1236,7 @@ static __attribute__((noinline)) AUDIO_RAM void mix_spread(track_t *t, int32_t *
             d[i] = (d[i] << 1) - b[i];                  /* left - right */
     track_dist(t, b, n);
     if (t->p[P_ITYPE] | t->ins_run)
-        AUDIO_FAR(track_insert)(t, b, n);               /* (the mono sum, as DRIVE) */
+        AUDIO_FAR(track_insert)(t, b, d, e, n);         /* (the mono sum, as DRIVE; FILTR the sides too) */
     AUDIO_FAR(slicer_track_sd)(t, b, d, e, n);
     if (((pf.mute >> k) & 1u) || t->p[P_MUTE] || pf.mg[k] != 32768) {   /* (the mute's ramp on both: from the same start,
                                                                           * the same; (2.0) a MUTE's too) */
@@ -1364,7 +1381,7 @@ static void mix_part(track_t *t, uint32_t n SM_DECL)
         de = dly_send_r(&d, gl, gr);                    /* ((2.5) a stereo MODE: the delay's send by the PAN) */
         track_dist(t, b, n);
         if (t->p[P_ITYPE] | t->ins_run)
-            AUDIO_FAR(track_insert)(t, b, n);           /* ((1.3) the INSERT: off, nothing) */
+            AUDIO_FAR(track_insert)(t, b, 0, 0, n);     /* ((1.3) the INSERT: off, nothing) */
         slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
         if (((pf.mute >> (t - trk)) & 1u) || t->p[P_MUTE] || pf.mg[t - trk] != 32768)   /* perform.c (RAM): a black */
             AUDIO_FAR(perf_mute)((uint32_t)(t - trk), b, n);   /* key held, (2.0) a MUTE, the ramp back */

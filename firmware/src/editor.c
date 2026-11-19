@@ -23,7 +23,8 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
 
 enum { ED_KIT_GET = 74, ED_KIT_PUT };                 /* (Skiff W3) the DRUM-X kit (INFO 4B 01 8) */
 enum { ED_SMP_MIX = 81 };                             /* (Skiff, #21) a user slot's sounds' LEVEL REV DLY (INFO 57 01 bit 5) */
-enum { ED_CAST = 83 };                                /* (Skiff Studio) the cast (cast.c; INFO 59 01) */
+enum { ED_CAST = 83, ED_PANEL };                      /* (Skiff Studio) the cast (cast.c; INFO 59 01); (2.7) the
+                                                       * Screen tab's panel (ed_panel; INFO 59 01 bit 1) */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -433,6 +434,10 @@ static int ed_args_ok(uint32_t cmd, const uint8_t *a, uint32_t n)
 #if FELUCCA_CAST
     case ED_CAST:
         return n == 1u;
+#if FELUCCA_PANEL
+    case ED_PANEL:                                     /* (2.7) the held buttons and keys, or a knob's turns */
+        return (n == 7u && !a[0]) || (n == 3u && a[0] == 1u && a[1] < NE);
+#endif
 #endif
     case ED_KIT_PUT: {
         uint32_t i;
@@ -500,6 +505,34 @@ static void ed_smp_mix(const uint8_t *f, uint32_t n)
     ed_send();
 }
 
+#if FELUCCA_PANEL
+/* (2.7) PANEL, the Screen tab's panel (INFO 59 01 bit 1; the reply: the op, as the unit takes one SysEx frame at a
+ * time: usb.c sx_ready). Op 0: the buttons held (2 x 7 bits, by label:
+ * panel.c B_*) and the keys held (4 x 7 bits, F3 up), taken as the panel's own contacts through the scan's debounce
+ * (hal/fm1_input.h vbtn, vkey; a press shorter than a scan still lands: vtap, vktap). Op 1: a knob's turns, role
+ * (panel.c EN_*) and steps (7 bits, two's complement), as REMOTE's (panel.c rmt_steps). The page's copy runs it too:
+ * the turns count there, the contacts don't (its keys and buttons come with the unit's records). Let go when watching
+ * ends (cast.c cast_flush) */
+static __attribute__((noinline)) void ed_panel(const uint8_t *a)
+{
+    uint32_t m = a[1] | (uint32_t)a[2] << 7, b = 0, k, l;
+    int32_t s = a[2] < 64u ? (int32_t)a[2] : (int32_t)a[2] - 128;
+    fm1_irq_off();
+    if (a[0]) {
+        rmt_steps[a[1]] = (int16_t)(rmt_steps[a[1]] + s);
+    } else {
+        for (l = 0; l < NB; l++)
+            b |= (m >> l & 1u) << panel.btn[l];
+        k = a[3] | (uint32_t)a[4] << 7 | (uint32_t)a[5] << 14 | (uint32_t)a[6] << 21;
+        fm1_in.vtap ^= b & ~fm1_in.vbtn;                   /* (the ones pressed now) */
+        fm1_in.vktap ^= k & ~fm1_in.vkey;
+        fm1_in.vbtn = b;
+        fm1_in.vkey = k;
+    }
+    fm1_irq_on();
+}
+#endif
+
 static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0 and F7 */
 {
     if (n < 4u)
@@ -516,6 +549,9 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     ed_begin(cmd);
 #if FELUCCA_CAST
     if (cmd == ED_CAST) { cast_cmd(a[0]); ed_send(); return; }
+#endif
+#if FELUCCA_PANEL
+    if (cmd == ED_PANEL) { ed_panel(a); ed_b(a[0]); ed_send(); return; }   /* (the reply: the op; one frame waits) */
 #endif
     if (ed_ui_handle(cmd, a, na)) { ed_send(); return; }
     if (ed_backup_handle(cmd, a, na)) { ed_send(); return; }
@@ -567,7 +603,10 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
                                                          * EMPTY, CLEAR UNUSED (editor_song.c; last: an editor before
                                                          * reads up to 49 01 only) */
 #if FELUCCA_CAST
-            0x59, 1, 1,                                 /* (Skiff Studio) the cast, cmd 83 (cast.c) */
+            0x59, 1, BOARD_SMK37 ? 4u : 3u,             /* (Skiff Studio) the cast, cmd 83 (cast.c): bit 0 the FM-1's
+                                                         * records; (2.7) bit 1 PANEL, cmd 84 (ed_panel, the FM-1's);
+                                                         * bit 2 the SMK-37's records (its copy: felucca_cast_smk.wasm;
+                                                         * not bit 0, so an editor before 2.7 offers it no Screen tab) */
 #endif
         };
         ed_str("FELUCCA " FELUCCA_VERSION, 24);

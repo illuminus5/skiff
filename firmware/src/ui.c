@@ -139,9 +139,9 @@ static void theme_apply(void)                  /* settings.palette, and over it 
 #define ui_ph_line (favorites.factory[15][15])
 /* (Skiff 1.3) MENU > SYSTEM > CPU 2 CORES: the second core from the next power-on (main.c, hal/fm1_cpu1.h), bit 0
  * of a settings byte ([15][5]); clear: one core, as 1.2. It clears itself when core 1 misreads or stops answering
- * (main.c). (2.5) CPU2_DEFAULT: the FM-1 starts on 2 CORES (RESET SETTINGS, and every unit once: cpu2_move), so its 16
- * voices are there out of the box; the SMK-37 stays on 1 CORE until its second core is tried on the unit; the browser
- * has none */
+ * ((2.7, #126) or the boot before ended in a crash or a hang; main.c). (2.5) CPU2_DEFAULT: the FM-1 starts on 2
+ * CORES (RESET SETTINGS, and every unit once: cpu2_move), so its 16 voices are there out of the box; the SMK-37 stays
+ * on 1 CORE until its second core is tried on the unit; the browser has none */
 #define CPU2_BYTE (favorites.factory[15][5])
 #define CPU2_SET (CPU2_BYTE & 1u)
 #if FELUCCA_CPU2 && !BOARD_SMK37 && !defined(FELUCCA_WEB)
@@ -243,7 +243,9 @@ static void rp_put(uint32_t f, uint32_t v)
     rp_apply();
 }
 /* (favorites.factory[15][29] held MENU > STYLE, FLAT LINE BLOCKS: (Skiff U2) BLOCKS is the only look, the byte is left
- * as it was saved) */
+ * as it was saved.) MENU > AUDIO > SYNC OUT, SYNC PPQN, SYNC INVERT since (sync_out.c): bit 7 INVERT OFF, SYNC OUT in
+ * bits 5..6, PPQN - 1 XOR 1 in bits 0..4; 0 = NO SYNC, 2 PPQN, INVERT ON, and a STYLE kept (0..3) reads NO SYNC */
+#define ui_sync (favorites.factory[15][29])
 /* (Skiff) the PERFORM layer's KNOB 1, LAUNCH: where a pattern switched to while playing comes in (launch.c LAUNCH_*:
  * LOOP BAR BEAT NOW), a byte no engine uses (favorites.c), saved with the settings; 0 in older settings = LOOP */
 #define ui_launch (favorites.factory[15][26])

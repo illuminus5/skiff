@@ -36,7 +36,8 @@ static void smk_uart_tx_rt(uint32_t b) { (void)b; }
 #define SMK_UT_TX_RING 128u
 static uint8_t smk_ut_w, smk_ut_r;                /* ((2.2) usb.c mo_trs: the UART's ring, never full here) */
 #else
-static struct { volatile uint32_t notes, buttons, virt, vtap, vack; } fm1_in;   /* ((2.2) REMOTE: virt, vtap, vack) */
+static struct { volatile uint32_t notes, buttons, virt, vtap, vack, vbtn, vkey, vktap, vkack; } fm1_in;   /* ((2.2)
+                                       * REMOTE: virt, vtap, vack; (2.7) the Screen tab's panel: vbtn .. vkack) */
 #endif
 #endif
 #include "../firmware/src/core.h"

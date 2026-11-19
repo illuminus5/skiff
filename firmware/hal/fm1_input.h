@@ -172,6 +172,8 @@ static volatile struct {
     uint32_t virt, vtap, vack;   /* ((2.2) MENU > MIDI > REMOTE, seq.c midi_control.c: buttons held from MIDI (virt), and
                                   * pressed (vtap toggles; vack: the scan's press took it, so a tap shorter than a
                                   * frame still lands); closed as the contacts are, through the same debounce */
+    uint32_t vbtn, vkey, vktap, vkack;   /* ((2.7) the Screen tab's panel, editor.c ed_panel: buttons held (with vtap
+                                  * as REMOTE's) and keys held, a key's press as vtap's (vktap, vkack) */
     uint8_t raw[FM1_NCOL];       /* last frame, packed rows, 1 = closed */
     uint8_t cnt[FM1_NKEY];       /* frames in a row against the debounced state */
     uint32_t note_t0[27];        /* TIMER4 tick of the first scan that saw note key n closed */
@@ -291,7 +293,10 @@ static void fm1__key(uint32_t id, uint32_t closed)
     uint32_t note = id >= 14u, bit = note ? 1u << (id - 14u) : 1u << id;
     uint32_t on = ((note ? fm1_in.notes : fm1_in.buttons) & bit) != 0u;
     if (!note)
-        closed |= ((fm1_in.virt | (fm1_in.vtap ^ fm1_in.vack)) >> id) & 1u;   /* ((2.2) REMOTE's) */
+        closed |= ((fm1_in.virt | fm1_in.vbtn | (fm1_in.vtap ^ fm1_in.vack)) >> id) & 1u;   /* ((2.2) REMOTE's, (2.7) the
+                                                                                         * Screen tab's) */
+    else
+        closed |= ((fm1_in.vkey | (fm1_in.vktap ^ fm1_in.vkack)) >> (id - 14u)) & 1u;
     if (closed == on) {                            /* agrees with the state: start over */
         *c = 0;
         return;
@@ -304,6 +309,7 @@ static void fm1__key(uint32_t id, uint32_t closed)
     if (note) {
         if (!on) {
             uint32_t d = FM1_INPUT_NOW() - fm1_in.note_t0[id - 14u];
+            fm1_in.vkack = (fm1_in.vkack & ~bit) | (fm1_in.vktap & bit);   /* ((2.7) the Screen tab's tap: pressed) */
             fm1_in.notes_pressed |= bit;
             fm1_in_stat.press_n++;
             fm1_in_stat.press_sum += d;
