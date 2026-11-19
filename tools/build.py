@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 """Build Felucca: the app, the update loader and an installable .fwsc package.
 
-  tools/build.py [--release X.Y[-suffix]] [--console] [--board fm1|smk37] [--model pro|elite|mke]
+  tools/build.py [--release X.Y[-suffix]] [--console] [--board fm1|smk37] [--model pro|elite|mke|starry]
 
 Outputs in build/: felucca.bin (app), loader/ota.bin (update loader),
 felucca.fwsc (package). A release build (--release X.Y) writes skiff-X.Y.fwsc and a folder
@@ -16,9 +16,11 @@ See BUILDING.md for the toolchain and the SDK.
 
 BOARD=smk37 (or --board smk37) builds Skiff for the M-VAVE SMK-37 Pro (after genkigenki's SMK-37 layer for Felucca):
 -DBOARD_SMK37=1 for the app and the loader, identity SMK-37 Pro_700 (release SMK-37 Pro_7XY), the SMK flash layout
-(fm1pkg_make.py), the package build/skiff-smk37.fwsc (skiff-smk37-X.Y.fwsc for a release). MODEL=elite / mke (or
---model) with smk37: the same build under the SMK-37 Elite's or the MKE-P37's model name (identity, loader, update
-record; -DSMK_MODEL), so the stock updater still takes that unit's factory package: skiff-smk37-elite.fwsc, -mke.fwsc.
+(fm1pkg_make.py), the package build/skiff-smk37.fwsc (skiff-smk37-X.Y.fwsc for a release). MODEL=elite / mke / starry
+(or --model) with smk37: the same build under the SMK-37 Elite's, the MKE-P37's or the STARRYKEY-37 PLAY's model name
+(identity, loader, update record; -DSMK_MODEL), so the stock updater still takes that unit's factory package:
+skiff-smk37-elite.fwsc, -mke.fwsc, -starry.fwsc. STARRYKEY-37 PLAY's package identity drops its hyphens
+(STARRYKEY37 PLAY_7xx: the package's marker string keeps 20 characters); the firmware keeps the true name.
 The default stays the FM-1, whose build gets no new flag.
 
 The JieLi toolchain is Linux x86-64 only. JIELI_TOOLCHAIN points at it; on
@@ -70,8 +72,8 @@ BOARD_PRODUCT = {"fm1": "FM-1_700", "smk37": "SMK-37 Pro_700"}   # a dev build's
 BOARD_PREFIX = {"fm1": "FM-1_7", "smk37": "SMK-37 Pro_7"}        # a release build's: prefix + X + Y
 BOARD_DEFS = {"fm1": [], "smk37": ["-DBOARD_SMK37=1"]}           # the FM-1 build gets no new flag (byte-identical)
 BOARD_STEM = {"fm1": "skiff", "smk37": "skiff-smk37"}            # a release package: STEM-X.Y.fwsc
-# smk37: the keyboard's model name (MODEL env or --model); one hardware, three names. pro adds no flag
-MODELS = {"pro": "SMK-37 Pro", "elite": "SMK-37 Elite", "mke": "MKE-P37"}
+# smk37: the keyboard's model name (MODEL env or --model); one hardware, four names. pro adds no flag
+MODELS = {"pro": "SMK-37 Pro", "elite": "SMK-37 Elite", "mke": "MKE-P37", "starry": "STARRYKEY-37 PLAY"}
 VERSION = None                      # FELUCCA_VERSION for release builds (default: firmware/src/felucca.c)
 # FELUCCA_CPU2 (firmware/src/felucca.c), unset or 1, the default (Skiff 1.3, as Felucca 1.6.1): the second core is built
 # in, its entry and stacks (firmware/hal/fm1_cpu1.S) linked; MENU > SYSTEM > CPU 2 CORES starts it (1 CORE by default:
@@ -384,7 +386,7 @@ def main():
     ap.add_argument("--board", choices=sorted(BOARD_PRODUCT), default=None,
                     help="target board: fm1 (default) or smk37 (default: $BOARD, else fm1)")
     ap.add_argument("--model", choices=sorted(MODELS), default=None,
-                    help="smk37: the model name, pro (default), elite or mke (default: $MODEL, else pro)")
+                    help="smk37: the model name, pro (default), elite, mke or starry (default: $MODEL, else pro)")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args()
     BOARD = (a.board or os.environ.get("BOARD") or "fm1").lower().replace("-", "")
@@ -402,6 +404,16 @@ def main():
         BOARD_DEFS[BOARD] = [*BOARD_DEFS[BOARD], f'-DSMK_MODEL="{MODELS[model]}"']
         PRODUCT = PRODUCT.replace(MODELS["pro"], MODELS[model])
         BOARD_PREFIX[BOARD] = BOARD_PREFIX[BOARD].replace(MODELS["pro"], MODELS[model])
+        if len(PRODUCT) > 20:       # the package's marker string keeps 20 characters (fm1pkg_make.py ufw):
+                                    # STARRYKEY-37 PLAY's would be 21, so the package identity and the loader's
+                                    # (ota- + it) drop the model's hyphens; the firmware keeps the true name
+                                    # (SMK_MODEL: the identity report and the stock record OTA_PARM_ID), and the
+                                    # installers compare models without them (fm1_install.py same_model, fm1ota.js)
+            PRODUCT = PRODUCT.replace("-", "")
+            BOARD_PREFIX[BOARD] = BOARD_PREFIX[BOARD].replace("-", "")
+            if len(PRODUCT) > 20:
+                raise SystemExit(f"MODEL={model}: {MODELS[model]}_700 does not fit the package identity "
+                                 f"(20 characters, fm1pkg_make.py)")
         stem += "-" + model
         name = f"{stem}.fwsc"
     if a.release:                   # one digit each: the identity has room for two (X.Y.Z and X.Y.Z.W keep X.Y's)

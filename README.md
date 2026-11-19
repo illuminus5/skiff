@@ -905,7 +905,7 @@ the track does with it ("T2 KEY +5"). A Skiff before 2.1 ignores FOLLOW: the tra
 and control behaves, rule by rule: [DESIGN.md](DESIGN.md). The editor's protocol:
 [web/EDITOR_PROTOCOL.md](web/EDITOR_PROTOCOL.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-**M-VAVE SMK-37:** `BOARD=smk37 ./build.sh` (`MODEL=elite`, `MODEL=mke` for the other two names): see
+**M-VAVE SMK-37:** `BOARD=smk37 ./build.sh` (`MODEL=elite`, `MODEL=mke`, `MODEL=starry` for the other three names): see
 [SMK37.md](SMK37.md).
 
 | Path | What |
