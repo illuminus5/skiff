@@ -66,6 +66,10 @@ static int8_t held_dt[NTRK][16];
 static volatile uint8_t kb_asleep;       /* MENU > SCREEN OFF (ui.c): the screen dark or waking, a key pressed now only
                                           * wakes it (silent, no layer, its release nothing) */
 static uint8_t last_note = 60;
+#if BOARD_SMK37
+static uint8_t kb_last;                  /* (#161) the note + 1 the last key set last_note to, 0 a QNT SOLO black key's
+                                          * (key_on): a pad's step tap writes that note's chord (smk_ui.c smk_pad_tap) */
+#endif
 static uint8_t last_hits __attribute__((section(".pool")));   /* ((2.0) the notes struck, counted: the same key again
                                                                 * picks its lane again too, ui.c lane_follow) */
 static volatile uint8_t transport_req;   /* 1 start, 2 stop, 3 restart (from the UI) */
@@ -1033,6 +1037,9 @@ static void key_on(uint32_t k, track_t *t)
     in_key = in_solo = 0;
     kb_chn[k] = (uint8_t)n;
     last_note = kb_note[k];                         /* (step entry, the SAMPLE zone: the key's note) */
+#if BOARD_SMK37
+    kb_last = kb_sol[k] ? 0u : (uint8_t)(kb_note[k] + 1u);
+#endif
 }
 
 /* key k is up: the notes it started end, but those another key still holds */

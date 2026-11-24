@@ -2,7 +2,8 @@
 /* Host test of Skiff's SMK-37 Pro controls (BOARD_SMK37, design/SMK37_UX.md as picked): the UI of tests/ui_test.c built
  * for the SMK (its prelude, the input stood in by the SMK's, hal/smk_pads.h as it is), and smk_ui.c:
  *   PADS     on HOME the step taps, in a layer and the DRUM grid the white keys; a tap sets a step to the last note
- *            (its velocity), again clears it, one undo a run; DRUM: the lane; past LEN nothing; the colours (A).
+ *            (its velocity; #161: with CHRD its key's chord, MONO the root, a SOLO black key's alone), again clears
+ *            it, one undo a run; DRUM: the lane; past LEN nothing; the colours (A).
  *   FADERS   the four tracks shown, taking over once they reach the value, FADER BANK (its LED), the window.
  *   ENTRIES  > and < the selected track's entry after and before, the first's end said.
  *   KEYS     the outer keys' notes and velocity (KEY VELOCITY), out of the TRS jack too; the curves.
@@ -101,8 +102,8 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
             host_screen[(y + j) * 240u + x + i] = (uint16_t)((c >> 8) | (c << 8));
 }
 static void lcd_sync(void) {}
-/* MENU > SCREEN OFF (lcd.c lcd_power / lcd_wake_now): what the panel was told, in order (0 off: backlight off,
- * DISPOFF, SLPIN; 1 SLPOUT; 2 DISPON, backlight on; 3 lcd_wake_now), with the time; host_bl the backlight */
+/* MENU > SCREEN OFF (lcd.c lcd_power / lcd_wake_now): what the panel was told, in order (0 off: DISPOFF, SLPIN;
+ * 1 SLPOUT; 2 DISPON; 3 lcd_wake_now; (#98) the backlight never off), with the time; host_bl the panel lit */
 static uint32_t host_pw_n, host_pw[256], host_pw_ms[256];
 static int host_bl = 1;
 static void host_pw_log(uint32_t s)
@@ -744,6 +745,81 @@ static int test_solo(void)
     return bad;
 }
 
+/* #161: with SCL > CHORD on, a pad's step tap writes what the last key plays, as the FM-1's step entry writes a key
+ * (ui_input.c seq_entry): POLY its chord, MONO the chord's root, a QNT SOLO black key its note alone; a last note no key
+ * played (MIDI IN, the editor) alone, as before */
+static int step_is(const step_t *s, const uint8_t *note, uint32_t n)   /* s set, holding exactly these n notes */
+{
+    uint32_t i;
+    if (!step_on(s) || s->n != n)
+        return 0;
+    for (i = 0; i < n; i++)
+        if (s->note[i] != note[i])
+            return 0;
+    return 1;
+}
+static int test_pad_chord(void)
+{
+    static const uint8_t D_MAJ[3] = {62, 66, 69}, C3_MAJ[3] = {48, 52, 55}, C_MAJ[3] = {60, 64, 67}, C4[1] = {60},
+                         D_SOLO[1] = {62u + 12u * SOLO_OCT}, BB4[1] = {70};
+    int bad = 0;
+    track_t *t = &trk[0];
+    smk_power_on();
+    sel_set(0);
+    track_defaults_steps(t);
+    t->p[P_SLEN] = 16;
+    t->p[P_VOICE] = V_POLY;                       /* (T1's ACID is MONO) */
+    t->p[P_TRANS] = 0;
+    t->p[P_QUANT] = QN_OFF;
+    t->p[P_SCALE] = 1;                            /* C major */
+    t->p[P_ROOT] = 0;
+    t->p[P_CHRD] = CH_MAJ;
+    song.octave = 0;
+    fm1_in.key_vel[0] = 100u;
+    fm1_in.key_vel[7u + SMK_KEY_F3] = fm1_in.key_vel[8u + SMK_KEY_F3] = 100u;
+    fm1_in.key_vel[9u + SMK_KEY_F3] = fm1_in.key_vel[10u + SMK_KEY_F3] = 100u;
+    key_to(9, 1);                                 /* D4: D F# A sounds */
+    key_to(9, 0);
+    pad_tap(0, 90);
+    bad += check("#161 SMK pad tap, CHRD MAJ: the chord the last key played (D F# A), at the pad's velocity",
+                 step_is(&t->step[0], D_MAJ, 3u) && t->step[0].vel == 90u);
+    pad_tap(0, 90);
+    bad += check("#161 SMK pad tap on that chord's step: cleared", !step_on(&t->step[0]));
+    outer_to(0, 100);                             /* C3, an outer key */
+    outer_to(0, 0);
+    pad_tap(1, 90);
+    bad += check("#161 SMK pad tap after an outer key, CHRD MAJ: its chord (C3 E3 G3)", step_is(&t->step[1], C3_MAJ, 3u));
+    t->p[P_VOICE] = V_MONO;
+    t->p[P_CHRD] = CH_DIA3;                       /* C#4 is out of C major: DIA3 builds on the C below, a MONO key plays C */
+    key_to(8, 1);
+    key_to(8, 0);
+    pad_tap(2, 90);
+    bad += check("#161 SMK pad tap on a MONO track, CHRD DIA3 on C#4: the root it played (C4), not C#4",
+                 step_is(&t->step[2], C4, 1u));
+    t->p[P_AMODE] = 1;                            /* the ARP on: a MONO track's key gives it the whole chord */
+    key_to(8, 1);
+    key_to(8, 0);
+    pad_tap(3, 90);
+    t->p[P_AMODE] = 0;
+    bad += check("#161 SMK pad tap on a MONO track with the ARP on: the chord's root alone (C4), as step entry writes it",
+                 step_is(&t->step[3], C4, 1u));
+    t->p[P_VOICE] = V_POLY;
+    t->p[P_QUANT] = QN_SOLO;
+    key_to(10, 1);                                /* D#4, a SOLO black key: D4 alone */
+    key_to(10, 0);
+    pad_tap(4, 90);
+    key_to(7, 1);                                 /* C4, a white key: C E G */
+    key_to(7, 0);
+    pad_tap(5, 90);
+    bad += check("#161 SMK pad taps, QNT SOLO, CHRD DIA3: a black key's note alone, a white key's chord",
+                 step_is(&t->step[4], D_SOLO, 1u) && step_is(&t->step[5], C_MAJ, 3u));
+    last_note = 70;                               /* (as MIDI IN or the editor leave it: no key played it) */
+    pad_tap(6, 90);
+    bad += check("#161 SMK pad tap, a last note no key played (MIDI IN, the editor): that note alone, as before",
+                 step_is(&t->step[6], BB4, 1u));
+    return bad;
+}
+
 static int test_shift(void)
 {
     int bad = 0, ok, i;
@@ -872,6 +948,7 @@ int main(void)
     bad += test_wheels();
     bad += test_pedal();
     bad += test_solo();
+    bad += test_pad_chord();
     bad += test_shift();
     bad += test_master();
     bad += test_clock_out();

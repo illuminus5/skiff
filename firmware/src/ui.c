@@ -397,7 +397,7 @@ static void confirm_open(uint32_t kind, uint32_t trk)
 #define SPICK_NOSND (NPAT + 7u)                /* its sound taken off: bank.c song_snd) */
 static struct { uint8_t entry, pick, pick_at; } sg __attribute__((section(".pool")));
 
-/* MENU > DISPLAY > SCREEN OFF (1.1.5): after a while with no input on the panel the screen and its backlight go off
+/* MENU > DISPLAY > SCREEN OFF (1.1.5): after a while with no input on the panel the screen goes dark
  * (a picture held for hours can stay faintly on the panel); the sound, the sequencer, MIDI and USB go on, the LEDs
  * stay as they are. NEVER, 5, 15, 30 (the default), 60 minutes, kept in a byte no engine uses, saved with the
  * settings: stored value ^ 3, so 0 (every older setting) is 30 MIN; 5..7 unknown read as 30 MIN.
@@ -406,9 +406,9 @@ static struct { uint8_t entry, pick, pick_at; } sg __attribute__((section(".pool
  * value, until everything is let go and the knobs rest for SCR_EAT_MS (PLAY still stops the music: ui_input). A
  * dialog, the count-in, the UPDATE MODE countdown and (Skiff U1) the music playing keep it on (and wake it); the
  * crash screen, UPDATE and UBOOT wake it at once (lcd_wake_now).
- * Off: lcd_power(0) (backlight off, DISPOFF, SLPIN) and nothing is drawn. Waking, a frame at a time (never a wait in
- * the loop): 120 ms after the SLPIN, SLPOUT (lcd_power(1)); 120 ms after that one frame redraws everything
- * (ui.force), then DISPON and the backlight (lcd_power(2)) */
+ * Off: lcd_power(0) (DISPOFF, SLPIN; (#98) the backlight stays on: lcd.c) and nothing is drawn. Waking, a frame at
+ * a time (never a wait in the loop): 120 ms after the SLPIN, SLPOUT (lcd_power(1)); 120 ms after that one frame
+ * redraws everything (ui.force), then DISPON (lcd_power(2)) */
 #define ui_scr (favorites.factory[15][27])
 #define SCR_DEF 3u                                     /* 30 MIN */
 #define SCR_EAT_MS 300u
@@ -717,6 +717,21 @@ static void cpu2_move(void)
         CPU2_BYTE |= 1u;
 }
 #endif
+/* ((2.7.1, #126) main.c, before the clock switch) 2 CORES at 320 MHZ. Two cores at 360 crashed on some units (#126: 3
+ * runs in 7, none at 320; curist's #14 the same). Every FM-1 on 2 CORES moves to 320 once (rev < 4; ui_set_rev 4 kept by
+ * unit_g_boot, so MENU > CPU CLOCK 360 afterwards stays). After a crash or a hang on 2 CORES: at 360, 320 from now on
+ * with both cores (*fell 2: said, saved); at 320 already, 1 CORE as 2.7 (*fell 1: the loop says CORE 2 FAILED). The
+ * crash's clock is the byte's from before the move; the SMK-37 (CPU2_DEFAULT 0) falls back to 1 CORE as 2.7. The new
+ * CPU2_BYTE */
+#if FELUCCA_CPU2
+static uint8_t cpu_boot_byte(uint8_t b, uint8_t rev, uint32_t crashed, uint8_t *fell)
+{
+    *fell = (b & 1u) && crashed ? ((b & 4u) || !CPU2_DEFAULT ? 1u : 2u) : 0u;
+    if ((CPU2_DEFAULT && rev < 4u && (b & 1u)) || *fell == 2u)
+        b |= 4u;
+    return b;
+}
+#endif
 
 /* after the session came back (main.c, autosave_boot): the unit's into song.g; the first boot the other way. Then the
  * boot's one-time changes saved: ui_set_rev 2 (these), (2.5) 3 (cpu2_move's) */
@@ -732,8 +747,8 @@ static void unit_g_boot(void)
         unit_g_adopt = 0;
         ui_set_rev = 2;
     }
-    if (CPU2_DEFAULT && ui_set_rev < 3u) {
-        ui_set_rev = 3;
+    if (CPU2_DEFAULT && ui_set_rev < 4u) {             /* ((2.7.1) 4: cpu_boot_byte's 320 MHZ too) */
+        ui_set_rev = 4;
         save = 1;
     }
     if (save)

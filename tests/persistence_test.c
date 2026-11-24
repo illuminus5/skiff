@@ -628,6 +628,10 @@ static void boot_settings(void)
     }
     settings_init();
     cpu2_move();                                 /* ((2.5) before the second core is started) */
+    {
+        uint8_t fell;                            /* ((2.7.1, #126) 2 CORES at 320 MHZ; no crash before this boot) */
+        CPU2_BYTE = cpu_boot_byte(CPU2_BYTE, ui_set_rev, 0, &fell);
+    }
     if (ui_set_rev < 1u) {
         ui_prefs |= PREF_BPM_LOCK;
         ui_set_rev = 1;
@@ -654,18 +658,19 @@ static int cpu2_once_test(void)
     favorites.factory[15][24] = 0xA5u;
     settings_save();
     boot_settings();
-    ok = CPU2_SET == CPU2_DEFAULT && ui_set_rev == 2u + CPU2_DEFAULT;
+    ok = CPU2_SET == CPU2_DEFAULT && CLK320_SET == CPU2_DEFAULT && ui_set_rev == (CPU2_DEFAULT ? 4u : 2u);
     e0 = erases;
     boot_settings();
-    bad += check("(2.5) 2.2's 1 CORE: the FM-1's first boot moves it to 2 CORES, saved, once (the SMK-37 stays)",
-                 ok && CPU2_SET == CPU2_DEFAULT && erases == e0);
+    bad += check("(2.5) 2.2's 1 CORE: the FM-1's first boot moves it to 2 CORES ((2.7.1) at 320 MHZ), saved, once (the "
+                 "SMK-37 stays)", ok && CPU2_SET == CPU2_DEFAULT && CLK320_SET == CPU2_DEFAULT && erases == e0);
     menu_put(MI_CPU, 0);
     settings_save();
     e0 = erases;
     boot_settings();
     bad += check("  .. set back to 1 CORE, it stays so at the next power-on", !CPU2_SET && erases == e0);
     settings_reset();
-    bad += check("  .. RESET SETTINGS: 2 CORES on the FM-1, 1 CORE on the SMK-37", CPU2_SET == CPU2_DEFAULT);
+    bad += check("  .. RESET SETTINGS: 2 CORES at 320 MHZ on the FM-1, 1 CORE at 360 on the SMK-37",
+                 CPU2_SET == CPU2_DEFAULT && CLK320_SET == CPU2_DEFAULT);
     return bad;
 }
 
@@ -699,11 +704,12 @@ static int other_fw_test(void)
         if (i < 2)
             ok = !song.g[G_CLOCK] && !song.g[G_ROUTE] && !song.g[G_TUNE] && !ui_ptag && !ui_hints_off &&
                  launch_mode() == LAUNCH_LOOP && !perf_scenes() && !(ui_rec_prefs & REC_FEEL) && (ui_prefs & PREF_BPM_LOCK) &&
-                 ui_set_rev == 2u + CPU2_DEFAULT;
+                 ui_set_rev == (CPU2_DEFAULT ? 4u : 2u);
         else
             ok = song.g[G_CLOCK] == 1 && song.g[G_ROUTE] == 1 && song.g[G_TUNE] == -4 && ui_ptag == 3u && ui_hints_off &&
                  launch_mode() == LAUNCH_NOW && perf_scenes() && (ui_rec_prefs & REC_FEEL) && !(ui_prefs & PREF_BPM_LOCK);
-        ok &= CPU2_SET == CPU2_DEFAULT;                  /* ((2.5) every FM-1 on 2 CORES once, whatever it ran before) */
+        ok &= CPU2_SET == CPU2_DEFAULT && CLK320_SET == CPU2_DEFAULT;   /* ((2.5) every FM-1 on 2 CORES once, whatever
+                                                         * it ran before; (2.7.1) at 320 MHZ) */
         bad += check(i == 0 ? "Felucca 1.4+ settings: its FX keys etc. are not Skiff's CLOCK MIDI IN TUNE ..: the defaults"
                      : i == 1 ? "JIANT settings: its SKIN, USB, LOAD .. are not Skiff's: the defaults"
                      : i == 2 ? "  .. Skiff's own (its mark): every one as saved"

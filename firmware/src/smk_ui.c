@@ -112,7 +112,9 @@ static void smk_pads_out(const uint8_t *nl, const uint8_t *nd, const uint8_t *nb
 
 /* a step tap (steps mode): the selected track's step at pad p of the page shown. A DRUM track: the selected lane's hit
  * there, toggled (as the grid's white keys); a melodic one: a step with notes cleared, an empty one set to the last
- * note played (at the pad's velocity). A run of taps is one undo (SMK_TAPS); on the step pages the cursor goes there */
+ * note played (at the pad's velocity). (#161) A key's as step entry writes it (ui_input.c seq_entry): with CHRD its
+ * chord (MONO the chord's root), a QNT SOLO black key's alone; one from MIDI IN or the editor alone. A run of taps is
+ * one undo (SMK_TAPS); on the step pages the cursor goes there */
 static const char SMK_TAPS[] = "PAD STEPS";
 static void smk_pad_tap(uint32_t p, uint32_t vel)
 {
@@ -130,8 +132,20 @@ static void smk_pad_tap(uint32_t p, uint32_t vel)
     else if (step_on(st))
         step_clear(st);
     else {
+        uint8_t ch[CHORD_MAX];
+        int32_t r = last_note;
+        uint16_t mask;
+        uint32_t n = 1, j;
+        ch[0] = (uint8_t)r;
+        if (kb_last == r + 1)
+            n = chord_make(t, (uint32_t)r, ch, &r, &mask);
+        if (trk_vmode(t) != V_POLY) {
+            ch[0] = (uint8_t)clamp(r, 0, 127);
+            n = 1;
+        }
         step_clear(st);
-        rec_put(t, st, last_note, smk_vel(vel));
+        for (j = 0; j < n; j++)
+            rec_put(t, st, ch[j], smk_vel(vel));
     }
     undo.after = track_sig(t);
     undo.t_ms = fm1_ms;

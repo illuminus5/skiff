@@ -1112,8 +1112,8 @@ index 4..6 and 14): ON shows the selected track's scale on the key LEDs outside 
 Applied at once.
 
 SCREEN OFF (id 17, 1.1.5; the DISPLAY tab shows COLOR, LARGE, ANIM, LEDS and SCREEN OFF, index 0..3 and 15):
-after that long without input on the panel (a button, a key, a knob; not MIDI, not the editor) the screen and its
-backlight go off while the sound, the sequencer, MIDI and USB go on; the next touch wakes it and does nothing else.
+after that long without input on the panel (a button, a key, a knob; not MIDI, not the editor) the screen goes
+dark while the sound, the sequencer, MIDI and USB go on; the next touch wakes it and does nothing else.
 NEVER keeps it on. A change counts from then (a MENU_SET to 5 MIN does not turn it off at once). Applied at once.
 
 Example (bytes in hex): `F0 7D 46 4C 48 03 F7` asks for index 3; the reply

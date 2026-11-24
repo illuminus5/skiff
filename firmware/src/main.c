@@ -199,6 +199,11 @@ static void fm1_main(void)
     felucca_dbg.prev_home = felucca_dbg.home;
     felucca_dbg.prev_frames = felucca_dbg.ui_frames;
     felucca_dbg.prev_rst = fm1_boot.p3_rst;
+#if FELUCCA_CPU2
+    cpu2_move();                              /* ((2.5) every FM-1 on 2 CORES once: ui.c; (2.7.1) before the clock) */
+    CPU2_BYTE = cpu_boot_byte(CPU2_BYTE, ui_set_rev, boot_crashed(), &c1_fell);   /* ((2.7.1, #126) 2 CORES at 320
+                                               * MHZ (ui.c); c1_fell 1: 1 CORE this boot, 2: a crash at 360 moved it to 320 */
+#endif
     if (CLK320_SET && !bootguard.failed && clk320.state != CLK_TRIPPED) {
         /* (Skiff) MENU > CPU CLOCK 320 MHZ: from the boot stage's 360 to JieLi's rated 320 (hal/fm1_clk.h, curist's
          * switch), the screen up, on one core, before the scan, the second core, the audio and USB. Not after a failed
@@ -228,9 +233,7 @@ static void fm1_main(void)
     master_boot();
     kb_boot_hold = 1;                         /* #137: no notes from the keys before the UI (seq.c keyboard_block) */
 #if FELUCCA_CPU2
-    cpu2_move();                              /* ((2.5) every FM-1 on 2 CORES once: ui.c) */
-    c1_fell = CPU2_SET && boot_crashed();
-    if (!bootguard.failed && CPU2_SET && !c1_fell) {
+    if (!bootguard.failed && CPU2_SET && c1_fell != 1u) {
         /* (Skiff 1.3, as Felucca 1.6.1) the second core (hal/fm1_cpu1.h; fx.c mix_block hands it tracks), at power-on,
          * before the audio and the timers (started later it never reaches its entry) and before fm1_guard_lock_top
          * (its entry word is at the top of RAM). It starts in the chip's ROM: the PC limits open meanwhile. MENU > CPU
@@ -300,7 +303,13 @@ static void fm1_main(void)
             bootguard.failed = 0;
         }
 #if FELUCCA_CPU2
-        if ((*(volatile uint8_t *)&fm1_c1_gave_up || c1_fell) && !c1_told) {   /* ((Skiff 1.3) the ISR's: core 1
+        if (c1_fell == 2u) {                            /* ((2.7.1, #126) a crash on 2 CORES at 360: 320 from now on,
+                                                         * both cores still (ui.c cpu_boot_byte); saved, said once */
+            c1_fell = 0;
+            settings_save();
+            ui_message("CRASHED: NOW 320 MHZ");
+        }
+        if ((*(volatile uint8_t *)&fm1_c1_gave_up || c1_fell == 1u) && !c1_told) {   /* ((Skiff 1.3) the ISR's: core 1
                                                          * misread or stopped answering on this FM-1, ((2.7, #126) or
                                                          * the last boot crashed or hung on 2 CORES: above): one core
                                                          * from now on, the setting back to 1 CORE (MENU > CPU 2 CORES

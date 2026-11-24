@@ -2215,6 +2215,9 @@ async function updater() {
      && stockRefusal("SMK-37 Pro_016", stopped(2)) === null && stockRefusal("SMK-37 Pro_016", stopped(36)) === null
      && stockRefusal("SMK-37 Pro_016", stopped(4, "lost")) === null && stockRefusal("Other_016", stopped(4)) === null,
     "installer: (2.0.3, #64) an SMK-37 whose start-up part is not V016's is told so (nothing written), not to replug");
+  const pkgPage = readFileSync(join(HERE, "index_pkg.html"), "utf8");   // (#156) m-bootloader's start-up part: neither
+  ok(["stockNeedsV16", "stockNeedsV15"].every((k) => (pkgPage.match(new RegExp(`${k}: "[^"]*M-Flasher[^"]*"`, "g")) || []).length === 2),
+    "installer: (#156) both FM-1 start-up messages, Japanese and English, say to put the stock bootloader back after M-Flasher's m-bootloader");
 }
 
 await editorMock();

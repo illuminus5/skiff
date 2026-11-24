@@ -64,7 +64,8 @@
 #                   demos in build/slice_demo/.
 # SMPMIX (tests/smpmix_test.c, Skiff #21): a user slot's sounds' LEVEL (square law), REV and DLY (their own sends, as
 #                   the track's would be, 127 at most in all, none while muted), kept with the slot (slice_store.c: for
-#                   its header only, with SLICE's record, torn or junk ignored), a slot of before as uploaded.
+#                   its header only, with SLICE's record, torn or junk ignored), a slot of before as uploaded; (#35) a
+#                   slot as DRUM's KIT; (#160) KIT turned to it while a synthesized kit's hits ring, after SLICE played.
 # INPUT (tests/input_test.c): the key / button debounce of hal/fm1_input.h against the TIMER5 scan and bouncing
 #                   contacts: a press within 2 scans (<= 2.3 ms), one note per bouncy press, no early or hanging
 #                   release, stray samples ignored, fast repeats, the encoders' detents; the LED scan: lit LEDs every
@@ -224,7 +225,8 @@ else
     echo "FM-1 V15: skipped (FM1_STOCK_DIR not set)"
 fi
 $CC -o "$OUT/ldr_screen_test" tests/ldr_screen_test.c
-run "update loader's screen (Skiff): UPDATE MODE, WRITING and its bar, UPDATE FAILED" "$OUT/ldr_screen_test"
+run "update loader's screen (Skiff): UPDATE MODE, WRITING and its bar, UPDATE FAILED; (#98) SCREEN OFF keeps PA2 low" \
+    "$OUT/ldr_screen_test"
 
 # the SMK-37 Pro build (BOARD_SMK37; after genkigenki's SMK-37 layer): the flash map and the store's owner tag, the
 # package layout, the OTA staging and the loader's windows on SMK-layout packages (made here from the FM-1 binaries:
@@ -357,7 +359,7 @@ if [ -f build/gen/felucca_tables.h ]; then
     $CC -w -DBOARD_SMK37=1 -Ifirmware/hal -Ibuild/gen -Ifirmware/src -o "$OUT/persistence_test_smk"         tests/persistence_test.c -lm
     run "persistence on the SMK-37 Pro layout (the store from 0x9D000, its owner tag at boot)" "$OUT/persistence_test_smk"
     $CC -O1 -w -DBOARD_SMK37=1 -Ifirmware/hal -Ibuild/gen -Ifirmware/src -o "$OUT/smk_ui_test" tests/smk_ui_test.c -lm
-    run "SMK-37 Pro controls (SMK37_UX.md): pads, colours, faders, entries, outer keys, KEY VELOCITY, wheels, the pedal holding the keys, SHIFT, MASTER, TRS clock" "$OUT/smk_ui_test"
+    run "SMK-37 Pro controls (SMK37_UX.md): pads (#161: a tap writes its key's CHRD chord), colours, faders, entries, outer keys, KEY VELOCITY, wheels, the pedal holding the keys, SHIFT, MASTER, TRS clock" "$OUT/smk_ui_test"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/backup_test" tests/backup_test.c -lm
     run "full backup: CRC before writes, stale runtime, USB reset / timeout, malformed objects; (2.0) OLD FORMAT slots backed up" "$OUT/backup_test"
     $CC -w $LEGACY -Ibuild/gen -Ifirmware/src -o "$OUT/backup_test_legacy" tests/backup_test.c -lm
@@ -462,7 +464,7 @@ EOF
         run "SLICE: tables, onsets, reverse, keys, modes, MAN slices and their store, demos" "$OUT/slice_test" \
             build/slice_demo/loop build/slice_demo
         $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/smpmix_test" tests/smpmix_test.c -lm
-        run "(#21) a user slot's sounds: LEVEL, REV, DLY, their store with the slot, old slots as uploaded; (#35) a slot as DRUM's KIT" "$OUT/smpmix_test"
+        run "(#21) a user slot's sounds: LEVEL, REV, DLY, their store with the slot, old slots as uploaded; (#35) a slot as DRUM's KIT; (#160) KIT to it after SLICE, hits ringing" "$OUT/smpmix_test"
     else
         echo "== SLICE: build/ was made with FELUCCA_SLICE=0 (no BREAK); run ./build.sh without it first"
         fail=1

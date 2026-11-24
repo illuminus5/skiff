@@ -14,7 +14,11 @@ synths and drums, patterns and songs, live performance, and a screen that shows 
   <img src="https://img.shields.io/badge/hardware-M--VAVE%20FM--1%20%7C%20SMK--37%20Pro-555" alt="Hardware: M-VAVE FM-1 | SMK-37 Pro">
 </p>
 
-<p align="center"><b>New in 2.7:</b> the Screen tab goes full screen, works the FM-1 from the page (mouse, touch or
+<p align="center"><b>New in 2.7.1:</b> fixes: the screen that stayed dark after SCREEN OFF, a crash on a user drum kit
+after SLICE, SCALE LEDS you can see, the way back to V15, 2 CORES at 320 MHz for the units that crashed at 360; the
+ARP on the beat, the SMK-37's chord pads, and the STARRYKEY-37 PLAY ·
+<a href="https://github.com/illuminus5/skiff/releases/tag/v2.7.1">the release notes</a><br>
+<b>New in 2.7:</b> the Screen tab goes full screen, works the FM-1 from the page (mouse, touch or
 keyboard) and comes to the SMK-37, the editor's Sequencer as a piano roll, SYNC OUT for Pocket Operators, and fixes: the phaser's squeal, the
 filter on spread voices, TRIO's and SUB BASS's clicks, the editor's stray entries ·
 <a href="https://github.com/illuminus5/skiff/releases/tag/v2.7">the release notes</a><br>
@@ -88,14 +92,16 @@ Custom firmware, at your own risk; the way back to the official firmware is belo
 
 **In the browser** (Chrome or Edge on a computer): open the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/),
 connect the FM-1 by USB and follow it. The same page takes the FM-1 back to the official firmware (V15 or V16: the
-version it had before Skiff), saving a complete backup of your music first.
+version it had before Skiff), saving a complete backup of your music first. Going back with M-VAVE's own M-UPGRADE
+instead? Take a backup in the Skiff Editor first: on the way to V15, if M-UPGRADE stops near the end, the FM-1 stays
+on Skiff without its patterns (#156).
 
-**With Python 3:** download `skiff-2.7.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
+**With Python 3:** download `skiff-2.7.1.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
 and, with this repository's `tools/` folder,
 
 ```
 pip install mido python-rtmidi
-python tools/fm1_install.py skiff-2.7.fwsc
+python tools/fm1_install.py skiff-2.7.1.fwsc
 ```
 
 It takes about two minutes and the FM-1 restarts on Skiff.
@@ -108,9 +114,12 @@ file, or M-VAVE's own updater. An FM-1 that ran V16 before Skiff goes back to V1
 its start-up part decides, and the installer says which one it needs. M-VAVE's download page has given V16 since
 October 21 (Skiff 2.0.2 and later; done on a unit: back to V16, then on to Skiff again); V15 is in M-VAVE's
 [fm1_open repository](https://github.com/m-vave/fm1_open) as `sdk/firmware/FM-1_015.fwsc`. The official firmware
-writes its Bluetooth settings anew on its first start, so pair Bluetooth devices again if they don't connect.
+writes its Bluetooth settings anew on its first start, so pair Bluetooth devices again if they don't connect. If
+M-Flasher put its m-bootloader on the FM-1, the start-up part is neither V15's nor V16's, so Skiff stops every
+official file with FAILED -5 on the FM-1's screen, M-VAVE's updater too (nothing is written): put the stock
+bootloader back with M-Flasher first (#156).
 
-**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.7-smk37.fwsc` for
+**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.7.1-smk37.fwsc` for
 Python). Two steps come first: M-VAVE's firmware V016 on the keyboard, and a backup of its flash, which holds the
 keyboard's own key calibration. [SMK37.md](SMK37.md#install) has both, the way back and what to do if it does not
 start.
@@ -699,7 +708,7 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
   breathes while a track is armed).
   What can be pressed breathes up to about 60 % of a lit LED, about 30 % with DIM LO
 - **SCREEN OFF:** NEVER, 5 MIN, 15 MIN, 30 MIN (default) or 60 MIN: after that long with no button, key or
-  knob touched, the screen and its backlight go off; the sound, the sequencer, MIDI and USB go on. The next
+  knob touched, the screen goes dark; the sound, the sequencer, MIDI and USB go on. The next
   button, key or knob only turns the screen back on (PLAY still stops the music). Never while the music
   plays
 - **HOLD:** how long a button is held before its hold acts (the layers, SAVE's undo, HOME's SHIFT)
@@ -710,8 +719,8 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
   layer or use GLO › GLOBAL for the tempo. OFF, SELECT is the tempo everywhere, Felucca's way. Skiff turns it
   ON once on a unit coming from Felucca; DRUM-X's SOUND sheet and FM6's OPERATOR and ALL OPS move their rows with
   SELECT either way
-- **SCALE LEDS:** OFF or ON: the keys show the selected track's scale all the time (the root a little
-  brighter); not on DRUM or SLICE tracks
+- **SCALE LEDS:** OFF or ON: the keys show the selected track's scale all the time (half lit, the root fully
+  lit); not on DRUM or SLICE tracks
 - **CLOCK:** INT, USB or TRS, where the tempo comes from. **MIDI IN:** CH1-6, channels 1–6 play tracks 1–6 (TRACK
   once one of them is set to another channel), or SEL, every channel the selected track. **TUNE** (AUDIO): the whole
   unit in cents, ±50. The three are the unit's, so loading a project never changes them
@@ -759,12 +768,15 @@ every setting back as a new unit has it. The web editor's Settings tab reads and
   (the row says STOP while the music plays, since settings are saved stopped), then restart when it says RESTART.
   With 2 CORES the second core renders some of the tracks of every block, the sound bit for bit the same, and up to
   16 voices sound at once instead of 8 (12 before 2.5). If the second core misreads or stops answering (some units
-  do), the FM-1 goes on with one core, says CORE 2 FAILED and sets the row back to 1 CORE. (2.7) After a crash or a
-  hang on 2 CORES it restarts on 1 CORE and says the same; set 2 CORES again to try it once more
-- **CPU CLOCK** (SYSTEM, 1.3.1): **360 MHZ** (default: what the FM-1's boot sets) or **320 MHZ**, the clock JieLi rates
-  the chip for (curist's switch, no voltage changed). It takes effect at the next power-on, as CPU does (STOP, then
-  RESTART). 320 is about 11 % slower: the same music shows a higher CPU. A unit whose clock is set up differently
-  refuses it and says why (NO 320 MHZ: ...). ABOUT shows the clock the FM-1 runs at
+  do), the FM-1 goes on with one core, says CORE 2 FAILED and sets the row back to 1 CORE. (2.7.1) After a crash or a
+  hang on 2 CORES at 360 MHZ it restarts at 320 MHZ with both cores and says CRASHED: NOW 320 MHZ; after one at 320 it
+  restarts on 1 CORE and says CORE 2 FAILED (2.7 did that at any clock); set 2 CORES again to try it once more
+- **CPU CLOCK** (SYSTEM, 1.3.1): **320 MHZ** (with 2 CORES, the default since 2.7.1, which moves every FM-1 on 2 CORES
+  to it once) or **360 MHZ** (what the FM-1's boot sets; the SMK-37's default). 320 is the clock JieLi rates the chip
+  for (curist's switch, no voltage changed), and some units' two cores crash at 360 but never at 320 (#126). It takes
+  effect at the next power-on, as CPU does (STOP, then RESTART). 320 is about 11 % slower: the same music shows a
+  higher CPU. A unit whose clock is set up differently refuses it and says why (NO 320 MHZ: ...). ABOUT shows the
+  clock the FM-1 runs at
 - **HINTS** (DISPLAY): ON or OFF; OFF drops the one line of hint (HOLD HOME: SHIFT, KEYS: STEPS, a layer's
   first HOLD [X]: SHORTCUTS) and SHIFT's map; what OCT+ and OCT- do on an action page stays
 - **RESET SETTINGS** (SYSTEM): OCT+ asks, then puts every MENU setting back as a new unit has it (the channels too, and
@@ -926,7 +938,7 @@ On the SMK-37: [SMK37.md](SMK37.md#if-it-does-not-start).
 **The screen says UPDATE MODE, or stays black while a computer sees a USB MIDI device named "Felucca
 Update":** an install was cut off, and the FM-1 waits in Skiff's update loader at every power-on. Nothing is
 lost. Connect it by USB and run the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) again
-(or `python tools/fm1_install.py skiff-2.7.fwsc`): it finishes the install. If the installer can't find it, plug
+(or `python tools/fm1_install.py skiff-2.7.1.fwsc`): it finishes the install. If the installer can't find it, plug
 the FM-1 straight into the computer: a USB hub or USB-sharing software can lose it when it switches to update mode.
 M-VAVE's own updater does not see the FM-1 in this state. (Since 1.3.2 the loader says UPDATE MODE on the screen;
 one an older Skiff left there keeps it black.)

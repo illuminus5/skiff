@@ -14,7 +14,7 @@ been tried on a keyboard.
    its Bluetooth pairings, which no download can replace. Skiff never writes them, but a backup is the way back if
    anything else goes wrong.
 3. **Install:** the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) (Chrome or Edge) finds the
-   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.7-smk37.fwsc` (`-elite`, `-mke` for those
+   keyboard and picks its build, or `python tools/fm1_install.py skiff-2.7.1-smk37.fwsc` (`-elite`, `-mke` for those
    models, not tried on a keyboard yet). About two minutes.
 
 Keep it plugged in and switched on while it writes. If the cable or the power is cut anyway, the keyboard stays in
@@ -29,7 +29,7 @@ This needs a computer with Windows or Linux, Python 3, this repository's `tools/
 reads the whole 1 MiB through the chip's built-in boot mode:
 
 1. With the keyboard on M-VAVE's V016 (or on Skiff) and connected:
-   `python tools/fm1_install.py --uboot skiff-2.7-smk37.fwsc`. The keyboard starts Skiff's update loader without
+   `python tools/fm1_install.py --uboot skiff-2.7.1-smk37.fwsc`. The keyboard starts Skiff's update loader without
    writing the firmware, then switches to the chip's boot mode: the computer sees a USB disk named `WL82 UBOOT1.00`.
    **If Windows offers to format it, cancel.**
 2. In an **administrator** terminal (on Linux: with `sudo`, and `/dev/sgN` as the device), from jl-uboot-tool's folder,
@@ -125,7 +125,8 @@ loader 7,859 B (the limit: 7,936 B, below).
 - **Pads:** always a grid. Where the FM-1's keys show a map of their own (a layer, the DRUM grid, NAME, SLICES, or a
   layer's button held), the pads are its 16 white keys, lit as the FM-1's key LEDs would be, in the track's colour.
   Elsewhere they are the selected track's 16 steps of the page shown. A tap sets an empty step to the last note
-  played, at the pad's velocity, or clears a set one; on a DRUM track it toggles the selected lane's hit. A run of
+  played ((2.7.1, #161) with CHORD on, the chord that key played; a MONO track: its root), at the pad's velocity, or
+  clears a set one; on a DRUM track it toggles the selected lane's hit. A run of
   taps is one undo (`PAD STEPS`). The colours follow the screen's step tiles: an empty step faint white, a step in the
   track's colour, a tie at half, the edited step white. A pad has one LED, so the playing step can't get the
   mockup's ring: it shows half way to white instead. The pads' brightness is fixed.

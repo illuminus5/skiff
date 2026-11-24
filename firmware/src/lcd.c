@@ -139,22 +139,18 @@ static void lcd_init(void)
     lcd_cmd(0x29);
 }
 
-/* MENU > SCREEN OFF (ui.c scr_frame): the panel and its backlight off while the sound goes on. s 0: backlight off,
- * DISPOFF, SLPIN; 1: SLPOUT (the panel wants 120 ms after it, and 120 ms after SLPIN before it: ui.c waits, a frame
- * at a time, never here); 2: DISPON, backlight on (after the frame that redrew it all). The panel keeps its RAM
- * asleep, but the UI redraws everything before it shows (ui.force) */
+/* MENU > SCREEN OFF (ui.c scr_frame): the panel dark while the sound goes on. s 0: DISPOFF, SLPIN; 1: SLPOUT (the
+ * panel wants 120 ms after it, and 120 ms after SLPIN before it: ui.c waits, a frame at a time, never here); 2: DISPON
+ * (after the frame that redrew it all). The panel keeps its RAM asleep, but the UI redraws everything before it shows
+ * (ui.force). The backlight stays on: on the FM-1 its line (PA2) is also the key matrix 595s' /OE, so with it high no
+ * button, key or knob reads, the LEDs go dark and only a power cycle wakes the FM-1 (#98; Felucca 1.1.5.1 found it) */
 static void lcd_power(uint32_t s)
 {
-    if (s == 1u) {
+    if (s == 1u)
         lcd_cmd(0x11);                             /* SLPOUT */
-        return;
-    }
-    if (s == 2u)
+    else if (s == 2u)
         lcd_cmd(0x29);                             /* DISPON */
-    fm1_irq_off();                                 /* (port A: the key scan's rows too) */
-    fm1_lcd_backlight(s == 2u);
-    fm1_irq_on();
-    if (s == 0u) {
+    else {
         lcd_cmd(0x28);                             /* DISPOFF */
         lcd_cmd(0x10);                             /* SLPIN */
     }

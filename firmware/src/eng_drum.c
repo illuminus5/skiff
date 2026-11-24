@@ -289,6 +289,9 @@ static void drum_note_on(track_t *t, voice_t *v)
     L->st = (int8_t)st;
     L->owner = (uint8_t)(i + 1u);                        /* (its last voice, if another, ends: drum_amp) */
     v->s[0] = (int32_t)lane;
+    v->s[5] = 0;                                         /* ((2.7.1, #160) no sample: KIT turned to a user kit while it
+                                                          * rings, it ends (drum_smp), never reading as a zone what the
+                                                          * voice's last engine left (SLICE's DECAY level: SMP_ZONES[32767]) */
     v->env_out = v->vel * 258;                           /* the hit starts at its level (no ramp from 0) */
     v->env = 1 << 24;                                    /* the ADSR held at full from here, not from drum_amp:
                                                           * a key-off before the first block (zero-length MIDI

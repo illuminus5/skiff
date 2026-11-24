@@ -3,7 +3,8 @@
 /* LCD wiring, SPI1. The panel protocol is src/lcd.c.
  *
  * FM-1:       SPI1 group B (IOMAP_CON1 bit4 = 1): PC9 CLK, PC10 DO; PC7 CS, PC8 D/C;
- *             backlight PA2, active low.
+ *             backlight PA2, active low; PA2 also drives the key matrix 595s' /OE (Felucca 1.1.5.1; #98's units):
+ *             high, no key, button or knob reads and no LED lights, so the app never turns the backlight off.
  * SMK-37 Pro: SPI1 group A (IOMAP_CON1 bit4 = 0): PB6 CLK, PB7 DO; PC8 CS, PB5 D/C;
  *             no backlight control (always on). Group B (PC10) carries the 16 RGB pad
  *             LEDs (WS2812 class) instead: fm1_padled_send() switches SPI1 over for one

@@ -54,6 +54,7 @@ static size_t logical_len;
 static uint8_t rx[1024];                 /* one pending host frame (7-bit bytes) */
 static uint32_t rx_len, rx_full;
 static uint32_t now_ms, requests, ident_replies, mute_after = 0xFFFFFFFFu, bad_erase, erases;
+static uint32_t host_ms;                 /* ((2.7.1, #156) how long the host takes to answer a read */
 static int committed;
 static uint8_t committed_parm[112];
 static int32_t last_code;
@@ -101,6 +102,7 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)
     len = u[11] | u[12] << 8 | u[13] << 16;
     if (++requests > mute_after)
         return 0;                                         /* host gone */
+    now_ms += host_ms;
     memcpy(m, "\x00\x59\x30", 3);
     m[3] = (uint8_t)(len + 8); m[4] = (uint8_t)((len + 8) >> 8); m[5] = 0;
     m[6] = 0;
@@ -267,7 +269,7 @@ static void reset_dev(void)
     memcpy(nor, logical + 0x400, 0x4000);                 /* device flash head = package flash.bin head */
     fill_pool();
     rx_full = 0; requests = 0; ident_replies = 0; committed = 0; last_code = 0;
-    mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0;
+    mute_after = 0xFFFFFFFFu; corrupt_at = NULL; bad_erase = 0; erases = 0; host_ms = 0;
 }
 
 int main(int argc, char **argv)
@@ -276,7 +278,7 @@ int main(int argc, char **argv)
     uint8_t *raw;
     size_t n, i;
     int bad = 0, rc, official = argc > 2 && !strcmp(argv[2], "official"), usr;
-    uint32_t usr_reads;
+    uint32_t usr_reads, full_reqs;
     size_t blocks = 20;
     if (argc < 2) { printf("usage: ota_test FILE.fwsc [official]\n"); return 2; }
 #if BOARD_SMK37
@@ -313,6 +315,7 @@ int main(int argc, char **argv)
     reset_dev();
     rc = ota_session();
     printf("  %u requests\n", requests);
+    full_reqs = requests;
     bad += check("session commits (flash.bin a size this board takes)", rc == 0 && committed);
     if (official && T_SMK)
         bad += check("headers + the head check + confirm, no loader read", requests >= 36u && requests <= 40u);
@@ -374,7 +377,23 @@ int main(int argc, char **argv)
         corrupt_at = logical + usr_off + usr_len - 100u;
         rc = ota_session();
         bad += check("V15: damaged USR entry -> -16, no commit, staging erased", rc == -16 && !committed && area_erased());
+        bad += check("V15: damaged USR entry: the pool untouched (checked whole before a write; 2.7 wrote as it went)",
+                     pool_erases == 0 && !memcmp(nor + 0xE7000u, pool_before, sizeof pool_before));
         corrupt_at = NULL;
+        reset_dev();                                       /* ((2.7.1, #156) the host gone a quarter into reading it */
+        mute_after = full_reqs - 1u - usr_reads + usr_reads / 4u;
+        rc = ota_session();
+        bad += check("V15: host gone while the USR image is read: no commit, staging erased, the pool untouched",
+                     rc < 0 && !committed && area_erased() && pool_erases == 0 &&
+                     !memcmp(nor + 0xE7000u, pool_before, sizeof pool_before));
+        reset_dev();                                       /* a slow host, 400 ms a read: 2.7's 2 minutes ran out */
+        host_ms = 400;
+        {
+            uint32_t t0 = now_ms;
+            rc = ota_session();
+            printf("  a slow host: %u requests in %u s\n", requests, (now_ms - t0) / 1000u);
+        }
+        bad += check("V15: a slow host (400 ms a read) still commits, within 5 minutes", rc == 0 && committed);
     } else
         bad += check("not V15's package: the pool untouched", pool_erases == 0 &&
                      !memcmp(nor + 0xE7000u, pool_before, sizeof pool_before));

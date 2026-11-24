@@ -16,7 +16,9 @@
  *    FX layer mutes the track; the dry mix as before;
  * 5. (2.0, #35) a slot as DRUM's KIT (USR1..3): each lane its sample to its end, a lane without one silent; TUNE, the
  *    lane's DECAY, the closed hat's choke, a lane's mute; an empty slot silent; STD after it; a lane struck again while
- *    it rings starts its sample again, without a click. */
+ *    it rings starts its sample again, without a click;
+ * 6. (2.7.1, #160) KIT turned to a user kit while hits of a synthesized kit ring, after SLICE played on the track: those
+ *    hits end, never read as a sample (what SLICE left in their voices). */
 #include <stdarg.h>
 #include <stdint.h>
 static uint32_t host_slots[3u * 0x14000u / 4u];          /* USR1..3, as the flash at 0xA0000 */
@@ -490,6 +492,80 @@ static int drumsynth_retrig_test(void)
     return 0;
 }
 
+/* (2.7.1, #160, keita99 on 2.7) a DRUM track playing its sequence; PRESETS left to SLICE's FUNK BREAK, right back to DRUM
+ * KIT; EDIT, KNOB 1 from STD through PERC to USR1, a kit as the editor's DRUM KIT builds one: it crashed at USR1. A hit of
+ * a synthesized kit kept what its voice's s[5] held, and drum_smp reads s[5] as the lane's zone once KIT is a user kit:
+ * SLICE's DECAY level (32767) as SMP_ZONES[32767]. Before each block, every voice the user kit renders must have no zone
+ * (0: it ends) or one of the kit's (drum_note_on); a bad one stops the run before its render (a FAIL, not the crash). The
+ * hits ringing as KIT reaches USR1 are gone two blocks on; the kit plays after */
+static int kit_after_slice_test(void)
+{
+    static const int16_t KNOB1[] = {DK_80, DK_10, DK_66, DK_55, DK_77, DK_DEEP, DK_TIGHT, DK_PERC, DK_USR1};
+    static const uint16_t MS[3] = {4000, 4000, 2000};    /* DRUM KIT, SLICE FUNK BREAK, DRUM KIT again */
+    const uint32_t U = 3u + NELEM(KNOB1) - 1u;           /* (the phase KIT is USR1 in: 60 ms, then 2 s) */
+    track_t *t;
+    uint32_t i, ph, b, bad = 0, rang = 0, linger = 0, heard = 0;
+    int32_t s5 = 0;
+    kit_put(0);
+    smp_user_scan(0);
+    t = kit_track(DK_STD);
+    for (i = 0; i < 16u; i++) {                          /* kick, snare, clap, hats, a rim, toms */
+        uint8_t n[4];
+        uint32_t k = 0;
+        if (i % 4u == 0u)
+            n[k++] = 36;
+        if (i == 4u || i == 12u)
+            n[k++] = 38;
+        if (i == 12u)
+            n[k++] = 39;
+        if (i % 2u == 0u)
+            n[k++] = i == 14u ? 46 : 42;
+        if (i == 7u)
+            n[k++] = 37;
+        if (i == 10u || i == 11u || i == 15u)
+            n[k++] = 45;
+        put_step(t, i, k, n, k ? ST_NOTE : ST_REST, 0);
+    }
+    t->p[P_SLEN] = 16;
+    transport_req = 1;
+    for (ph = 0; ph <= U + 1u && !bad; ph++) {
+        uint32_t ms = ph < 3u ? MS[ph] : ph <= U ? 60u : 2000u;   /* (a detent every 60 ms) */
+        if (ph == 1u || ph == 2u) {                      /* PRESETS: the sound, what sounds let go (ui.c apply_preset_to) */
+            host_preset_req(t, ph == 1u ? ENGI_SLICE : ENGI_DRUM, ph == 1u ? 8u : 0u);
+            panic_req |= 1u;
+        } else if (ph >= 3u && ph <= U) {
+            t->p[P_E0] = KNOB1[ph - 3u];
+        }
+        for (b = 0; b < ms * 441u / 10u / CTL && !bad; b++) {
+            int32_t o[2 * CTL], pk = 0;
+            for (i = 0; i < NVOICE; i++) {
+                const voice_t *v = &t->v[i];
+                uint32_t z = (uint32_t)v->s[5];
+                if (t->engine != ENGI_DRUM || !drum_user(t->p) || !v->active || !drum_lane_of(t, v))
+                    continue;                            /* (what drum_smp renders: a user kit's voices on their lanes) */
+                if (z && (z < 0x8000u || z >= 0x8000u + usr_nz[0])) {
+                    bad++;
+                    s5 = v->s[5];
+                }
+                rang += !z && ph == U && !b;             /* a synthesized hit ringing as KIT turns to USR1 */
+                linger += !z && (ph > U || b >= 2u);     /* .. still there two blocks on */
+            }
+            if (bad)
+                break;                                   /* (its render reads past SMP_ZONES) */
+            mix_block(o, CTL);
+            for (i = 0; i < CTL; i++)
+                pk = abs(mix_l[i]) > pk ? abs(mix_l[i]) : pk;
+            heard += ph > U && pk > 64;
+        }
+    }
+    transport_req = 2;                                   /* (stops at the next block: a bad voice is never rendered) */
+    check("(2.7.1, #160) after SLICE, KIT to USR1 while the hits ring: they end, never a zone; the kit plays",
+          !bad && rang && !linger && heard > 100u,
+          "%u voices with a zone not the kit's (s[5] %d), %u ringing at USR1, %u after 2 blocks, %u blocks heard", bad,
+          s5, rang, linger, heard);
+    return 0;
+}
+
 int main(void)
 {
     const uint8_t *tail = (const uint8_t *)host_slots + SLC_REC_OFF;
@@ -665,6 +741,7 @@ int main(void)
     drumkit_retrig_test();
     sample_retrig_test();
     drumsynth_retrig_test();
+    kit_after_slice_test();
     printf("%s\n", fails ? "SMPMIX TEST FAILED" : "smpmix test passed");
     return fails != 0;
 }

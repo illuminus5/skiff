@@ -360,10 +360,11 @@ static uint32_t key_leds(uint32_t *br)                 /* (*br: a layer's keys t
  * no hit shows) glows steadier and brighter, so a bar's beats can be counted: DIM HI / DIM LO the mid level
  * (hal/fm1_input.h fm1_led_mid: lit 1 frame in 8, DIM LO in 12, over the glow), OFF and INV the glow alone (no
  * other key glows there). 1.2, MENU > SCALE LEDS ON (scale_leds; not over a map of the keys' own, nor on a DRUM or
- * SLICE track): the keys of the selected track's scale glow and the others are dark, the root's at the mid level, in
- * DIM HI, DIM LO and OFF alike (asked for: OFF only takes the other glow away); INV turns it around as it does the
- * rest: the root's keys lit, the scale's at the mid level, the others glowing; the keys held and playing as ever
- * (lit, INV dark). Each picture is built off-line and copied one byte per column, the
+ * SLICE track): the keys of the selected track's scale at the mid level and the others dark, the root's lit ((2.7.1,
+ * #108) the glow was barely seen on a new-chip FM-1; 1.2-2.7 the scale glowed, the root mid), in DIM HI, DIM LO and
+ * OFF alike (asked for: OFF only takes the other glow away); INV: the root's keys lit, the scale's at the mid level,
+ * the others glowing; the keys held and playing as ever (lit, INV dark). Each picture is built off-line and copied
+ * one byte per column, the
  * glow first: an LED going from lit to dim never has a dark frame */
 #if BOARD_SMK37
 /* (SMK-37 Pro, SMK37_UX.md button LEDs A) the picture's button LEDs: on or off only, so lit or breathing = on, the glow
@@ -413,17 +414,17 @@ static void ui_leds(void)
     c = key_leds(&br);
     g = !keys_map ? 0u : grid_on() && !ui.layer && !name_on() ? grid_glow() : 0u;   /* (key_leds: the grid's map) */
     beat = g ? grid_beats() & ~c : 0u;                  /* (the grid's empty beat starts: brighter than the glow) */
-    sc = keys_map ? 0u : scale_leds(&sr);               /* SCALE LEDS: the scale's keys glow, the root's brighter */
+    sc = keys_map ? 0u : scale_leds(&sr);               /* SCALE LEDS: the scale's keys mid, the root's lit (#108) */
     for (k = 0; k < 27u; k++) {
         uint32_t in = (sc >> k) & 1u, rt = (sr >> k) & 1u, idle = !((c >> k) & 1u);
         led_put(nm, LED_KEY0 + k, (int)((beat >> k) & 1u));
-        led_put(keys_map ? own : nl, LED_KEY0 + k, (int)((c >> k) & 1u));
+        led_put(keys_map ? own : nl, LED_KEY0 + k, (int)(((c | (mode == LEDS_INV ? 0u : sr)) >> k) & 1u));
         led_put(keys_map ? og : nd, LED_KEY0 + k, keys_map ? (int)((g >> k) & 1u) : !sc || (mode == LEDS_INV && rt));
         led_put(nb, LED_KEY0 + k, (int)((br >> k) & 1u));
         if (!sc)
             continue;
         led_put(sg, LED_KEY0 + k, mode == LEDS_INV ? !in && idle : (int)in);   /* (INV: the active ones dark) */
-        led_put(sm, LED_KEY0 + k, mode == LEDS_INV ? in && !rt && idle : (int)rt);
+        led_put(sm, LED_KEY0 + k, in && !rt && (idle || mode != LEDS_INV));
     }
     for (k = 0; k < NB; k++)
         led_put(nd, panel.btn[k], 1);

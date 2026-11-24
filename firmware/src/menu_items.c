@@ -140,7 +140,7 @@ static const char *const HOLD_N[4] = {"0.3 s", "0.4 s", "0.5 s", "0.6 s"};   /* 
 static const char *const CLICK_N[3] = {"OFF", "REC", "ON"};          /* REC: while a track is armed and playing */
 static const char *const CLKLVL_N[3] = {"LOW", "MID", "HIGH"};
 static const char *const COUNTIN_N[3] = {"OFF", "1 BAR", "2 BARS"};
-/* 1.1.5: SCREEN OFF (ui.c scr_*: the screen and backlight off after this long without panel input; 30 MIN the default) */
+/* 1.1.5: SCREEN OFF (ui.c scr_*: the screen dark after this long without panel input; 30 MIN the default) */
 static const char *const SCROFF_N[5] = {"NEVER", "5 MIN", "15 MIN", "30 MIN", "60 MIN"};
 /* (2.0, D 2A) RETURN (ui.c ret_mode): MOMENTARY's values, FX's macros and PERFORM's throws come back at once or over
  * this long; 1 BAR the default */
@@ -413,7 +413,7 @@ static void settings_reset(void)
 #if FELUCCA_CPU2
     menu_put(MI_CPU, CPU2_DEFAULT);                    /* ((2.5) 2 CORES on the FM-1, 1 CORE on the SMK-37: ui.c) */
 #endif
-    menu_put(MI_CLK, 0);                               /* ((Skiff) 360 MHZ) */
+    menu_put(MI_CLK, CPU2_DEFAULT);                    /* ((2.7.1, #126) 320 MHZ with 2 CORES, 360 on the SMK-37) */
     settings_save();
 }
 /* the menu's step, any of KNOB 1..4 or OCT+ (s > 0) / OCT- (s < 0): the next / previous value, stopping at the ends;

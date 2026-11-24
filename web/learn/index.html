@@ -345,9 +345,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
     </li>
     <li class="step" id="install/python">
       <h3>With Python</h3>
-      <p>Without Chrome or Edge, or from a terminal: download <code>skiff-2.7.fwsc</code> from
+      <p>Without Chrome or Edge, or from a terminal: download <code>skiff-2.7.1.fwsc</code> from
         <a href="https://github.com/illuminus5/skiff/releases/latest">the latest release</a> and, with the repository's <code>tools/</code>
-        folder and Python 3, run <code>pip install mido python-rtmidi</code>, then <code>python tools/fm1_install.py skiff-2.7.fwsc</code>.
+        folder and Python 3, run <code>pip install mido python-rtmidi</code>, then <code>python tools/fm1_install.py skiff-2.7.1.fwsc</code>.
         It does what the page does, and finishes an install left in update mode too, but it converts nothing: from 1.x or Felucca
         to 2.0, take a backup in the editor first and restore it after, and the Restore converts it.</p>
     </li>
@@ -1974,7 +1974,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <h3>LEDs</h3>
       <p>In the MENU, LARGE back to OFF and <kbd>PRESETS</kbd> on to LEDS, how the buttons and keys glow: DIM HI, the default, lights
         what's active and glows the rest; DIM LO glows darker; OFF has no glow; INV lights the idle ones and darkens the active ones, as
-        the stock firmware does. What can be pressed breathes in every mode. SCREEN OFF, below it, turns the screen and its backlight off
+        the stock firmware does. What can be pressed breathes in every mode. SCREEN OFF, below it, turns the screen dark
         after 5 to 60 minutes untouched (30 MIN, the default, or NEVER), never while the music plays, and the next touch only wakes it.
         HINTS OFF drops the hint lines and SHIFT's map.</p>
     </li>
@@ -1984,7 +1984,7 @@ footer p { max-width: 1240px; margin: 6px auto; }
         undo, HOME's SHIFT). KNOB ACCEL ON makes a fast, steady turn move 2 to 4 steps a detent, up to 8 on wide values. BPM LOCK ON (the
         default) keeps <kbd>SELECT</kbd> for the pages and <kbd>GLO</kbd> + <kbd>SELECT</kbd> for the tempo; OFF, <kbd>SELECT</kbd> is
         the tempo everywhere. STEP PREVIEW is <a href="#steps/preview">chapter 6</a>'s. SCALE LEDS ON: the keys of the selected track's
-        scale glow, the root's brighter, and the others are dark: track 1 is in A minor (<a href="#keys/scale">chapter 5</a>), so
+        scale are half lit, the root's fully lit, and the others are dark: track 1 is in A minor (<a href="#keys/scale">chapter 5</a>), so
         <kbd>A3</kbd>, <kbd>C4</kbd> and <kbd>E4</kbd> are among them. Not on a drum or SLICE track. RETURN is how
         MOMENTARY's values (<a href="#modulation/momentary">chapter 9</a>), the FX layer's macros and PERFORM's throws come back: SNAP
         at once, or in a line over 1 BEAT or 1 BAR, the default. KEEP SENDS, the last row, OFF by default: ON, a sound loaded (by
@@ -2003,8 +2003,9 @@ footer p { max-width: 1240px; margin: 6px auto; }
       <p><kbd>ALGORITHM</kbd> on to SYSTEM, <kbd>PRESETS</kbd> down its six rows. RESTORE LAST is <a href="#projects/kept">chapter
         17</a>'s. CPU: 2 CORES, the FM-1's default, sounds up to 16 voices at once, 1 CORE 8 (2.5 moves every FM-1 to 2 CORES once;
         the SMK-37 keeps the setting it has), then how busy the audio is (0 % here: this film's run was made on a computer).
-        If the second core fails, the header says CORE 2 FAILED: 1 CORE and the row goes back to 1 CORE. CPU CLOCK: 360 MHZ or
-        320 MHZ. Both take effect at the next power-on: stop, then restart when the row says RESTART. CALIBRATION asks for each
+        If the second core fails, the header says CORE 2 FAILED: 1 CORE and the row goes back to 1 CORE. CPU CLOCK: 320 MHZ, the
+        FM-1's default with 2 CORES since 2.7.1 (some units' two cores crash at 360 MHZ), or 360 MHZ; after a crash at 360 the FM-1
+        moves to 320 by itself and says CRASHED: NOW 320 MHZ. Both take effect at the next power-on: stop, then restart when the row says RESTART. CALIBRATION asks for each
         button and knob in turn, to learn which is which (a unit that works never needs it). RESET SETTINGS puts every MENU setting
         back as a new unit has it, after asking; the music stays. A release has no serial console, so macOS 13–15 always sees the USB
         audio input; a build from source without <code>--release</code> adds a seventh row, USB SERIAL, for developers.</p>

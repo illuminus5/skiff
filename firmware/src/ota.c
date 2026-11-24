@@ -10,7 +10,11 @@
  *     then write the UPDATA_PARM record (flash 0xE4F00 + RAM 0x01C7FD88) and
  *     reset. The SPL runs the loader, which installs the package.
  * Nothing is committed before the host's "success"; a failure after the
- * staging began erases the staging area, and Felucca carries on. A package
+ * staging began erases the staging area, and Felucca carries on. ((2.7.1,
+ * #156) One exception, the way back to V15 (ota_usr_restore): its USR image
+ * goes over Skiff's pattern pool before "success", once it was read whole
+ * and checked; a host that stops after that leaves the pool V15's, so the
+ * music needs a backup first.) A package
  * whose flash.bin is not exactly this board's size (OTA_FL_LEN: another
  * board's package; (2.0.2, #64) on the FM-1 also M-VAVE's V16, OTA_FL_V16,
  * with the official loader only) is refused in step 1 or 2, before anything
@@ -342,41 +346,49 @@ static int ota_usr_get(uint32_t at, uint8_t *p)
     return 0;
 }
 
-/* (Skiff) V15's USR region from its package, sector by sector over the pool: a sector already equal is left, one that
- * differs is erased, written and read back (a sector that comes in different the second time is written again); then
- * the whole image's CRC16 must be its entry's. -16 on any failure: the app stays on Skiff (it reads the pool's sectors
- * without its commit records as empty), so a bad image never reaches V15 */
+/* (Skiff) V15's USR region from its package over the pool, in two passes. First read only: the whole image's CRC16 must
+ * be its entry's, and the sectors that differ from it are found ((2.7.1, #156) 2.7 wrote each sector as it went and
+ * checked the CRC at the end, so a damaged image, or a host gone in the middle, left the pool half V15's and the music
+ * lost). Then each sector that differs is erased, written and read back (one that comes in different the second time
+ * is written again). -16 on any failure: the app stays on Skiff (it reads the pool's sectors without its commit records
+ * as empty), so a bad image never reaches V15 */
+#define OTA_USR_NS ((OTA_USR_HI - OTA_USR_LO) / 0x1000u)
 static int ota_usr_restore(uint8_t *b, uint8_t *mine)
 {
-    uint32_t s, i, at, crc = 0, want, got, dirty, tries;
+    uint32_t s, n, i, at, crc = 0, got, d, dirty = 0, tries;
+    uint16_t want[OTA_USR_NS];
     if (ota_usr_len > OTA_USR_HI - OTA_USR_LO || (ota_usr_off & 31u))
         return -16;
-    for (s = OTA_USR_LO; s < OTA_USR_HI; s += 0x1000u) {
-        for (i = 0, want = 0, dirty = 0; i < 0x1000u; i += 512u) {
+    for (s = OTA_USR_LO, n = 0; n < OTA_USR_NS; s += 0x1000u, n++) {
+        for (i = 0, got = 0, d = 0; i < 0x1000u; i += 512u) {
             at = s - OTA_USR_LO + i;
             if (ota_usr_get(at, b) || ota_fread(s + i, mine, 512))
                 return -16;
             if (at < ota_usr_len)
                 crc = ota_crc16(b, ota_usr_len - at > 512u ? 512u : ota_usr_len - at, crc);
-            want = ota_crc16(b, 512, want);
-            dirty |= !ota_memeq(b, mine, 512);
+            got = ota_crc16(b, 512, got);
+            d |= !ota_memeq(b, mine, 512);
         }
-        for (tries = 0; dirty && tries < 2u; tries++) {
+        want[n] = (uint16_t)got;
+        dirty |= d << n;
+    }
+    if (crc != ota_usr_crc)
+        return -16;                                 /* (nothing written yet) */
+    for (s = OTA_USR_LO, n = 0; n < OTA_USR_NS; s += 0x1000u, n++) {
+        for (tries = 0, d = (dirty >> n) & 1u; d && tries < 2u; tries++) {
             if (ota_erase(s))
                 return -16;
-            for (i = 0, got = 0, dirty = 0; i < 0x1000u; i += 512u) {
+            for (i = 0, got = 0, d = 0; i < 0x1000u; i += 512u) {
                 if (ota_usr_get(s - OTA_USR_LO + i, b) || ota_prog(s + i, b, 512) || ota_fread(s + i, mine, 512))
                     return -16;
                 got = ota_crc16(b, 512, got);
-                dirty |= !ota_memeq(b, mine, 512);
+                d |= !ota_memeq(b, mine, 512);
             }
-            dirty |= got != want;
+            d |= got != want[n];
         }
-        if (dirty)
+        if (d)
             return -16;
     }
-    if (crc != ota_usr_crc)
-        return -16;
     for (s = OTA_POOL_LO; s < OTA_POOL_HI; s += 0x1000u)   /* a pattern chunk's commit record ("SKB1", bank.c) */
         if (ota_fread(s, b, 4) || (ota_memeq(b, (const uint8_t *)"SKB1", 4) && ota_erase(s)))
             return -16;
@@ -424,6 +436,11 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
     ota_show(1, 0);
     if ((rc = ota_ufw(hdr, &fl_off, &fl_len, &ota_off, &ota_len)) != 0)
         return rc;
+#if OTA_USR
+    if (ota_usr_len && ota_deadline)                /* ((2.7.1, #156) V15's USR region: some 290 more reads, so 5 min in
+                                                     * all: a slow host (over ~330 ms a read) ran out of 2 min in it */
+        ota_deadline += 180000u;
+#endif
     if (!fl_off || !ota_off)
         return -3;
     if (fl_len != OTA_FL_LEN && fl_len != OTA_FL_V16)

@@ -83,8 +83,8 @@ static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
             host_screen[(y + j) * 240u + x + i] = (uint16_t)((c >> 8) | (c << 8));
 }
 static void lcd_sync(void) {}
-/* MENU > SCREEN OFF (lcd.c lcd_power / lcd_wake_now): what the panel was told, in order (0 off: backlight off,
- * DISPOFF, SLPIN; 1 SLPOUT; 2 DISPON, backlight on; 3 lcd_wake_now), with the time; host_bl the backlight */
+/* MENU > SCREEN OFF (lcd.c lcd_power / lcd_wake_now): what the panel was told, in order (0 off: DISPOFF, SLPIN;
+ * 1 SLPOUT; 2 DISPON; 3 lcd_wake_now; (#98) the backlight never off), with the time; host_bl the panel lit */
 static uint32_t host_pw_n, host_pw[256], host_pw_ms[256];
 static int host_bl = 1;
 static void host_pw_log(uint32_t s)
@@ -5223,11 +5223,11 @@ static int test_step_leds(void)
     return bad;
 }
 
-/* Discussion #127 (1.2): MENU > SCALE LEDS ON, outside the keys' own maps the keys of the selected track's scale glow
- * (the others dark), the root's at the mid level; the keys held / playing lit over it; LEDS OFF / DIM LO / DIM HI
+/* Discussion #127 (1.2): MENU > SCALE LEDS ON, outside the keys' own maps the keys of the selected track's scale at
+ * the mid level (the others dark), the root's lit ((2.7.1, #108) was: glow and mid); the keys held / playing lit; LEDS OFF / DIM LO / DIM HI
  * alike, INV turned round (root lit, scale mid, the others glowing, the active dark); TRN; QNT WHITE: the white
  * keys; a DRUM track, a layer, the default OFF: as before */
-/* MENU > DISPLAY > SCREEN OFF (1.1.5, ui.c scr_*): the screen and its backlight off after NEVER / 5 / 15 / 30 (default)
+/* MENU > DISPLAY > SCREEN OFF (1.1.5, ui.c scr_*): the screen dark after NEVER / 5 / 15 / 30 (default)
  * / 60 minutes without panel input; the press, key or turn that wakes it does nothing else; the dialogs, the count-in
  * and the UPDATE MODE countdown keep it on and wake it; the sound goes on as if it were on (forked sessions, bit for
  * bit); the setting saved (a spare favorites byte, 0 = 30 MIN) and offered in the MENU */
@@ -5237,7 +5237,7 @@ static void scr_idle(uint32_t ms)                  /* nobody touches it for ms (
     frames(ms);
 }
 static int scr_woke(uint32_t from)                 /* since host_pw_n was `from`: SLPOUT >= 120 ms after the SLPIN,
-                                                    * DISPON + backlight >= 120 ms after the SLPOUT, nothing else */
+                                                    * DISPON >= 120 ms after the SLPOUT, nothing else */
 {
     return host_pw_n == from + 2u && host_pw[from] == 1u && host_pw[from + 1u] == 2u && host_bl &&
            host_pw_ms[from] - host_pw_ms[from - 1u] >= 120u && host_pw_ms[from + 1u] - host_pw_ms[from] >= 120u &&
@@ -5315,7 +5315,7 @@ static int test_screen_off(void)
     ui_message("SAVED");
     scr_idle(5000u);
     ok &= host_blit_rows == rows && host_pw_n == 1u && !ui.msg_t;
-    bad += check("SCREEN OFF: 30 MIN untouched -> backlight off, DISPOFF + SLPIN once; dark: nothing drawn", ok);
+    bad += check("SCREEN OFF: 30 MIN untouched -> DISPOFF + SLPIN once; dark: nothing drawn", ok);
 
     n = host_pw_n;
     ok = ui.home && !ui.menu;
@@ -5330,7 +5330,7 @@ static int test_screen_off(void)
     ok &= ui.home && !ui.menu && !ui.layer && !scrn.eat && !kb_asleep;
     press(B_ENV);                                     /* awake: the button works again */
     ok &= !ui.home && cur_page()->fam == FAM_ENV;
-    bad += check("SCREEN OFF: a button wakes it (SLPOUT, 120 ms, the page redrawn, DISPON + backlight), swallowed", ok);
+    bad += check("SCREEN OFF: a button wakes it (SLPOUT, 120 ms, the page redrawn, DISPON), swallowed", ok);
 
     go_home();
     for (i = 0; i < 3u; i++) {                        /* HOME, SAVE, REC held across the wake: no menu, undo, clear */
@@ -5489,7 +5489,7 @@ static int test_scale_leds(void)
     bad += check("#127 MENU > CONTROL > SCALE LEDS ON (a bit of its own); C major: the white keys, the root C4 C5",
                  ok && sc == white && root == C_KEYS);
     for (mi = 0; mi < LEDS_COUNT; mi++) {
-        uint32_t m = MODES[mi], held = 1u << 1 | 1u << 7;   /* F#3 (out of the scale) and C4 (the root) held */
+        uint32_t m = MODES[mi], held = 1u << 1 | 1u << 2 | 1u << 7;   /* F#3 (out of the scale), G3 and C4 (the root) */
         char what[128];
         settings_leds = (uint8_t)m;
         fm1_in.notes = 0;
@@ -5497,18 +5497,20 @@ static int test_scale_leds(void)
         if (m == LEDS_INV)
             ok = lit_keys(fm1_led) == C_KEYS && lit_keys(fm1_led_mid) == (white & ~C_KEYS) &&
                  lit_keys(fm1_led_dim) == (ALL & ~white);
-        else
-            ok = !lit_keys(fm1_led) && lit_keys(fm1_led_dim) == white && lit_keys(fm1_led_mid) == C_KEYS;
+        else                                            /* ((2.7.1, #108) 1.2-2.7: the scale glowed, the root mid) */
+            ok = lit_keys(fm1_led) == C_KEYS && lit_keys(fm1_led_dim) == white &&
+                 lit_keys(fm1_led_mid) == (white & ~C_KEYS);
         fm1_in.notes = held;
         ui_leds();
         if (m == LEDS_INV)
             ok &= lit_keys(fm1_led) == (C_KEYS & ~held) && !(lit_keys(fm1_led_mid) & held) &&
-                  !(lit_keys(fm1_led_dim) & held) && lit_keys(fm1_led_mid) == (white & ~C_KEYS);
+                  !(lit_keys(fm1_led_dim) & held) && lit_keys(fm1_led_mid) == (white & ~C_KEYS & ~held);
         else
-            ok &= lit_keys(fm1_led) == held && lit_keys(fm1_led_dim) == white && lit_keys(fm1_led_mid) == C_KEYS;
+            ok &= lit_keys(fm1_led) == (C_KEYS | held) && lit_keys(fm1_led_dim) == white &&
+                  lit_keys(fm1_led_mid) == (white & ~C_KEYS);
         snprintf(what, sizeof what, "#127 LEDS %s: %s; the keys held %s", LEDS_NAME[m],
-                 m == LEDS_INV ? "root lit, the scale mid, the others glow" : "the scale glows, the root brighter",
-                 m == LEDS_INV ? "dark" : "lit over it");
+                 m == LEDS_INV ? "root lit, the scale mid, the others glow" : "(#108) the root lit, the scale mid",
+                 m == LEDS_INV ? "dark" : "lit");
         bad += check(what, ok);
     }
     fm1_in.notes = 0;
@@ -5531,7 +5533,7 @@ static int test_scale_leds(void)
     sc = scale_leds(&root);
     ok &= sc == white && root == (1u << 7 | 1u << 16 | 1u << 24);
     ui_leds();
-    ok &= lit_keys(fm1_led_dim) == white && lit_keys(fm1_led_mid) == root;
+    ok &= lit_keys(fm1_led) == root && lit_keys(fm1_led_dim) == white && lit_keys(fm1_led_mid) == (white & ~root);
     t->p[P_QUANT] = QN_OFF;
     t->p[P_SCALE] = 0;                                  /* CHR: every key, the C keys brighter */
     sc = scale_leds(&root);
@@ -8437,8 +8439,8 @@ static int test_u4(void)
     ok = ui_hints_off && !msg_is("HOLD [EDIT]: SHORTCUTS");
     menu_put(MI_TUNE, 60);
     menu_put(MI_LEDS, 0);
-    menu_put(MI_CLK, 1);
-    ok &= CLK320_SET;
+    menu_put(MI_CLK, !CPU2_DEFAULT);                   /* (the clock that isn't the default) */
+    ok &= CLK320_SET == !CPU2_DEFAULT;
     hold(B_HOME);
     for (i = 0; i < 12u && ui.menu_sel != MI_RESET; i++) {
         turn(EN_ALGO, 1);
@@ -8449,8 +8451,9 @@ static int test_u4(void)
     ok &= !ui.menu && ui.confirm == CF_RESET_SET;
     press(B_OCTUP);
     bad += check("U4 A3: HINTS OFF hides the layer's first-tap hint; RESET SETTINGS asks, then the MENU's defaults (TUNE 0, LEDS DIM HI, HINTS ON, "
-                 "(Skiff) CPU CLOCK 360 MHZ)",
-                 ok && !ui_hints_off && song.g[G_TUNE] == 0 && settings_leds == LEDS_DIM && !CLK320_SET && msg_is("SETTINGS RESET"));
+                 "(2.7.1) CPU CLOCK 320 MHZ, 360 on the SMK-37)",
+                 ok && !ui_hints_off && song.g[G_TUNE] == 0 && settings_leds == LEDS_DIM && CLK320_SET == CPU2_DEFAULT &&
+                 msg_is("SETTINGS RESET"));
     ui_power_on();
     return bad;
 }
@@ -8592,7 +8595,7 @@ static int test_u3(void)
     project_load(1);
     ok &= song.g[G_TUNE] == 7;
     unit_g_boot();
-    ok &= (int8_t)ui_unit_g(2) == 7 && ui_set_rev == 2u + CPU2_DEFAULT && !unit_g_adopt;   /* ((2.5) 3: cpu2_move's) */
+    ok &= (int8_t)ui_unit_g(2) == 7 && ui_set_rev == (CPU2_DEFAULT ? 4u : 2u) && !unit_g_adopt;   /* ((2.7.1) 4: the 320 MHZ move) */
     bad += check("U3 R8: TUNE is the unit's: a project load leaves it, boot puts it back; the first boot takes the session's", ok);
     song.g[G_TUNE] = 0;
     ui_power_on();                                      /* R5: AUTOMATION's top row */
@@ -10129,10 +10132,39 @@ static int test_playhead_line(void)
     return bad;
 }
 
+/* ((2.7.1, #126) ui.c cpu_boot_byte: 2 CORES at 320 MHZ, the one-time move and the crash fallback, every case) */
+static int test_cpu_boot_byte(void)
+{
+    int bad = 0;
+#if FELUCCA_CPU2
+    uint8_t fell, b;
+    b = cpu_boot_byte(1, 3, 0, &fell);                  /* 2 CORES at 360, settings of before: 320 now */
+    bad += check("CPU: 2 CORES at 360 from 2.7's settings moves to 320 once", b == (1u | 4u) && !fell);
+    b = cpu_boot_byte(1, 4, 0, &fell);                  /* MENU > CPU CLOCK 360 chosen afterwards: kept */
+    bad += check("CPU: 360 chosen after the move stays 360", b == 1u && !fell);
+    b = cpu_boot_byte(1 | 4, 4, 0, &fell);
+    bad += check("CPU: 2 CORES at 320, no crash: as it is", b == (1u | 4u) && !fell);
+    b = cpu_boot_byte(1, 4, 1, &fell);                  /* a crash or a hang on 2 CORES at 360 */
+    bad += check("CPU: a crash on 2 CORES at 360: 320 from now on, both cores (said)", b == (1u | 4u) && fell == 2u);
+    b = cpu_boot_byte(1 | 4, 4, 1, &fell);              /* .. at 320 already: 1 CORE this boot, as 2.7 */
+    bad += check("CPU: a crash on 2 CORES at 320: 1 CORE (CORE 2 FAILED)", b == (1u | 4u) && fell == 1u);
+    b = cpu_boot_byte(0, 3, 1, &fell);                  /* 1 CORE: neither the move nor the fallback */
+    bad += check("CPU: 1 CORE stays as it is, crash or not", b == 0u && !fell);
+    b = cpu_boot_byte(2 | 8, 3, 0, &fell);              /* (the byte's other bits: STEP PREVIEW, REMOTE's channel) */
+    bad += check("CPU: the byte's other bits are kept", b == (2u | 8u) && !fell);
+    b = cpu_boot_byte(1 | 2 | 8, 3, 1, &fell);          /* 2.7 crashed at 360, then the update: the crash's clock is the
+                                                         * byte's from before the move, so both cores at 320, said */
+    bad += check("CPU: a crash at 360 on 2.7, then 2.7.1's move: 320, both cores, said", b == (1u | 2u | 4u | 8u) &&
+                 fell == 2u);
+#endif
+    return bad;
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     int bad = 0;
+    bad += test_cpu_boot_byte();
     bad += test_large_face();
     bad += test_sound_loads();
     bad += test_rec();

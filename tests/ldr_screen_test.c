@@ -2,7 +2,8 @@
 /* Host test of Skiff's update loader screen (firmware/loader/ldr_screen.c) through src/lcd.c, on a fake ST7789: the
  * window and RAMWR commands into a 240 x 240 frame. UPDATE MODE after boot, WRITING with the bar at 50 %, a second
  * write starting the bar over, UPDATE FAILED; every letter of their texts in the loader's font, nothing drawn outside
- * the panel. With a DIR, the three screens as PPM files.   tests/ldr_screen_test [DIR] */
+ * the panel. With a DIR, the three screens as PPM files. (#98) lcd.c's MENU > SCREEN OFF: dark, waking and on again
+ * with PA2 low all along (the FM-1's backlight line is also the key matrix 595s' /OE).   tests/ldr_screen_test [DIR] */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,12 +12,17 @@ static uint16_t fb[240][240];                   /* RGB565 as the panel stores it
 static uint32_t win[4], cx, cy, cmd, outside;
 static const uint8_t *pend;
 static uint32_t pend_n;
+static uint8_t cmds[8];                         /* (#98) the commands since ncmd = 0 */
+static uint32_t ncmd, pa2_high;                 /* (#98) PA2 driven high at any time: no key, button or knob reads */
 static void fm1_lcd_hw_init(void) {}
 static void fm1_lcd_baud(uint32_t b) { (void)b; }
-static void fm1_lcd_backlight(uint32_t on) { (void)on; }
+static void fm1_lcd_backlight(uint32_t on) { pa2_high |= !on; }
 static void fm1_lcd_deselect(void) {}
 static void fm1_lcd_send_cmd(uint8_t c)
 {
+    if (ncmd < sizeof cmds)
+        cmds[ncmd] = c;
+    ncmd++;
     cmd = c;
     if (c == 0x2C) {
         cx = win[0];
@@ -107,6 +113,12 @@ int main(int argc, char **argv)
           count(LDR_BAR_X, LDR_BAR_Y, LDR_BAR_X + 200u, LDR_BAR_Y + 8u, 0) == 1600u &&
           count(0, 110, 240, 164, LDR_INK) > 900u);
     check("every letter of the texts in the loader's font, nothing outside the panel", !ldr_missing && !outside);
+    ncmd = pa2_high = 0;                          /* (#98) ui.c scr_frame / scr_shown: dark, SLPOUT, on */
+    lcd_power(0);
+    lcd_power(1);
+    lcd_power(2);
+    check("(#98) SCREEN OFF: DISPOFF + SLPIN, SLPOUT, DISPON; PA2 (595 /OE: the keys) never high",
+          ncmd == 4u && cmds[0] == 0x28 && cmds[1] == 0x10 && cmds[2] == 0x11 && cmds[3] == 0x29 && !pa2_high);
     printf("%s\n", bad ? "LDR SCREEN TEST FAILED" : "ldr_screen test passed");
     return bad != 0;
 }
