@@ -273,7 +273,7 @@ static uint32_t arp_run(track_t *t, uint32_t steps)  /* the notes of `steps` arp
 {
     uint32_t period = div_samples((uint32_t)t->p[P_ARATE]), i;
     for (i = 0; i < steps && i < 8u; i++) {
-        arp_tick(t, period);
+        arp_tick(t, t->arp_pos == ARP_START ? 0u : period);   /* (the first key: its step on the grid's line, now) */
         arp_seen[i] = t->arp_note;
     }
     return steps;
@@ -298,6 +298,7 @@ static void arp_reset(track_t *t)
     t->p[P_SCALE] = 2;                             /* C minor */
     t->p[P_ROOT] = 0;
     t->p[P_TRANS] = 0;
+    beat_pos = beat_n = 0;                         /* (on a line of the arp's grid: seq.c arp_onto_grid plays at once) */
 }
 
 static void arp_follow_test(void)

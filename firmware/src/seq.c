@@ -264,6 +264,7 @@ static int kb_solo(const track_t *t, uint32_t k)
 #include "follow.c"                              /* (2.1) chord follow */
 
 /* ------------------------------------------------------------- arp --- */
+#define ARP_START 0xFFFFFFFu                    /* arp_pos: the first key just went down (arp_add) */
 static void arp_add(track_t *t, uint32_t note)
 {
     uint32_t i, k = in_key - 1u;
@@ -284,7 +285,7 @@ static void arp_add(track_t *t, uint32_t note)
         t->held[t->nheld++] = (uint8_t)note;
     }
     if (t->nheld == 1u) {
-        t->arp_pos = 0xFFFFFFF;                     /* fire on this block */
+        t->arp_pos = ARP_START;                     /* onto the grid on this block (arp_step) */
         t->arp_idx = 0xFFFFFFFFu;
     }
 }
@@ -629,9 +630,40 @@ static __attribute__((noinline)) void arp_fire(track_t *t, uint32_t period)
     }
 }
 
+/* (Skiff) the arp on the tempo's grid. A step's length: RATE, SWING making the even steps of the grid shorter and the
+ * odd ones longer by as much (the arp's swing as before); the step that ended leaves what the block ran past it to the
+ * next, so the arp keeps the quarter's whole-sample time and stays with the tracks, the click and the beat (before, it
+ * started each step afresh and lost up to a block a step: it fell behind). */
+static uint32_t arp_len(uint32_t period, int32_t sw, uint32_t odd) { return period + (uint32_t)(odd ? sw : -sw); }
+/* the first key (arp_pos ARP_START): onto the grid where the beat is (beat_pos, beat_n: from PLAY, Song Position, or
+ * free while stopped: the ARP LED's), at its nearest line: just after one, the step played now as on it; just before
+ * one, from that line. A step a bar long or longer: from the bar's start (the bars before it are not counted), no swing
+ * parity. Not inlined: once a key goes down, its divides kept out of the audio ISR's loop (tests/target_budget.py) */
+static __attribute__((noinline)) void arp_onto_grid(track_t *t, uint32_t period, int32_t sw)
+{
+    uint32_t q = beat_samples(), bar = 4u * q, at = (beat_n & 3u) * q + (beat_pos < q ? beat_pos : q - 1u), odd = 0;
+    if (!period)
+        at = 0;
+    else if (period >= bar)
+        at = at < period ? at : 0u;
+    else if (2u * period > bar || bar % (2u * period))
+        at %= period;
+    else {
+        at %= 2u * period;
+        if (at >= arp_len(period, sw, 0)) {
+            at -= arp_len(period, sw, 0);
+            odd = 1;
+        }
+    }
+    t->arp_pos = at;
+    t->arp_odd = (uint8_t)odd;
+    if (at < arp_len(period, sw, odd) / 2u)
+        arp_fire(t, period);
+}
+
 static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
 {
-    uint32_t period;
+    uint32_t period, len;
     int32_t sw;
     if (t->arp_note) {
         if (t->arp_off <= gate_n)
@@ -646,10 +678,16 @@ static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
     }
     period = div_samples((uint32_t)t->p[P_ARATE]);
     sw = t->p[P_ASWING] * (int32_t)period / 250;
+    if (t->arp_pos == ARP_START)
+        arp_onto_grid(t, period, sw);
     t->arp_pos += n;
-    if (t->arp_pos < period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw) && t->arp_pos != 0xFFFFFFF + n)
+    len = arp_len(period, sw, t->arp_odd);
+    if (t->arp_pos < len)
         return;
-    t->arp_pos = 0;
+    t->arp_pos -= len;
+    t->arp_odd ^= 1u;
+    if (t->arp_pos >= arp_len(period, sw, t->arp_odd))
+        t->arp_pos = 0;                         /* (a much faster RATE or tempo since: from this block) */
     arp_fire(t, period);
 }
 
