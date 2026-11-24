@@ -1999,11 +1999,12 @@ const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
 /* an FM-1 on WebMIDI: identity, then "device asks, host answers" reads of the image */
 class FakeFM1 {
   /* writeReads: the loader's [addr, len] reads (default: six of 512 B); drops: request counts at which it drops
-     off the bus and comes back in update mode 200 ms later (a pulled cable, a power cut, a loader reset) */
+     off the bus and comes back in update mode 200 ms later (a pulled cable, a power cut, a loader reset);
+     loader: the identity the update loader reports (the STARRYKEY37 PLAY build: its package identity, no hyphen) */
   constructor(image, { unplugAfter = Infinity, back = ["FM-1_900", "Felucca"], writeReads = null, drops = [],
-                       loaderName = "Felucca Update" } = {}) {
+                       loaderName = "Felucca Update", loader = "ota-FM-1_900" } = {}) {
     this.image = image; this.unplugAfter = unplugAfter; this.served = 0; this.bad = 0; this.back = back;
-    this.writeReads = writeReads; this.drops = new Set(drops); this.loaderName = loaderName;
+    this.writeReads = writeReads; this.drops = new Set(drops); this.loaderName = loaderName; this.loader = loader;
     this.access = { inputs: new Map(), outputs: new Map() };
     this.boot("FM-1_015", "FM-1");
   }
@@ -2041,10 +2042,10 @@ class FakeFM1 {
       if (this.served >= this.unplugAfter) { this.input.state = this.output.state = "disconnected"; return; }
       if (this.drops.delete(this.served)) {
         this.input.state = this.output.state = "disconnected";
-        setTimeout(() => this.boot("ota-" + this.back[0], "Felucca Update"), 200);
+        setTimeout(() => this.boot(this.loader, "Felucca Update"), 200);
         return;
       }
-      if (addr === 0xE0000000) setTimeout(() => this.boot("ota-FM-1_900", this.loaderName), 300);
+      if (addr === 0xE0000000) setTimeout(() => this.boot(this.loader, this.loaderName), 300);
       else if (addr === 0xF0000000) setTimeout(() => this.boot(...this.back), 300);
       else this.next();
     }
@@ -2096,6 +2097,22 @@ async function updater() {
   smkPro.boot("ota-SMK-37 Pro_900", "Felucca Update");
   const r3 = await new Updater(smkPro.access).resume(image, null, "SMK-37 Pro_900");
   ok(r3 === true && smkPro.served > 0 && smkPro.bad === 0, "fm1ota.js: resume: an SMK-37 Pro in update mode takes an SMK-37 Pro package");
+
+  /* the STARRYKEY-37 PLAY, a fourth name of the same keyboard: its package identity has no hyphen
+     ("STARRYKEY37 PLAY_nnn", the package's marker string keeps 20 characters), the unit reports the true name */
+  const starry = new FakeFM1(image, { back: ["STARRYKEY-37 PLAY_900", "Felucca"], loader: "ota-STARRYKEY37 PLAY_900" });
+  starry.boot("STARRYKEY-37 PLAY_016", "STARRYKEY-37 PLAY");
+  const gs = await new Updater(starry.access).install(image, "STARRYKEY37 PLAY_900");
+  ok(gs === "STARRYKEY-37 PLAY_900" && starry.bad === 0 && starry.served > 0,
+    "fm1ota.js: install: the STARRYKEY-37 PLAY takes its hyphen-less package and reports its true name back");
+  const starrySmk = new FakeFM1(image);
+  starrySmk.boot("SMK-37 Pro_016", "SMK-37 Pro Midi");
+  const es = await new Updater(starrySmk.access).install(image, "STARRYKEY37 PLAY_900").then(() => null, (x) => x);
+  ok(es && es.code === "model" && starrySmk.served === 0, "fm1ota.js: a STARRYKEY37 PLAY package is never given to an SMK-37 Pro ('model')");
+  const smkStarry = new FakeFM1(image);
+  smkStarry.boot("STARRYKEY-37 PLAY_016", "STARRYKEY-37 PLAY Midi");
+  const es2 = await new Updater(smkStarry.access).install(image, "SMK-37 Pro_900").then(() => null, (x) => x);
+  ok(es2 && es2.code === "model" && smkStarry.served === 0, "fm1ota.js: an SMK-37 Pro package is never given to a STARRYKEY-37 PLAY ('model')");
 
   const dev3 = new FakeFM1(image, { unplugAfter: 2 });
   const e = await new Updater(dev3.access).install(image, "FM-1_900").then(() => null, (x) => x);
@@ -2162,12 +2179,13 @@ async function updater() {
   ok(pv.length > 400 && pv.every((x, i) => i === 0 || x >= pv[i - 1]) && pdev.bad === 0, "fm1ota.js: the write's step('write', %) moves forward only");
 
   /* the site's packages: one per model; a stock SMK older than V016 is sent to M-VAVE's updater first */
-  const pk = [{ product: "FM-1_714", pkg: "a" }, { product: "SMK-37 Pro_714", pkg: "b" }, { product: "SMK-37 Elite_714", pkg: "c" }, { product: "MKE-P37_714", pkg: "d" }];
+  const pk = [{ product: "FM-1_714", pkg: "a" }, { product: "SMK-37 Pro_714", pkg: "b" }, { product: "SMK-37 Elite_714", pkg: "c" }, { product: "MKE-P37_714", pkg: "d" }, { product: "STARRYKEY37 PLAY_714", pkg: "e" }];
   ok(packageFor(pk, "FM-1").pkg === "a" && packageFor(pk, "ota-SMK-37 Pro").pkg === "b" && packageFor(pk, "SMK-37 Elite").pkg === "c"
-     && packageFor(pk, "MKE-P37").pkg === "d" && packageFor(pk, "STARRYKEY-37 PLAY") === null && packageFor(pk, "SMK-37") === null,
+     && packageFor(pk, "MKE-P37").pkg === "d" && packageFor(pk, "STARRYKEY-37 PLAY").pkg === "e" && packageFor(pk, "SMK-37") === null,
     "installer: the package for the connected model, never another model's");
   const idOf = (txt) => { const m = /^([^_]+)_(\d+)$/.exec(txt); return { text: txt, model: m[1], version: parseInt(m[2], 10) }; };
   ok(needsStockUpdate(idOf("SMK-37 Pro_012")) && needsStockUpdate(idOf("SMK-37 Elite_015")) && needsStockUpdate(idOf("MKE-P37_013"))
+     && needsStockUpdate(idOf("STARRYKEY-37 PLAY_012")) && !needsStockUpdate(idOf("STARRYKEY-37 PLAY_016"))
      && !needsStockUpdate(idOf("SMK-37 Pro_016")) && !needsStockUpdate(idOf("SMK-37 Pro_714")) && !needsStockUpdate(idOf("SMK-37 Pro_900"))
      && !needsStockUpdate(idOf("SMK-37 Pro_000")) && !needsStockUpdate(idOf("FM-1_015")), "installer: a stock SMK below V016 is updated with M-VAVE's tool first");
   const v016 = process.env.SMK_STOCK_DIR && join(process.env.SMK_STOCK_DIR, "SMK-37_Pro_016.fwsc");

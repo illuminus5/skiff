@@ -2,8 +2,8 @@
 
 Skiff runs on the **SMK-37 Pro**: the same six tracks, engines, sequencer and screens as on the FM-1, played from 37
 velocity keys, with the 16 pads, four faders and two wheels doing more ([the controls](#what-the-build-has)). It is
-tested on one SMK-37 Pro. The SMK-37 Elite and MKE-P37 builds are made the same way but have not been tried on a
-keyboard; the Starrykey 37 Play is not supported yet.
+tested on one SMK-37 Pro. The SMK-37 Elite, MKE-P37 and Starrykey 37 Play builds are made the same way but have not
+been tried on a keyboard.
 
 ## Install
 
@@ -76,8 +76,11 @@ follow the directions picked from the mockups in [design/SMK37_UX.md](design/SMK
 
 The SMK-37 Pro has the FM-1's chip (JieLi AC791N), audio path and 240 x 240 screen. Only the panel wiring and the flash
 map differ: 37 velocity keys, 16 RGB pads, 8 endless knobs, 4 faders, two wheels, 18 buttons, and no LEDs under the
-keys. The SMK-37 Elite and the MKE-P37 are the same keyboard under other names; each gets its own package, so its stock
-updater still takes its factory firmware later. (The Starrykey 37 Play takes the Pro package.)
+keys. The SMK-37 Elite, the MKE-P37 and the Starrykey 37 Play are the same keyboard under other names; each gets its
+own package, so its stock updater still takes its factory firmware later. The Starrykey 37 Play's unit reports
+`STARRYKEY-37 PLAY`; its package identity drops the hyphen (`STARRYKEY37 PLAY_nnn`), because the package's marker
+string keeps 20 characters — the installers compare the models without the hyphens, and the firmware keeps the true
+name (its identity report and the stock record).
 
 The board layer is genkigenki's SMK-37 port of Felucca (GPL-3.0-only), adapted to Skiff. Their
 [fm1-to-smk37](https://github.com/genkigenki/fm1-to-smk37) kit has the hardware notes, the backup and the way back to
@@ -89,6 +92,7 @@ stock. Credits: [LICENSING.md](LICENSING.md).
 BOARD=smk37 ./build.sh                  # build/skiff-smk37.fwsc        SMK-37 Pro_700
 BOARD=smk37 MODEL=elite ./build.sh      # build/skiff-smk37-elite.fwsc  SMK-37 Elite_700
 BOARD=smk37 MODEL=mke ./build.sh        # build/skiff-smk37-mke.fwsc    MKE-P37_700
+BOARD=smk37 MODEL=starry ./build.sh     # build/skiff-smk37-starry.fwsc STARRYKEY37 PLAY_700
 ./build.sh                              # the FM-1 last: the tests read its binaries
 sh tests/run_tests.sh
 ```
@@ -190,10 +194,11 @@ loader 7,859 B (the limit: 7,936 B, below).
     against a warm one.
   The reply comes back as `00 59 cmd 20 00 00`, the 32 bytes, then a checksum, packed the same way.
 - **Installers:** `tools/fm1_install.py` and the web installer's `web/fm1ota.js` install a package only on exactly
-  its model (Pro, Elite, MKE-P37, FM-1), also when finishing a write a unit is stuck in (resume). Without the
+  its model (Pro, Elite, MKE-P37, STARRYKEY-37 PLAY, FM-1), also when finishing a write a unit is stuck in (resume).
+  Without the
   package's identity, nothing is written. `fm1_install.py` takes the unmodified stock SMK-37 Pro V016 package for the
   way back, and both read its 36-block container. The site (`web/make_site.py`) carries the FM-1 package and the
-  three SMK ones; the installer page picks the one for the connected model, sends a stock SMK older than V016 to
+  four SMK ones; the installer page picks the one for the connected model, sends a stock SMK older than V016 to
   M-VAVE's updater first (the CLI: exit 7), and its return to stock takes `SMK-37_Pro_016.fwsc` (pinned checksum)
   as well as the FM-1's V15. A write cut short is resumed when the same model's loader answers again (up to five
   tries, two minutes each), and the bar moves forward only. `fm1_install.py --info` on an SMK loader prints its

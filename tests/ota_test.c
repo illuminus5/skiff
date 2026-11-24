@@ -15,10 +15,12 @@
 #include <string.h>
 
 #if BOARD_SMK37                          /* -DBOARD_SMK37=1: the SMK-37 Pro build of ota.c */
-#if T_MODEL == 1                         /* -DT_MODEL=1 / 2: the MODEL=elite / mke build */
+#if T_MODEL == 1                         /* -DT_MODEL=1 / 2 / 3: the MODEL=elite / mke / starry build */
 #define SMK_MODEL "SMK-37 Elite"
 #elif T_MODEL == 2
 #define SMK_MODEL "MKE-P37"
+#elif T_MODEL == 3
+#define SMK_MODEL "STARRYKEY-37 PLAY"
 #else
 #define SMK_MODEL "SMK-37 Pro"
 #endif

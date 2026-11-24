@@ -58,8 +58,10 @@ out the cast behind the Skiff Editor's Screen tab (`FELUCCA_CAST=0`), so the FM-
 tests on a default build: a console build's TIMER5 interrupt polls the console too, past its target budget.
 
 `BOARD=smk37 ./build.sh` builds for the M-VAVE SMK-37 Pro instead ([SMK37.md](SMK37.md)): `build/skiff-smk37.fwsc`,
-identity `SMK-37 Pro_700` (a release `SMK-37 Pro_7XY`, `skiff-smk37-X.Y.fwsc`). `MODEL=elite` or `MODEL=mke` makes the
-same firmware under the SMK-37 Elite's or the MKE-P37's model name (`skiff-smk37-elite.fwsc`, `skiff-smk37-mke.fwsc`),
+identity `SMK-37 Pro_700` (a release `SMK-37 Pro_7XY`, `skiff-smk37-X.Y.fwsc`). `MODEL=elite`, `MODEL=mke` or
+`MODEL=starry` makes the same firmware under the SMK-37 Elite's, the MKE-P37's or the STARRYKEY-37 PLAY's model name
+(`skiff-smk37-elite.fwsc`, `skiff-smk37-mke.fwsc`, `skiff-smk37-starry.fwsc`; the Starrykey's package identity drops
+its hyphen, the package's marker string keeps 20 characters),
 so each unit's stock updater still takes its factory package later. The FM-1 build is unchanged by it, byte for byte.
 Both boards write the same files in `build/`: build the SMK first, copy its package out, build the FM-1 last, then
 run the tests (they read the FM-1's binaries; the SMK packages left in `build/` are checked too).

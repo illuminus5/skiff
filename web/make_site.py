@@ -19,9 +19,10 @@
 
 The packages must be ones made by tools/fm1pkg_make.py (Felucca's own loader, no vendor files).
 Their identities are read from them (FM-1_7xx, and for the SMK-37 builds SMK-37 Pro_7xx,
-SMK-37 Elite_7xx, MKE-P37_7xx, one per model); the installer picks the one for the connected
-model, and the device must report it after the install. Names: skiff-X.Y.fwsc (FM-1),
-skiff-X.Y-smk37.fwsc, skiff-X.Y-smk37-elite.fwsc, skiff-X.Y-smk37-mke.fwsc.
+SMK-37 Elite_7xx, MKE-P37_7xx, STARRYKEY37 PLAY_7xx, one per model); the installer picks the one for the connected
+model (the STARRYKEY-37 PLAY unit reports its name with the hyphen; the package identity drops it, 20 characters
+at most), and the device must report it after the install. Names: skiff-X.Y.fwsc (FM-1),
+skiff-X.Y-smk37.fwsc, skiff-X.Y-smk37-elite.fwsc, skiff-X.Y-smk37-mke.fwsc, skiff-X.Y-smk37-starry.fwsc.
 """
 import json
 import re
@@ -43,7 +44,8 @@ def product_of(raw):
     return "".join(chr((m - i - 1) & 0xFF) for i in range(BLOCKS) if (m := raw[i * BLK + KEEP]) != 0x7D)
 
 
-MODELS = {"FM-1": "", "SMK-37 Pro": "-smk37", "SMK-37 Elite": "-smk37-elite", "MKE-P37": "-smk37-mke"}
+MODELS = {"FM-1": "", "SMK-37 Pro": "-smk37", "SMK-37 Elite": "-smk37-elite", "MKE-P37": "-smk37-mke",
+          "STARRYKEY37 PLAY": "-smk37-starry"}   # (the package identity: no hyphen, 20 characters at most)
 
 
 def package(path, version):
