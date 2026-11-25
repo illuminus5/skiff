@@ -14,7 +14,9 @@ synths and drums, patterns and songs, live performance, and a screen that shows 
   <img src="https://img.shields.io/badge/hardware-M--VAVE%20FM--1%20%7C%20SMK--37%20Pro-555" alt="Hardware: M-VAVE FM-1 | SMK-37 Pro">
 </p>
 
-<p align="center"><b>New in 2.7.1:</b> fixes: the screen that stayed dark after SCREEN OFF, a crash on a user drum kit
+<p align="center"><b>New in 2.7.2:</b> start-up in about a second again (since 2.6 it waited 10 seconds on the SKIFF picture) ·
+<a href="https://github.com/illuminus5/skiff/releases/tag/v2.7.2">the release notes</a><br>
+<b>New in 2.7.1:</b> fixes: the screen that stayed dark after SCREEN OFF, a crash on a user drum kit
 after SLICE, SCALE LEDS you can see, the way back to V15, 2 CORES at 320 MHz for the units that crashed at 360; the
 ARP on the beat, the SMK-37's chord pads, and the STARRYKEY-37 PLAY ·
 <a href="https://github.com/illuminus5/skiff/releases/tag/v2.7.1">the release notes</a><br>
@@ -96,12 +98,12 @@ version it had before Skiff), saving a complete backup of your music first. Goin
 instead? Take a backup in the Skiff Editor first: on the way to V15, if M-UPGRADE stops near the end, the FM-1 stays
 on Skiff without its patterns (#156).
 
-**With Python 3:** download `skiff-2.7.1.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
+**With Python 3:** download `skiff-2.7.2.fwsc` from the [latest release](https://github.com/illuminus5/skiff/releases/latest)
 and, with this repository's `tools/` folder,
 
 ```
 pip install mido python-rtmidi
-python tools/fm1_install.py skiff-2.7.1.fwsc
+python tools/fm1_install.py skiff-2.7.2.fwsc
 ```
 
 It takes about two minutes and the FM-1 restarts on Skiff.
@@ -119,7 +121,7 @@ M-Flasher put its m-bootloader on the FM-1, the start-up part is neither V15's n
 official file with FAILED -5 on the FM-1's screen, M-VAVE's updater too (nothing is written): put the stock
 bootloader back with M-Flasher first (#156).
 
-**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.7.1-smk37.fwsc` for
+**On the SMK-37 Pro:** the same installer finds the keyboard and picks its build (`skiff-2.7.2-smk37.fwsc` for
 Python). Two steps come first: M-VAVE's firmware V016 on the keyboard, and a backup of its flash, which holds the
 keyboard's own key calibration. [SMK37.md](SMK37.md#install) has both, the way back and what to do if it does not
 start.
@@ -938,7 +940,7 @@ On the SMK-37: [SMK37.md](SMK37.md#if-it-does-not-start).
 **The screen says UPDATE MODE, or stays black while a computer sees a USB MIDI device named "Felucca
 Update":** an install was cut off, and the FM-1 waits in Skiff's update loader at every power-on. Nothing is
 lost. Connect it by USB and run the [Skiff installer](https://illuminus5.github.io/skiff/webapp/installer/) again
-(or `python tools/fm1_install.py skiff-2.7.1.fwsc`): it finishes the install. If the installer can't find it, plug
+(or `python tools/fm1_install.py skiff-2.7.2.fwsc`): it finishes the install. If the installer can't find it, plug
 the FM-1 straight into the computer: a USB hub or USB-sharing software can lose it when it switches to update mode.
 M-VAVE's own updater does not see the FM-1 in this state. (Since 1.3.2 the loader says UPDATE MODE on the screen;
 one an older Skiff left there keeps it black.)

@@ -511,6 +511,8 @@ fi
 
 run "regression: target cost of the render loops (pi32v2 disassembly)" python3 tests/target_budget.py \
     build/felucca.dis tests/target_budget.txt
+run "(2.7.2, #149) the cast's .noinit restart word compared whole (pi32v2 disassembly)" python3 tests/noinit_check.py \
+    build/felucca.dis
 
 run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/install_test.py
 run "(#21) sample upload CLI: mix (a sound's LEVEL REV DLY) against a fake device" python3 tests/sample_upload_test.py

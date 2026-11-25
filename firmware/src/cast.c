@@ -29,7 +29,10 @@
  * The copy renders to a record's block count, sets its clock to the record's ticks and does what the record says. */
 #define CAST_VER 4u                    /* (B's bits 24..30) the records' layout: 3 = F's cpu, P; 4 = C's sound (0: t2) */
 #define CAST_SMK 0x40u                 /* (in CAST_VER's bits) the SMK-37's layout: T U X V D A as above */
-static uint32_t cast_boot __attribute__((section(".noinit")));   /* CAST_BOOT: restarted for a cast (cast_cmd 2) */
+/* CAST_BOOT: restarted for a cast (cast_cmd 2). ((2.7.2, #149) volatile: only 0 and CAST_BOOT are ever stored, so the
+ * compiler kept it as a one-byte flag, and the leftover RAM of a power-on read as a cast's restart: the splash held
+ * 10 s at every power-on since 2.6; tests/noinit_check.py checks the word) */
+static volatile uint32_t cast_boot __attribute__((section(".noinit")));
 #define CAST_BOOT 0x43535442u                                     /* "CSTB" */
 static int cast_audio_late(void) { return cast_boot == CAST_BOOT; }   /* (core.h CAST_AUDIO_LATE: main.c's boot) */
 
