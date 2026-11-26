@@ -115,7 +115,11 @@ loader 7,859 B (the limit: 7,936 B, below).
   power-on) re-teaches it. The knobs use Skiff's own detent decoder, with its frame constants retimed for the SMK's
   625 scans a second (the FM-1 does about 909). SHIFT's map names the controls as the SMK prints them (K4, BT,
   SEQ REC, ...), and MENU > LARGE's knob pills say K5..K8. The play button is printed with a play sign, which the
-  screen's fonts don't have, so the map calls it PLAY.
+  screen's fonts don't have, so the map calls it PLAY. The hints, headers and messages name the buttons the same way,
+  from one table (`kc_name` in `firmware/src/gfx.c`): SCALE, GLOBE, PARA, PATCH, BT and SEQ REC where the FM-1 says
+  SEL, GLO, EDIT, HOME, SAVE and REC, and K2..K4 for SELECT, ALGORITHM and PRESETS. OCT- and OCT+ stay short for
+  OCTAVE- and OCTAVE+. A new text names a button as a `[TAG]` (`"HOLD [SAVE]: UNDO"`), never as a plain word, and
+  both boards get their own name.
 - **MASTER on K1:** a virtual pot, 24 steps a detent. The header says its level while it turns (`MASTER 70%`), and
   the settings keep it once it rests 1.5 s, so it comes back at power-on.
 - **The extra buttons:** KNOB BANK is SHIFT, as HOME held but on a button of its own: the map, + BT for TAKE, and

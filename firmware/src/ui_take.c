@@ -154,8 +154,11 @@ static void take_box_draw(void)
     }
     if (take_box.kind)                                /* the undo window (ui.c undo_step): further back, or redo */
         take_box_key(take_box_key(TB_X + 10, KC_OCTDN, "BACK", undo_back < undo_n) + 14, KC_OCTUP, "REDO", undo_back);
-    else                                              /* the take's undo: SAVE held (the mockup's words) */
-        cv_text_on(TB_X + 10, TB_Y + 49, &AF_S, "HOLD SAVE: UNDO", T_INK, T_TEXT);
+    else {                                            /* the take's undo: SAVE held (the mockup's words; the SMK's BT) */
+        char b[32];
+        kc_words(b, sizeof b, "HOLD [SAVE]: UNDO", 1);
+        cv_text_on(TB_X + 10, TB_Y + 49, &AF_S, b, T_INK, T_TEXT);
+    }
 }
 /* the undo box (ui.c undo_step): UNDO or REDO and the copy's name, how far back of how many */
 static void take_box_undo(int redo, uint32_t trk, const char *name)

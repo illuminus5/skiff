@@ -2633,7 +2633,7 @@ static void ui_input(void)
         } else {                                        /* MENU > BPM LOCK ON (#58), on HOME (no pages): only with GLO
                                                          * held (and on GLO > GLOBAL, GLO's G4 TAP); says so once a burst */
             if (!lock_ms || fm1_ms - lock_ms > 1000u)
-                ui_way("BPM LOCKED", "GLO + SELECT: TEMPO");   /* ((Skiff U4) and how) */
+                ui_way("BPM LOCKED", "[GLO] + [SELECT]: TEMPO");   /* ((Skiff U4) and how) */
             lock_ms = fm1_ms | 1u;
         }
     }

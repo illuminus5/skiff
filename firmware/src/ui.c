@@ -803,7 +803,7 @@ static void ui_way(const char *s, const char *way)
     ui_say(s, "");
     str_cpy(ui.msg2, way, sizeof ui.msg2);
 }
-#define WAY_PATTERNS "SAVE > PATTERNS: CLEAR"           /* PATTERNS FULL: free a number */
+#define WAY_PATTERNS "[SAVE] > PATTERNS: CLEAR"          /* PATTERNS FULL: free a number */
 #define WAY_MOTION "AUTOMATION: DELETE ONE"           /* AUTOMATION FULL: free a record */
 /* a message led by an icon: its first byte (ui_draw.c draw_head draws the icon, then the words) */
 #define MSG_NOFILE "\x01"                      /* the no-file icon (ICON_X_NOFILE) */

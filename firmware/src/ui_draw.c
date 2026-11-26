@@ -788,7 +788,7 @@ static void draw_foot(void)
         (void)need;
         if (home_lanes() && !ui_hints_off)             /* Skiff BLOCKS on HOME: the lanes name the sounds; the hint */
 #if BOARD_SMK37
-            cv_free_hint(8, ly, "HOLD [KNOB BANK] SHIFT", T_MID, T_BG, 160);   /* (SMK37_UX.md extra buttons A) */
+            cv_free_hint(8, ly, "HOLD KNOB BANK: SHIFT", T_MID, T_BG, 160);   /* (SMK37_UX.md extra buttons A) */
 #else
             cv_free_hint(8, ly, "HOLD [HOME] SHIFT", T_MID, T_BG, 160);
 #endif
