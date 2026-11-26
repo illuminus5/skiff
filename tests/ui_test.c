@@ -2157,6 +2157,14 @@ static int test_presets_knob(void)
         char kb[32];                                 /* (its corner's key, the FM-1's name: the SMK-37's says K4) */
         kh_plain(kb, sizeof kb, KC_PRESETS, "MODE");
         mode_ok &= str_eq(kb, "PRESETS: MODE");
+        kh_plain(kb, sizeof kb, KC_SAVE, "X");       /* (the buttons too, as ever: the SMK-37's say BT, GLOBE, SEQ REC ..) */
+        mode_ok &= str_eq(kb, "SAVE: X");
+        kc_words(kb, sizeof kb, "[GLO] + [SELECT]: TEMPO", 1);
+        mode_ok &= str_eq(kb, "GLO + SELECT: TEMPO");
+        kc_words(kb, sizeof kb, "HOLD [SAVE]: UNDO", 1);
+        mode_ok &= str_eq(kb, "HOLD SAVE: UNDO");
+        kc_words(kb, sizeof kb, "[SAVE] > PATTERNS: CLEAR", 1);
+        mode_ok &= str_eq(kb, "SAVE > PATTERNS: CLEAR");
     }
     bad += check("(2.5) PRESETS on GLO > DELAY and FX > DELAY: the delay's MODE (MONO STEREO PING, to its ends); the sound "
                  "and the steps stay", mode_ok && n_mode == 2u);

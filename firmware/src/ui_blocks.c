@@ -288,7 +288,7 @@ static void draw_column_blocks(uint32_t c, const char *label, const char *val, c
     if (kid >= 0) {                                   /* "[OCT+]": the keycap on the value's band (on the hot tile
                                                        * inverted: INK, its word the tile's) */
         int32_t kb[4];                                /* ((Skiff) a word, as the mockup writes keys: the value's, in M */
-        const char *kl = KC[(uint32_t)kid < KC_COUNT ? (uint32_t)kid : 0u].label;   /* on its baseline) */
+        const char *kl = kc_name((uint32_t)kid);      /* on its baseline) (the SMK's printed name there) */
         text_ink(&AF_M, kl, kb);
         cv_text_on(BK_L - kb[0], BK_BASE - AF_M.asc, &AF_M, kl, hot ? T_INK : vc == T_ACCENT || vc == T_DIM ? vc : T_THEME,
                    fill);
@@ -385,7 +385,7 @@ static void draw_confirm_blocks(void)
     uint32_t k = ui.confirm, i;
     int undoable = k == CF_CLEAR_SEQ || k == CF_INIT_SOUND || k == CF_CLEAR_MOTION || k == CF_CLEAR_SONG ||
                    k == CF_CLEAR_TRKS;              /* ((2.5) CLEAR TRACKS: not undone, its patterns kept: MID too) */
-    const char *hint = k == CF_CLEAR_TRKS ? "the sounds stay" : undoable ? "hold SAVE: undo" : "can't be undone";   /* ((Skiff
+    const char *hint = k == CF_CLEAR_TRKS ? "the sounds stay" : undoable ? "hold [SAVE]: undo" : "can't be undone";   /* ((Skiff
                                                        * U4) the undo hint's words, in
                                                        * the explanations' sentence case) */
     confirm_text(a, b);
@@ -465,7 +465,7 @@ static void draw_confirm_blocks(void)
         cv_text_in(x, BD_BY + (wf == &AF_M ? CAP_IN(M, BD_BH) : CAP_IN(S, BD_BH)), BD_BW, wf, w, i ? T_REC : T_INK,
                    i ? T_SURF : ux.quark ? T_THEME : T_TEXT);
         GFX_HOOK_ALIGN(x, 0, x + BD_BW, 0, AL_H, "dialog key under its button");
-        cv_keycap(x + ink_in(&AF_S, KC[KEY[i]].label, BD_BW), BD_BY + BD_BH + 3, KEY[i], T_KEY, T_INK, T_SURF);   /* (its
+        cv_keycap(x + ink_in(&AF_S, kc_name(KEY[i]), BD_BW), BD_BY + BD_BH + 3, KEY[i], T_KEY, T_INK, T_SURF);   /* (its
                                                        * ink centred: CRYPT's spacing trails its letters) */
     }
     cv_blit(BD_X, BD_Y);

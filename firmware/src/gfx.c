@@ -802,12 +802,27 @@ static int32_t cv_free_text(int32_t x, int32_t y, const aafont_t *f, const char 
 #define KC_TY (HALF_UP(KC_H - AF_S_CAP_H + 1) - AF_S_CAP_Y)   /* the word's pen in the keycap's band (a row left over
                                                                * below: where the keycap's own label sat) */
 /* (2.5) a control by the name the unit prints: on the SMK-37 Pro, K2 K3 K4 do SELECT, ALGORITHM, PRESETS (panel.c),
- * as SHIFT's map says them */
+ * as SHIFT's map says them. Every keycap the same way, the FM-1's button by the SMK's printed one (panel.c
+ * PANEL_DEFAULT: SEL = SCALE, GLO = GLOBE, EDIT = PARA, HOME = PATCH, SAVE = BT, REC = SEQ REC); a hint, a header or
+ * a message that says "[SAVE]" shows BT there. FX, ARP, SEQ and the keys name themselves the same on both. PLAY stays
+ * PLAY (the SMK prints a play sign, which the fonts lack), OCT- / OCT+ stay short for OCTAVE- / OCTAVE+ (a footer
+ * has the room for the one, not for the other). The text matching a "[TAG]" (kc_tag) goes by KC's own label, the
+ * FM-1's: the source strings stay one set */
 static const char *kc_name(uint32_t id)
 {
 #if BOARD_SMK37
-    if (id == KC_SELECT || id == KC_ALGO || id == KC_PRESETS)
-        return KC[id == KC_SELECT ? KC_K2 : id == KC_ALGO ? KC_K3 : KC_K4].label;
+    switch (id) {
+    case KC_SELECT: return KC[KC_K2].label;
+    case KC_ALGO: return KC[KC_K3].label;
+    case KC_PRESETS: return KC[KC_K4].label;
+    case KC_SCL: return "SCALE";
+    case KC_GLO: return "GLOBE";
+    case KC_EDIT: return "PARA";
+    case KC_HOME: return "PATCH";
+    case KC_SAVE: return "BT";
+    case KC_REC: return "SEQ REC";
+    default: break;
+    }
 #endif
     return KC[id < KC_COUNT ? id : 0u].label;
 }

@@ -846,6 +846,30 @@ static int test_shift(void)
         ok &= str_eq(b, "K4: STEP");
         bad += check("SMK key hints name the knobs as printed: K4: MODE, K3: TAB, K2: LAUNCH (were PRESETS, ALGO, SELECT)", ok);
     }
+    {   /* the buttons too: every FM-1 keycap by the SMK's printed name (gfx.c kc_name), in a hint and in a "[TAG]" text */
+        char b[48];
+        static const struct { uint8_t id; const char *name; } BTN[] = {
+            {KC_SCL, "SCALE"}, {KC_GLO, "GLOBE"}, {KC_EDIT, "PARA"}, {KC_HOME, "PATCH"}, {KC_SAVE, "BT"},
+            {KC_REC, "SEQ REC"}, {KC_FX, "FX"}, {KC_ARP, "ARP"}, {KC_SEQ, "SEQ"}, {KC_PLAY, "PLAY"},
+            {KC_OCTDN, "OCT-"}, {KC_OCTUP, "OCT+"}};
+        for (ok = 1, i = 0; i < (int)NELEM(BTN); i++) {
+            kh_plain(b, sizeof b, BTN[i].id, "X");
+            ok &= !strncmp(b, BTN[i].name, strlen(BTN[i].name)) && !strcmp(b + strlen(BTN[i].name), ": X");
+            ok &= kc_w(BTN[i].id) == text_w(&AF_S, BTN[i].name);
+        }
+        bad += check("SMK key hints name the buttons as printed: SCALE, GLOBE, PARA, PATCH, BT, SEQ REC (FX ARP SEQ PLAY OCT-/+ as ever)", ok);
+        kc_words(b, sizeof b, "HOLD [SAVE]: UNDO", 1);
+        ok = str_eq(b, "HOLD BT: UNDO");
+        kc_words(b, sizeof b, "[GLO] + [SELECT]: TEMPO", 1);
+        ok &= str_eq(b, "GLOBE + K2: TEMPO");
+        kc_words(b, sizeof b, "[SAVE] > PATTERNS: CLEAR", 1);
+        ok &= str_eq(b, "BT > PATTERNS: CLEAR");
+        kc_words(b, sizeof b, "[REC] WRITE STEPS", 1);
+        ok &= str_eq(b, "SEQ REC: WRITE STEPS");
+        kc_words(b, sizeof b, "[SEL] SET", 0);
+        ok &= str_eq(b, "SCALE SET");
+        bad += check("SMK texts with a [TAG] say the printed name: HOLD BT: UNDO, GLOBE + K2: TEMPO, BT > PATTERNS, SEQ REC: WRITE STEPS", ok);
+    }
     fm1_in.buttons |= 1u << panel.btn[B_SAVE];
     host_pressed |= 1u << panel.btn[B_SAVE];
     frame();
